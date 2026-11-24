@@ -1,0 +1,26 @@
+{
+  "graph": "ingest",
+  "ontology": "w",
+  "history": 0,
+  "inputs": [{"name": "a", "rows": "w.R"}, {"name": "b", "rows": "w.R"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "observed_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Out", "id": {"identity": "out", "args": [{"ref": "k"}, {"ref": "g"}]}, "props": {"c": {"ref": "c"}, "g": {"ref": "g"}, "k": {"ref": "k"}, "s": {"ref": "s"}}}]}, "rule": "observed"},
+    {"id": "out_1", "verb": "summarize", "by": {"g": {"ref": "g"}, "k": {"ref": "k"}}, "aggregates": {"c": {"fn": "count"}, "s": {"fn": "sum", "args": [{"ref": "n"}]}}},
+    {"id": "a", "verb": "rows", "source": "a"},
+    {"id": "x_1", "verb": "project", "columns": {"k": {"ref": "k"}, "g": {"ref": "g"}, "n": {"ref": "n"}, "d": {"fn": "coalesce", "args": [{"ref": "d"}, {"lit": 0.0}]}}},
+    {"id": "b", "verb": "rows", "source": "b"},
+    {"id": "x_2", "verb": "project", "columns": {"rk": {"ref": "k"}, "rd": {"fn": "coalesce", "args": [{"ref": "d"}, {"lit": 0.0}]}}},
+    {"id": "x_3", "verb": "join", "kind": "inner", "on": [{"left": "d", "right": "rd"}]},
+    {"id": "x_4", "verb": "project", "columns": {"k": {"fn": "concat", "args": [{"ref": "k"}, {"fn": "concat", "args": [{"lit": "+"}, {"ref": "rk"}]}]}, "g": {"ref": "g"}, "n": {"ref": "n"}}}
+  ],
+  "wires": [
+    {"from": "out_1", "to": "observed_1"},
+    {"from": "x_4", "to": "out_1"},
+    {"from": "a", "to": "x_1"},
+    {"from": "b", "to": "x_2"},
+    {"from": "x_1", "to": "x_3", "port": "left"},
+    {"from": "x_2", "to": "x_3", "port": "right"},
+    {"from": "x_3", "to": "x_4"}
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "graph": "v",
+  "ontology": "w.view",
+  "history": 0,
+  "inputs": [{"name": "master", "ontology": "w.base"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "emit_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Owned", "id": {"identity": "owned", "args": [{"ref": "k"}]}, "props": {"k": {"ref": "k"}, "owner": {"lit": "a"}}}]}},
+    {"id": "owned_1", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "i", "label": "Item"}], "edges": []}},
+    {"id": "owned_2", "verb": "project", "columns": {"k": {"ref": "i.k"}}}
+  ],
+  "wires": [
+    {"from": "owned_2", "to": "emit_1"},
+    {"from": "owned_1", "to": "owned_2"}
+  ]
+}

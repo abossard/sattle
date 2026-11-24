@@ -9,4 +9,5 @@
     <ProjectReference Include="../../src/Sattle.Cli/Sattle.Cli.csproj" />
   </ItemGroup>
   <ItemGroup><Using Include="Xunit" /></ItemGroup>
+  <ItemGroup><None Include="worlds/**/*" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
 </Project>

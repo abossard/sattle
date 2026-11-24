@@ -25,9 +25,10 @@ public sealed partial class GkqlSource
             declarations.AddRange((m.Entities ?? []).Select(e =>
                 new EntityDecl(false, e.Name, null, [], Members(e.Properties), null, At)));
             declarations.AddRange((m.Relationships ?? []).Select(e =>
-                new RelDecl(false, e.Name, null, null, [Reference(e.From)], [Reference(e.To)], Members(e.Properties), null, At, e.Hierarchy, e.Kind, e.Rollup)));
+                new RelDecl(false, e.Name, null, e.Super is { } super ? Reference(super) : null, [Reference(e.From)], [Reference(e.To)], Members(e.Properties), null, At, e.Hierarchy, e.Kind, e.Rollup)));
             declarations.AddRange((m.Identities ?? []).Select(i => new IdentityDecl(i.Name, Reference(i.Type), "1",
                 i.Components.Select(c => new KeyComp(c.Name, c.Type, c.Normalize, At)).ToList(), null, At)));
+            declarations.AddRange((m.Equivalences ?? []).Select(q => new EquivalenceDecl(q.Name, Reference(q.Left), Reference(q.Right), q.Mode ?? "assert", q.Threshold ?? 1m, null, At)));
             declarations.AddRange((m.Rows ?? []).Select(r => new RowsDecl(r.Name,
                 r.Fields.Select(f => new FieldDecl(f.Name, f.Optional, ValueType(f.Type), null, At)).ToList(), null, At)));
             declarations.AddRange((m.Constraints ?? []).Select(c => new ConstraintDecl(null, c.Kind, Reference(c.Type), null,
@@ -92,13 +93,16 @@ public sealed partial class GkqlSource
 
     sealed record ModuleDocument(string Module, string Version, List<ImportDocument>? Imports, List<EntityDocument>? Entities,
         List<RelationshipDocument>? Relationships, List<IdentityDocument>? Identities, List<RowsDocument>? Rows,
-        List<ConstraintDocument>? Constraints, SpaceDocument? Space);
+        List<ConstraintDocument>? Constraints, SpaceDocument? Space, List<EquivalenceDocument>? Equivalences = null);
     sealed record ImportDocument(string Module, string Alias, string Version, string? Digest);
     sealed record EntityDocument(string Name, List<PropertyDocument>? Properties);
     sealed record PropertyDocument(string Name, string Type, bool Optional, bool Label, TelemetryDocument? Telemetry,
         string? TreeRole, string? TreeCount, Dictionary<string, string>? Roles);
     sealed record TelemetryDocument(string Temporality, string Combine, string Period);
-    sealed record RelationshipDocument(string Name, string From, string To, string? Kind, bool Hierarchy, bool Rollup, List<PropertyDocument>? Properties);
+    /// <summary>`Super`: the relationship type this one is a sub-type of, so a pattern or a traverse over the super-type also follows it.</summary>
+    sealed record RelationshipDocument(string Name, string From, string To, string? Kind, bool Hierarchy, bool Rollup, List<PropertyDocument>? Properties, string? Super = null);
+    /// <summary>Two identity domains whose keys may name the same element, when a link says so: `assert` merges on a link, `review` waits for a decision.</summary>
+    sealed record EquivalenceDocument(string Name, string Left, string Right, string? Mode = null, decimal? Threshold = null);
     sealed record IdentityDocument(string Name, string Type, List<ComponentDocument> Components);
     sealed record ComponentDocument(string Name, string Type, string? Normalize);
     sealed record RowsDocument(string Name, List<FieldDocument> Fields);

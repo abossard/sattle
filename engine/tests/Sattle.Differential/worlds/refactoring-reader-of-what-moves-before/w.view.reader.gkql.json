@@ -1,0 +1,16 @@
+{
+  "graph": "reader",
+  "ontology": "w.view",
+  "history": 0,
+  "inputs": [{"name": "parent", "ontology": "w.view"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "emit_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Seen", "id": {"identity": "seen", "args": [{"ref": "a"}, {"ref": "b"}]}, "props": {"a": {"ref": "a"}, "b": {"ref": "b"}}}]}},
+    {"id": "seen_1", "verb": "graph-match", "graph": "parent", "pattern": {"nodes": [{"var": "x", "label": "Pair"}], "edges": []}},
+    {"id": "seen_2", "verb": "project", "columns": {"a": {"ref": "x.a"}, "b": {"ref": "x.b"}}}
+  ],
+  "wires": [
+    {"from": "seen_2", "to": "emit_1"},
+    {"from": "seen_1", "to": "seen_2"}
+  ]
+}

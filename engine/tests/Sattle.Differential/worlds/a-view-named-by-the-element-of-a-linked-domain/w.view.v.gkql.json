@@ -1,0 +1,16 @@
+{
+  "graph": "v",
+  "ontology": "w.view",
+  "history": 0,
+  "inputs": [{"name": "master", "ontology": "w"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "emit_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Tag", "id": {"ref": "p"}, "props": {"name": {"ref": "name"}}}]}},
+    {"id": "tag_1", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "p", "label": "Instance"}], "edges": []}},
+    {"id": "tag_2", "verb": "project", "columns": {"p": {"ref": "p"}, "name": {"ref": "p.name"}}}
+  ],
+  "wires": [
+    {"from": "tag_2", "to": "emit_1"},
+    {"from": "tag_1", "to": "tag_2"}
+  ]
+}

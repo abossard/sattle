@@ -1,0 +1,20 @@
+{
+  "graph": "ingest",
+  "ontology": "w",
+  "history": 0,
+  "inputs": [{"name": "a", "rows": "w.R"}, {"name": "b", "rows": "w.R"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "a", "verb": "rows", "source": "a"},
+    {"id": "byShare_1", "verb": "project", "columns": {"dk": {"ref": "g"}, "pk2": {"ref": "k"}, "own": {"fn": "iff", "args": [{"fn": ">", "args": [{"ref": "n"}, {"lit": 3}]}, {"lit": 3}, {"ref": "n"}]}}},
+    {"id": "byShare_2", "verb": "summarize", "by": {"dk": {"ref": "dk"}}, "aggregates": {"bad": {"fn": "sum", "args": [{"fn": "iff", "args": [{"fn": ">=", "args": [{"ref": "own"}, {"lit": 3}]}, {"lit": 1}, {"lit": 0}]}]}, "n": {"fn": "count"}, "silent": {"fn": "sum", "args": [{"fn": "iff", "args": [{"fn": ">=", "args": [{"ref": "own"}, {"lit": 1}]}, {"lit": 1}, {"lit": 0}]}]}, "weak": {"fn": "sum", "args": [{"fn": "iff", "args": [{"fn": ">=", "args": [{"ref": "own"}, {"lit": 2}]}, {"lit": 1}, {"lit": 0}]}]}}},
+    {"id": "byShare_3", "verb": "project", "columns": {"k": {"ref": "dk"}, "own": {"fn": "iff", "args": [{"fn": ">=", "args": [{"fn": "*", "args": [{"ref": "bad"}, {"lit": 2}]}, {"ref": "n"}]}, {"lit": 3}, {"fn": "iff", "args": [{"fn": ">=", "args": [{"fn": "*", "args": [{"ref": "weak"}, {"lit": 2}]}, {"ref": "n"}]}, {"lit": 2}, {"fn": "iff", "args": [{"fn": ">=", "args": [{"fn": "*", "args": [{"ref": "silent"}, {"lit": 2}]}, {"ref": "n"}]}, {"lit": 1}, {"lit": 0}]}]}]}}},
+    {"id": "observed_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Unit", "id": {"identity": "unit", "args": [{"ref": "k"}]}, "props": {"k": {"ref": "k"}, "own": {"ref": "own"}}}]}, "rule": "observed"}
+  ],
+  "wires": [
+    {"from": "a", "to": "byShare_1"},
+    {"from": "byShare_1", "to": "byShare_2"},
+    {"from": "byShare_2", "to": "byShare_3"},
+    {"from": "byShare_3", "to": "observed_1"}
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "graph": "v",
+  "ontology": "w.view",
+  "history": 0,
+  "inputs": [{"name": "master", "ontology": "w.base"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "copy_1", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "i", "label": "Item"}], "edges": []}},
+    {"id": "copy_2", "verb": "project", "columns": {"k": {"ref": "i.k"}}},
+    {"id": "copy_3", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "x", "label": "Item"}, {"var": "y", "label": "Item"}], "edges": [{"var": "r", "label": "Edge", "from": "x", "to": "y"}]}},
+    {"id": "copy_4", "verb": "project", "columns": {"k": {"ref": "x.k"}}},
+    {"id": "copy_5", "verb": "summarize", "by": {"k": {"ref": "k"}}, "aggregates": {"degree": {"fn": "count"}}},
+    {"id": "emit_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Copy", "id": {"identity": "copy", "args": [{"ref": "k"}]}, "props": {"k": {"ref": "k"}}}]}},
+    {"id": "emit_2", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Copy", "id": {"identity": "copy", "args": [{"ref": "k"}]}, "extend": true, "props": {"degree": {"ref": "degree"}}}]}}
+  ],
+  "wires": [
+    {"from": "copy_1", "to": "copy_2"},
+    {"from": "copy_3", "to": "copy_4"},
+    {"from": "copy_4", "to": "copy_5"},
+    {"from": "copy_2", "to": "emit_1"},
+    {"from": "copy_5", "to": "emit_2"}
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "graph": "ingest",
+  "ontology": "w",
+  "history": 0,
+  "inputs": [{"name": "a", "rows": "w.R"}, {"name": "b", "rows": "w.R"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "a", "verb": "rows", "source": "a"},
+    {"id": "agg_1", "verb": "summarize", "by": {"g": {"ref": "g"}}, "aggregates": {"total": {"fn": "count"}, "v": {"fn": "sum", "args": [{"fn": "iff", "args": [{"fn": ">", "args": [{"ref": "n"}, {"lit": 2}]}, {"lit": 1}, {"lit": 0}]}]}}},
+    {"id": "observed_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Agg", "id": {"identity": "agg", "args": [{"ref": "g"}]}, "props": {"g": {"ref": "g"}, "total": {"ref": "total"}, "v": {"ref": "v"}}}]}, "rule": "observed"}
+  ],
+  "wires": [
+    {"from": "a", "to": "agg_1"},
+    {"from": "agg_1", "to": "observed_1"}
+  ]
+}

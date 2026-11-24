@@ -1,0 +1,18 @@
+{
+  "graph": "v",
+  "ontology": "w.view",
+  "history": 0,
+  "inputs": [{"name": "master", "ontology": "w.base"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "emit_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Reach", "id": {"identity": "reach", "args": [{"ref": "a"}, {"ref": "b"}]}, "props": {"a": {"ref": "a"}, "b": {"ref": "b"}, "g": {"ref": "g"}}}]}},
+    {"id": "reach_1", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "i", "label": "Item"}], "edges": []}},
+    {"id": "reach_2", "verb": "traverse", "graph": "master", "traverse": {"edge": "Edge", "from": "i", "to": "d", "direction": "out", "min": 1, "max": 3}},
+    {"id": "reach_3", "verb": "project", "columns": {"a": {"ref": "i.k"}, "b": {"ref": "d.k"}, "g": {"ref": "d.g"}}}
+  ],
+  "wires": [
+    {"from": "reach_3", "to": "emit_1"},
+    {"from": "reach_1", "to": "reach_2"},
+    {"from": "reach_2", "to": "reach_3"}
+  ]
+}

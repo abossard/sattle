@@ -1,0 +1,13 @@
+{
+  "module": "w.view",
+  "version": "1.0.0",
+  "imports": [
+    {"module": "w", "alias": "base", "version": "1.0.0", "digest": null}
+  ],
+  "entities": [
+    {"name": "Node", "properties": [{"name": "name", "type": "Text", "optional": true}, {"name": "calls", "type": "Integer", "optional": true}, {"name": "state", "type": "Text", "optional": true}]}
+  ],
+  "relationships": [
+    {"name": "Talks", "from": "Node", "to": "Node", "properties": [{"name": "state", "type": "Text", "optional": true}]}
+  ]
+}

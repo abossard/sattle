@@ -1,0 +1,19 @@
+{
+  "module": "w.space",
+  "version": "1.0.0",
+  "imports": [
+    {"module": "w", "alias": "base", "version": "1.0.0", "digest": null}
+  ],
+  "space": {
+    "name": "s",
+    "sources": [
+      {"name": "items", "adapter": "record", "rows": "base.ItemRow"},
+      {"name": "belongs", "adapter": "record", "rows": "base.BelongsRow"},
+      {"name": "calls", "adapter": "record", "rows": "base.CallRow"}
+    ],
+    "graphs": [
+      {"name": "master", "projection": "base.ingest", "master": true, "inputs": {"items": "items", "belongs": "belongs", "calls": "calls"}},
+      {"name": "level", "projection": "base.level", "master": false, "inputs": {"master": "master"}}
+    ]
+  }
+}

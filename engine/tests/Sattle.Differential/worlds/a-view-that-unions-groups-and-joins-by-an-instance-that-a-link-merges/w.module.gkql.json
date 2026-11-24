@@ -1,0 +1,20 @@
+{
+  "module": "w",
+  "version": "1.0.0",
+  "imports": [],
+  "entities": [
+    {"name": "Instance", "properties": [{"name": "uid", "type": "Text", "optional": true}, {"name": "name", "type": "Text", "optional": true}, {"name": "g", "type": "Text", "optional": true}]}
+  ],
+  "relationships": [{"name": "Calls", "from": "Instance", "to": "Instance"}],
+  "identities": [
+    {"name": "instanceUid", "type": "Instance", "components": [{"name": "uid", "type": "Text"}]},
+    {"name": "instanceName", "type": "Instance", "components": [{"name": "name", "type": "Text", "normalize": "lowerInvariant"}]}
+  ],
+  "equivalences": [
+    {"name": "uidIsName", "left": "instanceUid", "right": "instanceName", "mode": "assert", "threshold": 1.0}
+  ],
+  "rows": [
+    {"name": "InstanceRow", "fields": [{"name": "uid", "type": "Text"}, {"name": "name", "type": "Text"}, {"name": "g", "type": "Text"}]},
+    {"name": "FlowRow", "fields": [{"name": "src", "type": "Text"}, {"name": "dst", "type": "Text"}]}
+  ]
+}

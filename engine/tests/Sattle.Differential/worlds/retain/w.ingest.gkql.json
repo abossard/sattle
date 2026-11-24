@@ -1,0 +1,18 @@
+{
+  "graph": "ingest",
+  "ontology": "w",
+  "history": 0,
+  "inputs": [{"name": "a", "rows": "w.R"}, {"name": "b", "rows": "w.R"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "observed_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Out", "id": {"identity": "out", "args": [{"ref": "k"}, {"ref": "g"}]}, "props": {"c": {"ref": "c"}, "g": {"ref": "g"}, "k": {"ref": "k"}, "s": {"ref": "s"}}}]}, "rule": "observed"},
+    {"id": "out_1", "verb": "summarize", "by": {"g": {"ref": "g"}, "k": {"ref": "k"}}, "aggregates": {"c": {"fn": "count"}, "s": {"fn": "sum", "args": [{"ref": "n"}]}}},
+    {"id": "a", "verb": "rows", "source": "a"},
+    {"id": "x_1", "verb": "retain", "retain": {"time": "t", "age": "2m"}}
+  ],
+  "wires": [
+    {"from": "out_1", "to": "observed_1"},
+    {"from": "x_1", "to": "out_1"},
+    {"from": "a", "to": "x_1"}
+  ]
+}

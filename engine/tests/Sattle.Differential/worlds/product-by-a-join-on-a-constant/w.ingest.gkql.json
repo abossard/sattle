@@ -1,0 +1,22 @@
+{
+  "graph": "ingest",
+  "ontology": "w",
+  "history": 0,
+  "inputs": [{"name": "a", "rows": "w.R"}, {"name": "b", "rows": "w.R"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "observed_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Pair", "id": {"identity": "pair", "args": [{"ref": "left"}, {"ref": "right"}]}, "props": {"left": {"ref": "left"}, "right": {"ref": "right"}}}]}, "rule": "observed"},
+    {"id": "a", "verb": "rows", "source": "a"},
+    {"id": "x_1", "verb": "project", "columns": {"left": {"ref": "k"}, "one": {"lit": 1}}},
+    {"id": "b", "verb": "rows", "source": "b"},
+    {"id": "x_2", "verb": "project", "columns": {"right": {"ref": "k"}, "other": {"lit": 1}}},
+    {"id": "x_3", "verb": "join", "kind": "inner", "on": [{"left": "one", "right": "other"}]}
+  ],
+  "wires": [
+    {"from": "x_3", "to": "observed_1"},
+    {"from": "a", "to": "x_1"},
+    {"from": "b", "to": "x_2"},
+    {"from": "x_1", "to": "x_3", "port": "left"},
+    {"from": "x_2", "to": "x_3", "port": "right"}
+  ]
+}

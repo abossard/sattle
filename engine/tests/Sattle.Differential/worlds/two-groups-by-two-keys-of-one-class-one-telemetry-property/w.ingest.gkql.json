@@ -1,0 +1,46 @@
+{
+  "graph": "ingest",
+  "ontology": "w",
+  "history": 0,
+  "inputs": [
+    {"name": "flows", "rows": "w.FlowRow"},
+    {"name": "loads", "rows": "w.LoadRow"},
+    {"name": "instances", "rows": "w.InstanceRow"}
+  ],
+  "parameters": [],
+  "verbs": [
+    {"id": "instances", "verb": "rows", "source": "instances"},
+    {"id": "observed_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Instance", "id": {"identity": "instanceUid", "args": [{"ref": "uid"}]}, "props": {"g": {"ref": "g"}, "uid": {"ref": "uid"}}}]}, "rule": "observed"},
+    {"id": "observed_2", "verb": "link", "link": {"policy": "uidIsName", "left": {"identity": "instanceUid", "args": [{"ref": "uid"}]}, "right": {"identity": "instanceName", "args": [{"ref": "name"}]}, "confidence": 1.0}, "rule": "observed"},
+    {"id": "observed_3", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Instance", "id": {"identity": "instanceName", "args": [{"ref": "name"}]}, "props": {"name": {"fn": "lower", "args": [{"ref": "name"}]}}}]}, "rule": "observed"},
+    {"id": "flows", "verb": "rows", "source": "flows"},
+    {"id": "observed_4", "verb": "edges", "target": {"nodes": [{"var": "s", "label": "Instance", "id": {"identity": "instanceName", "args": [{"ref": "src"}]}}, {"var": "t", "label": "Instance", "id": {"identity": "instanceName", "args": [{"ref": "dst"}]}}], "edges": [{"var": "e", "label": "Calls", "from": "s", "to": "t"}]}, "rule": "observed"},
+    {"id": "observed_5", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Instance", "id": {"identity": "instanceUid", "args": [{"ref": "uid"}]}, "extend": true, "props": {"load": {"ref": "c"}}}]}, "rule": "observed"},
+    {"id": "observed_6", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Instance", "id": {"identity": "instanceName", "args": [{"ref": "name"}]}, "extend": true, "props": {"load": {"ref": "c"}}}]}, "rule": "observed"},
+    {"id": "instance_1", "verb": "project", "columns": {"name": {"ref": "src"}}},
+    {"id": "instance_2", "verb": "distinct"},
+    {"id": "loads", "verb": "rows", "source": "loads"},
+    {"id": "instance_3", "verb": "where", "condition": {"fn": "and", "args": [{"fn": "isnotnull", "args": [{"ref": "uid"}]}, {"fn": "!=", "args": [{"fn": "coalesce", "args": [{"ref": "uid"}, {"lit": ""}]}, {"lit": ""}]}]}},
+    {"id": "instance_4", "verb": "window", "window": {"time": "t", "period": "1m"}},
+    {"id": "instance_5", "verb": "summarize", "by": {"uid": {"ref": "uid"}, "windowStart": {"ref": "windowStart"}}, "aggregates": {"c": {"fn": "sum", "args": [{"ref": "n"}]}}},
+    {"id": "instance_6", "verb": "where", "condition": {"fn": "and", "args": [{"fn": "isnotnull", "args": [{"ref": "name"}]}, {"fn": "!=", "args": [{"fn": "coalesce", "args": [{"ref": "name"}, {"lit": ""}]}, {"lit": ""}]}]}},
+    {"id": "instance_7", "verb": "window", "window": {"time": "t", "period": "1m"}},
+    {"id": "instance_8", "verb": "summarize", "by": {"name": {"ref": "name"}, "windowStart": {"ref": "windowStart"}}, "aggregates": {"c": {"fn": "sum", "args": [{"ref": "n"}]}}}
+  ],
+  "wires": [
+    {"from": "instances", "to": "observed_1"},
+    {"from": "instances", "to": "observed_2"},
+    {"from": "instance_2", "to": "observed_3"},
+    {"from": "flows", "to": "observed_4"},
+    {"from": "instance_5", "to": "observed_5"},
+    {"from": "instance_8", "to": "observed_6"},
+    {"from": "flows", "to": "instance_1"},
+    {"from": "instance_1", "to": "instance_2"},
+    {"from": "loads", "to": "instance_3"},
+    {"from": "instance_3", "to": "instance_4"},
+    {"from": "instance_4", "to": "instance_5"},
+    {"from": "loads", "to": "instance_6"},
+    {"from": "instance_6", "to": "instance_7"},
+    {"from": "instance_7", "to": "instance_8"}
+  ]
+}

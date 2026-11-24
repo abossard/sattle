@@ -1,0 +1,16 @@
+{
+  "graph": "extracted",
+  "ontology": "w.view",
+  "history": 0,
+  "inputs": [{"name": "master", "ontology": "w.base"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "copy_1", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "x", "label": "Item"}, {"var": "y", "label": "Item"}], "edges": [{"var": "e", "label": "Edge", "from": "x", "to": "y"}]}},
+    {"id": "copy_2", "verb": "project", "columns": {"k": {"ref": "y.k"}, "g": {"ref": "y.g"}, "n": {"ref": "y.n"}}},
+    {"id": "emit_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Copy", "id": {"identity": "copy", "args": [{"ref": "k"}]}, "props": {"g": {"ref": "g"}, "k": {"ref": "k"}, "n": {"ref": "n"}}}]}}
+  ],
+  "wires": [
+    {"from": "copy_1", "to": "copy_2"},
+    {"from": "copy_2", "to": "emit_1"}
+  ]
+}

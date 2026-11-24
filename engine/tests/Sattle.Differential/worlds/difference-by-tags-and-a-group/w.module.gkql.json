@@ -1,0 +1,14 @@
+{
+  "module": "w",
+  "version": "1.0.0",
+  "imports": [],
+  "entities": [
+    {"name": "Only", "properties": [{"name": "k", "type": "Text"}]}
+  ],
+  "identities": [
+    {"name": "only", "type": "Only", "components": [{"name": "k", "type": "Text"}]}
+  ],
+  "rows": [
+    {"name": "R", "fields": [{"name": "k", "type": "Text"}, {"name": "g", "type": "Text"}]}
+  ]
+}

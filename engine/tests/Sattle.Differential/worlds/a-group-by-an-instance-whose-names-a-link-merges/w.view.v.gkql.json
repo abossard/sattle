@@ -1,0 +1,18 @@
+{
+  "graph": "v",
+  "ontology": "w.view",
+  "history": 0,
+  "inputs": [{"name": "master", "ontology": "w"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "caller_1", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "c", "label": "Call"}, {"var": "p", "label": "Instance"}], "edges": [{"var": "o", "label": "Of", "from": "c", "to": "p"}]}},
+    {"id": "caller_2", "verb": "project", "columns": {"p": {"ref": "p"}}},
+    {"id": "caller_3", "verb": "summarize", "by": {"p": {"ref": "p"}}, "aggregates": {"calls": {"fn": "count"}}},
+    {"id": "emit_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Caller", "id": {"ref": "p"}, "props": {"calls": {"ref": "calls"}}}]}}
+  ],
+  "wires": [
+    {"from": "caller_1", "to": "caller_2"},
+    {"from": "caller_2", "to": "caller_3"},
+    {"from": "caller_3", "to": "emit_1"}
+  ]
+}

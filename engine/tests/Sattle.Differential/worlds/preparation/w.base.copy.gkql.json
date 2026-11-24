@@ -1,0 +1,27 @@
+{
+  "graph": "copy",
+  "ontology": "w.base",
+  "history": 0,
+  "inputs": [{"name": "source", "ontology": "w.base"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "edge_1", "verb": "graph-match", "graph": "source", "pattern": {"nodes": [{"var": "d", "label": "Item"}, {"var": "s", "label": "Item"}], "edges": [{"var": "e", "label": "Edge", "from": "s", "to": "d"}]}},
+    {"id": "edge_2", "verb": "project", "columns": {"s": {"ref": "s"}, "d": {"ref": "d"}}},
+    {"id": "emit_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Item", "id": {"ref": "i"}, "props": {"k": {"ref": "k"}, "n": {"ref": "n"}, "reading": {"ref": "reading"}}}]}},
+    {"id": "emit_2", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Item", "id": {"ref": "i"}, "extend": true, "props": {"hits": {"ref": "hits"}}}]}},
+    {"id": "emit_3", "verb": "edges", "target": {"nodes": [{"var": "s", "label": "Item", "id": {"ref": "s"}}, {"var": "t", "label": "Item", "id": {"ref": "d"}}], "edges": [{"var": "e", "label": "Edge", "from": "s", "to": "t"}]}},
+    {"id": "item_1", "verb": "series", "graph": "source", "series": {"element": "i", "property": "hits", "lookback": "3m"}},
+    {"id": "item_2", "verb": "summarize", "by": {"i": {"ref": "i"}, "windowStart": {"ref": "windowStart"}}, "aggregates": {"hits": {"fn": "sum", "args": [{"ref": "hits"}]}}},
+    {"id": "items_1", "verb": "graph-match", "graph": "source", "pattern": {"nodes": [{"var": "i", "label": "Item"}], "edges": []}},
+    {"id": "items_2", "verb": "project", "columns": {"i": {"ref": "i"}, "k": {"ref": "i.k"}, "n": {"ref": "i.n"}, "reading": {"ref": "i.reading"}}}
+  ],
+  "wires": [
+    {"from": "edge_1", "to": "edge_2"},
+    {"from": "items_2", "to": "emit_1"},
+    {"from": "item_2", "to": "emit_2"},
+    {"from": "edge_2", "to": "emit_3"},
+    {"from": "items_2", "to": "item_1"},
+    {"from": "item_1", "to": "item_2"},
+    {"from": "items_1", "to": "items_2"}
+  ]
+}

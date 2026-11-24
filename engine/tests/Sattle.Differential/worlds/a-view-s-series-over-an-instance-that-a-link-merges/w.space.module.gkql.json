@@ -1,0 +1,20 @@
+{
+  "module": "w.space",
+  "version": "1.0.0",
+  "imports": [
+    {"module": "w", "alias": "base", "version": "1.0.0", "digest": null},
+    {"module": "w.view", "alias": "view", "version": "1.0.0", "digest": null}
+  ],
+  "space": {
+    "name": "s",
+    "sources": [
+      {"name": "instances", "adapter": "record", "rows": "base.InstanceRow"},
+      {"name": "flows", "adapter": "record", "rows": "base.FlowRow"},
+      {"name": "loads", "adapter": "record", "rows": "base.LoadRow"}
+    ],
+    "graphs": [
+      {"name": "master", "projection": "base.ingest", "master": true, "inputs": {"instances": "instances", "flows": "flows", "loads": "loads"}},
+      {"name": "view", "projection": "view.v", "master": false, "inputs": {"master": "master"}}
+    ]
+  }
+}

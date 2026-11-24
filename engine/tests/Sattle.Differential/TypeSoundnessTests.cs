@@ -9,19 +9,33 @@ namespace Sattle.Differential;
 public class TypeSoundnessTests
 {
     const string Types = """
-        module w @ 1.0.0;
-        entity Out { k: Text; s: Text; v?: Decimal; c?: Integer; }
-        identity out for Out version "1" { k: Text by exact; }
-        rows R { k: Text; g: Text; n: Integer; d?: Decimal; t: Instant; }
+        {
+          "module": "w", "version": "1.0.0", "imports": [],
+          "entities": [{"name": "Out", "properties": [{"name": "k", "type": "Text"}, {"name": "s", "type": "Text"}, {"name": "v", "type": "Decimal", "optional": true}, {"name": "c", "type": "Integer", "optional": true}]}],
+          "identities": [{"name": "out", "type": "Out", "components": [{"name": "k", "type": "Text"}]}],
+          "rows": [{"name": "R", "fields": [{"name": "k", "type": "Text"}, {"name": "g", "type": "Text"}, {"name": "n", "type": "Integer"}, {"name": "d", "type": "Decimal", "optional": true}, {"name": "t", "type": "Instant"}]}]
+        }
         """;
-    static readonly SourceFile Space = Worlds.Space("import w @ 1.0.0 sha256:… as base;", "  source a adapter \"sattle.authoring\" rows base.R;\n  master graph master = base.ingest(a: a);");
+    const string Space = """
+        {
+          "module": "w.space", "version": "1.0.0", "imports": [{"module": "w", "alias": "base", "version": "1.0.0"}],
+          "space": {"name": "s", "sources": [{"name": "a", "adapter": "sattle.authoring", "rows": "base.R"}], "graphs": [{"name": "master", "projection": "base.ingest", "master": true, "inputs": {"a": "a"}}]}
+        }
+        """;
 
     sealed record Rel(string Name, Dictionary<string, (string Kind, bool Req)> Cols);
 
-    /// <summary>A random chain over `a`, as KQL statements, and the relation it ends in.</summary>
-    static (string Body, Rel Last) Chain(Random r)
+    static string Ref(string column) => $$"""{"ref": "{{column}}"}""";
+    static string Lit(string json) => $$"""{"lit": {{json}}}""";
+    static string Fn(string name, params string[] args) => $$"""{"fn": "{{name}}", "args": [{{string.Join(", ", args)}}]}""";
+    static string Verb(string id, string verb, string fields = "") => $$"""{"id": "{{id}}", "verb": "{{verb}}"{{(fields == "" ? "" : ", " + fields)}}}""";
+    static string Wire(string from, string to) => $$"""{"from": "{{from}}", "to": "{{to}}"}""";
+    static string Object(IEnumerable<(string Name, string Json)> fields) => "{" + string.Join(", ", fields.Select(f => $"\"{f.Name}\": {f.Json}")) + "}";
+
+    /// <summary>A random chain over `a`, as gkql verbs and wires, and the relation it ends in.</summary>
+    static (List<string> Verbs, List<string> Wires, Rel Last) Chain(Random r)
     {
-        var sb = new System.Text.StringBuilder();
+        List<string> verbs = [Verb("a", "rows", "\"source\": \"a\"")], wires = [];
         var cur = new Rel("a", new() { ["k"] = ("Text", true), ["g"] = ("Text", true), ["n"] = ("Integer", true), ["d"] = ("Decimal", false), ["t"] = ("Instant", true) });
         for (var i = 0; i < r.Next(1, 5); i++)
         {
@@ -32,73 +46,82 @@ public class TypeSoundnessTests
             {
                 case 0:
                     {
-                        var preds = new List<string> { "g != \"g1\"", "k != \"k0\"" };
-                        preds.AddRange(ints.Select(n => $"{n} > {r.Next(4)}"));
-                        preds.AddRange(decs.Select(d => $"isnotnull({d})"));
-                        sb.AppendLine($"let {name} = {cur.Name} | where {preds[r.Next(preds.Count)]};");
+                        var preds = new List<string> { Fn("!=", Ref("g"), Lit("\"g1\"")), Fn("!=", Ref("k"), Lit("\"k0\"")) };
+                        preds.AddRange(ints.Select(n => Fn(">", Ref(n), Lit(r.Next(4).ToString()))));
+                        preds.AddRange(decs.Select(d => Fn("isnotnull", Ref(d))));
+                        verbs.Add(Verb(name, "where", $"\"condition\": {preds[r.Next(preds.Count)]}"));
+                        wires.Add(Wire(cur.Name, name));
                         cur = cur with { Name = name };
                         break;
                     }
                 case 1:
                     {
                         var cols = new Dictionary<string, (string, bool)> { ["k"] = ("Text", true), ["g"] = ("Text", true) };
-                        var exprs = new List<string> { "k", "g" };
+                        var exprs = new List<(string, string)> { ("k", Ref("k")), ("g", Ref("g")) };
                         if (ints.Count > 0)
                         {
                             var n = ints[r.Next(ints.Count)];
-                            var (e, req) = r.Next(3) switch { 0 => ($"{n} * 2 + 1", cur.Cols[n].Req), 1 => ($"{n} * 4611686018427387904", cur.Cols[n].Req), _ => ($"{n} - 3", cur.Cols[n].Req) };   // the second overflows from 2 on
-                            exprs.Add($"n = {e}"); cols["n"] = ("Integer", req);
+                            var e = r.Next(3) switch { 0 => Fn("+", Fn("*", Ref(n), Lit("2")), Lit("1")), 1 => Fn("*", Ref(n), Lit("4611686018427387904")), _ => Fn("-", Ref(n), Lit("3")) };   // the second overflows from 2 on
+                            exprs.Add(("n", e)); cols["n"] = ("Integer", cur.Cols[n].Req);
                         }
                         if (decs.Count > 0 && ints.Count > 0)
                         {
                             var (d, n) = (decs[r.Next(decs.Count)], ints[r.Next(ints.Count)]);
-                            var dv = cur.Cols[d].Req ? d : $"coalesce({d}, 1.5)";
-                            exprs.Add(r.Next(2) == 0 ? $"d = {dv} / {n}" : $"d = iff({n} > 0, {dv} * 2.5, 0.0)");                                   // the first divides by zero where n is 0
+                            var dv = cur.Cols[d].Req ? Ref(d) : Fn("coalesce", Ref(d), Lit("1.5"));
+                            exprs.Add(("d", r.Next(2) == 0 ? Fn("/", dv, Ref(n)) : Fn("iff", Fn(">", Ref(n), Lit("0")), Fn("*", dv, Lit("2.5")), Lit("0.0"))));   // the first divides by zero where n is 0
                             cols["d"] = ("Decimal", true);
                         }
-                        sb.AppendLine($"let {name} = {cur.Name} | project {string.Join(", ", exprs)};");
+                        verbs.Add(Verb(name, "project", $"\"columns\": {Object(exprs)}"));
+                        wires.Add(Wire(cur.Name, name));
                         cur = new Rel(name, cols);
                         break;
                     }
                 case 2:
                     {
                         var cols = new Dictionary<string, (string, bool)> { ["k"] = ("Text", true), ["g"] = ("Text", true), ["c"] = ("Integer", true) };
-                        var aggs = new List<string> { "c = count()" };
-                        if (ints.Count > 0) { aggs.Add($"n = sum({ints[0]})"); cols["n"] = ("Integer", true); }
-                        if (decs.Count > 0) { aggs.Add(r.Next(2) == 0 ? $"d = max({decs[0]})" : $"d = avg({decs[0]})"); cols["d"] = ("Decimal", false); }
-                        sb.AppendLine($"let {name} = {cur.Name} | summarize {string.Join(", ", aggs)} by k, g;");
+                        var aggs = new List<(string, string)> { ("c", """{"fn": "count"}""") };
+                        if (ints.Count > 0) { aggs.Add(("n", Fn("sum", Ref(ints[0])))); cols["n"] = ("Integer", true); }
+                        if (decs.Count > 0) { aggs.Add(("d", Fn(r.Next(2) == 0 ? "max" : "avg", Ref(decs[0])))); cols["d"] = ("Decimal", false); }
+                        verbs.Add(Verb(name, "summarize", $"\"by\": {Object([("k", Ref("k")), ("g", Ref("g"))])}, \"aggregates\": {Object(aggs)}"));
+                        wires.Add(Wire(cur.Name, name));
                         cur = new Rel(name, cols);
                         break;
                     }
                 default:
                     {
                         var keep = cur.Cols.Where(c => c.Value.Kind != "Instant").ToDictionary(c => c.Key, c => c.Value);
-                        sb.AppendLine($"let {name} = {cur.Name} | project {string.Join(", ", keep.Keys)} | distinct *;");
+                        verbs.Add(Verb(name + "p", "project", $"\"columns\": {Object(keep.Keys.Select(c => (c, Ref(c))))}"));
+                        verbs.Add(Verb(name, "distinct"));
+                        wires.Add(Wire(cur.Name, name + "p")); wires.Add(Wire(name + "p", name));
                         cur = new Rel(name, keep);
                         break;
                     }
             }
         }
-        return (sb.ToString(), cur);
+        return (verbs, wires, cur);
     }
 
-    /// <summary>The definitions of a chain: two steps make `Out` from its last relation under one key, so a row may give two values for `s`.</summary>
-    static SourceFile[] Module(string body, Rel last)
+    /// <summary>The definitions of a chain: two sinks make `Out` from its last relation under one key, so a row may give two values for `s`.</summary>
+    static SourceFile[] Module(List<string> chain, List<string> wires, Rel last)
     {
-        var sets = new List<string> { "k", "s = g" };
-        if (last.Cols.FirstOrDefault(c => c.Value.Kind == "Decimal").Key is { } v) sets.Add($"v = {v}");
-        if (last.Cols.FirstOrDefault(c => c.Value.Kind == "Integer").Key is { } c) sets.Add(c == "c" ? "c" : $"c = {c}");
+        var sets = new List<(string, string)> { ("k", Ref("k")), ("s", Ref("g")) };
+        if (last.Cols.FirstOrDefault(c => c.Value.Kind == "Decimal").Key is { } v) sets.Add(("v", Ref(v)));
+        if (last.Cols.FirstOrDefault(c => c.Value.Kind == "Integer").Key is { } c) sets.Add(("c", Ref(c)));
+        string Sink(string id, IEnumerable<(string, string)> props) =>
+            Verb(id, "nodes", $$"""
+                "target": {"nodes": [{"var": "o", "label": "Out", "id": {"identity": "out", "args": [{"ref": "k"}]}, "props": {{Object(props)}}}]}, "rule": "observed"
+                """);
+        List<string> verbs = [.. chain, Sink("out1", sets), Sink("out2", [("k", Ref("k")), ("s", Fn("concat", Ref("g"), Lit("\"!\"")))])];
+        List<string> all = [.. wires, Wire(last.Name, "out1"), Wire(last.Name, "out2")];
         return
         [
-            new SourceFile("w.sattle", Types),
-            Worlds.Kql("w", "ingest", $"""
-                graph ingest : w;
-                input a : R;
-                {body}
-                nodes Out on o with (rule = "observed") = {last.Name} | project o = identity("out", k), {string.Join(", ", sets)};
-                nodes Out on o with (rule = "observed") = {last.Name} | project o = identity("out", k), k, s = strcat(g, "!");
+            new SourceFile("w.module.gkql.json", Types),
+            new SourceFile("w.ingest.gkql.json", $$"""
+                {"graph": "ingest", "ontology": "w", "history": 0, "inputs": [{"name": "a", "rows": "w.R"}], "parameters": [],
+                 "verbs": [{{string.Join(",\n", verbs)}}],
+                 "wires": [{{string.Join(", ", all)}}]}
                 """),
-            Space,
+            new SourceFile("w.space.module.gkql.json", Space),
         ];
     }
 
@@ -113,8 +136,8 @@ public class TypeSoundnessTests
         var (checkedChains, withFaults) = (0, 0);
         for (var i = 0; i < 12; i++)
         {
-            var (body, last) = Chain(r);
-            var files = Module(body, last);
+            var (verbs, wires, last) = Chain(r);
+            var files = Module(verbs, wires, last);
             var catalog = new Catalog(EngineRun.Projections);
             var res = catalog.Load(files, updatePins: true);
             Assert.False(res.Diagnostics.Any(d => d.IsError), "the generator wrote a definition that does not check:\n" + files[1].Text + "\n" + string.Join("\n", res.Diagnostics.Where(d => d.IsError)));
@@ -150,7 +173,7 @@ public class TypeSoundnessTests
     [Fact]
     public void A_fault_is_counted_and_leaves_only_its_own_value_absent()
     {
-        var catalog = EngineRun.Load(Module("let x0 = a | project k, g, n = n * 4611686018427387904;", new Rel("x0", new() { ["k"] = ("Text", true), ["g"] = ("Text", true), ["n"] = ("Integer", true) })));
+        var catalog = EngineRun.Load(Module([Verb("a", "rows", "\"source\": \"a\""), Verb("x0", "project", $"\"columns\": {Object([("k", Ref("k")), ("g", Ref("g")), ("n", Fn("*", Ref("n"), Lit("4611686018427387904")))])}")], [Wire("a", "x0")], new Rel("x0", new() { ["k"] = ("Text", true), ["g"] = ("Text", true), ["n"] = ("Integer", true) })));
         using var e = new Engine(catalog, catalog.Spaces.Keys.Single());
         Sattle.Reference.RowInput Row_(string k, long n) => new("a", Row(("k", Value.Text(k)), ("g", Value.Text("g")), ("n", Value.Integer(n)), ("d", Value.Null), ("t", Value.Instant(Origin))), 1);
         EngineRun.Ingest(e, [Row_("k0", 1), Row_("k1", 3), Row_("k2", 0)], 1);

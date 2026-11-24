@@ -1,0 +1,24 @@
+{
+  "graph": "ingest",
+  "ontology": "w",
+  "history": 0,
+  "inputs": [{"name": "a", "rows": "w.R"}, {"name": "b", "rows": "w.R"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "a", "verb": "rows", "source": "a"},
+    {"id": "meter_1", "verb": "window", "window": {"time": "t", "period": "1m"}},
+    {"id": "meter_2", "verb": "summarize", "by": {"k": {"ref": "k"}, "windowStart": {"ref": "windowStart"}}, "aggregates": {"hits": {"fn": "count"}, "total": {"fn": "sum", "args": [{"ref": "n"}]}}},
+    {"id": "meter_3", "verb": "project", "columns": {"k": {"ref": "k"}, "at": {"ref": "windowStart"}, "hits": {"ref": "hits"}, "total": {"ref": "total"}}},
+    {"id": "meter_4", "verb": "window", "window": {"time": "at", "period": "3m", "hop": "1m"}},
+    {"id": "meter_5", "verb": "summarize", "by": {"k": {"ref": "k"}, "windowStart": {"ref": "windowStart"}}, "aggregates": {"hits": {"fn": "sum", "args": [{"ref": "hits"}]}, "total": {"fn": "sum", "args": [{"ref": "total"}]}}},
+    {"id": "observed_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Meter", "id": {"identity": "meter", "args": [{"ref": "k"}]}, "props": {"hits": {"ref": "hits"}, "k": {"ref": "k"}, "total": {"ref": "total"}}}]}, "rule": "observed"}
+  ],
+  "wires": [
+    {"from": "a", "to": "meter_1"},
+    {"from": "meter_1", "to": "meter_2"},
+    {"from": "meter_2", "to": "meter_3"},
+    {"from": "meter_3", "to": "meter_4"},
+    {"from": "meter_4", "to": "meter_5"},
+    {"from": "meter_5", "to": "observed_1"}
+  ]
+}

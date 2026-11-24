@@ -1,0 +1,16 @@
+{
+  "graph": "ingest",
+  "ontology": "w",
+  "history": 0,
+  "inputs": [{"name": "a", "rows": "w.R"}, {"name": "b", "rows": "w.R"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "observed_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "E", "id": {"identity": "e", "args": [{"ref": "k"}]}, "props": {"k": {"ref": "k"}}}]}, "rule": "observed"},
+    {"id": "a", "verb": "rows", "source": "a"},
+    {"id": "x_1", "verb": "where", "condition": {"fn": ">", "args": [{"ref": "n"}, {"lit": 2}]}}
+  ],
+  "wires": [
+    {"from": "x_1", "to": "observed_1"},
+    {"from": "a", "to": "x_1"}
+  ]
+}

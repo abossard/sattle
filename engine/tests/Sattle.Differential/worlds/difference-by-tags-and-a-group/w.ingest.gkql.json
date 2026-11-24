@@ -1,0 +1,26 @@
+{
+  "graph": "ingest",
+  "ontology": "w",
+  "history": 0,
+  "inputs": [{"name": "a", "rows": "w.R"}, {"name": "b", "rows": "w.R"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "a", "verb": "rows", "source": "a"},
+    {"id": "fromA_1", "verb": "project", "columns": {"k": {"ref": "k"}, "ina": {"lit": 1}, "inb": {"lit": 0}}},
+    {"id": "b", "verb": "rows", "source": "b"},
+    {"id": "fromB_1", "verb": "project", "columns": {"k": {"ref": "k"}, "ina": {"lit": 0}, "inb": {"lit": 1}}},
+    {"id": "observed_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Only", "id": {"identity": "only", "args": [{"ref": "k"}]}, "props": {"k": {"ref": "k"}}}]}, "rule": "observed"},
+    {"id": "only_1", "verb": "union"},
+    {"id": "only_2", "verb": "summarize", "by": {"k": {"ref": "k"}}, "aggregates": {"ina": {"fn": "sum", "args": [{"ref": "ina"}]}, "inb": {"fn": "sum", "args": [{"ref": "inb"}]}}},
+    {"id": "only_3", "verb": "where", "condition": {"fn": "and", "args": [{"fn": ">", "args": [{"ref": "ina"}, {"lit": 0}]}, {"fn": "==", "args": [{"ref": "inb"}, {"lit": 0}]}]}}
+  ],
+  "wires": [
+    {"from": "a", "to": "fromA_1"},
+    {"from": "b", "to": "fromB_1"},
+    {"from": "only_3", "to": "observed_1"},
+    {"from": "fromA_1", "to": "only_1"},
+    {"from": "fromB_1", "to": "only_1"},
+    {"from": "only_1", "to": "only_2"},
+    {"from": "only_2", "to": "only_3"}
+  ]
+}

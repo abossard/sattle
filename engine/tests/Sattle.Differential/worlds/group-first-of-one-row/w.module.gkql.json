@@ -1,0 +1,14 @@
+{
+  "module": "w",
+  "version": "1.0.0",
+  "imports": [],
+  "entities": [
+    {"name": "Agg", "properties": [{"name": "g", "type": "Text"}, {"name": "v", "type": "Text", "optional": true}, {"name": "w", "type": "Decimal", "optional": true}, {"name": "x", "type": "Integer", "optional": true}]}
+  ],
+  "identities": [
+    {"name": "agg", "type": "Agg", "components": [{"name": "g", "type": "Text"}]}
+  ],
+  "rows": [
+    {"name": "R", "fields": [{"name": "k", "type": "Text"}, {"name": "g", "type": "Text"}, {"name": "n", "type": "Integer"}, {"name": "d", "type": "Decimal", "optional": true}, {"name": "t", "type": "Instant"}]}
+  ]
+}

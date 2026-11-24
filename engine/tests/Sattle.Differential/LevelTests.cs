@@ -12,71 +12,8 @@ public class LevelTests
     const int Windows = 8;
     static readonly string[] Groups = ["g0", "g1", "g2", "g3"];
 
-    const string Types = """
-        module w @ 1.0.0;
-        entity Item { k: Text label; }
-        entity Group { name: Text label; }
-        relationship Edge (Item) -> (Item) kind communication { calls?: Integer telemetry delta sum every 60s; }
-        relationship Belongs (Item) -> (Group) kind composition;
-        relationship Talks (Group) -> (Group) kind communication { calls?: Integer telemetry delta sum every 60s; }
-        identity item for Item version "1" { k: Text by exact; }
-        identity group for Group version "1" { name: Text by exact; }
-        rows ItemRow { k: Text; }
-        rows BelongsRow { k: Text; g: Text; }
-        rows CallRow { src: Text; dst: Text; n: Integer; t: Instant; }
-        """;
-
-    /// <summary>The master: items, the groups of the items, and the calls between items as edges, with their count per window added on top.</summary>
-    const string Ingest = """
-        graph ingest : w;
-        input items : ItemRow;
-        input belongs : BelongsRow;
-        input calls : CallRow;
-        nodes Item on i with (rule = "observed") = items | project i = identity("item", k), k;
-        nodes Group on grp with (rule = "observed") = belongs | project grp = identity("group", g), name = g;
-        edges Belongs from i to grp with (rule = "observed") = belongs | project i = identity("item", k), grp = identity("group", g);
-        edges Edge from s to d with (rule = "observed") = calls | project s = identity("item", src), d = identity("item", dst);
-        extend edges Edge from s to d with (rule = "observed") = calls
-            | summarize calls = sum(n) by src, dst, windowStart = bin(t, 60s)
-            | project s = identity("item", src), d = identity("item", dst), windowStart, calls;
-        """;
-
-    /// <summary>The level, in the shape of capabilityView (`oneImage`: the join that keeps the items with exactly one group) or of serviceDeps (no such join).</summary>
-    static string Level(bool oneImage) => $"""
-        graph level : w;
-        input master : w;
-        let belongs = graph("master")
-            | graph-match (i)-[m]->(g) where labels(m) has "Belongs"
-              project item = i.id, grp = g.id;
-        {(oneImage
-            ? "let images = belongs | join kind=inner (belongs | summarize n = count() by item | where n == 1) on item | project item, grp;"
-            : "let images = belongs;")}
-        let lifted = graph("master")
-            | graph-match (a)-[e]->(b) where labels(e) has "Edge"
-              project edge = e.id, fromItem = a.id, toItem = b.id
-            | join kind=inner (images | project fromImage = item, sg = grp) on $left.fromItem == $right.fromImage
-            | join kind=inner (images | project toImage = item, tg = grp) on $left.toItem == $right.toImage
-            | where sg != tg;
-        nodes Group on g = graph("master") | graph-match (g) where labels(g) has "Group" project g = g.id, name = g.name;
-        edges Talks from sg to tg = lifted;
-        extend edges Talks from sg to tg = lifted
-            | join kind=inner (telemetry("master", 24h) | where property == "calls" | project edge = id, windowStart, value) on edge
-            | summarize calls = sum(value) by sg, tg, windowStart;
-        """;
-
-    static World LevelWorld(bool oneImage) => new(oneImage ? "level with one image per item" : "level with every image of an item", "Match, Join, Filter, Group, EmitRelationship",
-        [
-            new SourceFile("w.sattle", Types),
-            Worlds.Kql("w", "ingest", Ingest),
-            Worlds.Kql("w", "level", Level(oneImage)),
-            Worlds.Space("import w @ 1.0.0 sha256:… as base;", """
-                  source items adapter "record" rows base.ItemRow;
-                  source belongs adapter "record" rows base.BelongsRow;
-                  source calls adapter "record" rows base.CallRow;
-                  master graph master = base.ingest(items: items, belongs: belongs, calls: calls);
-                  graph level = base.level(master: master);
-                """),
-        ], []);
+    static World LevelWorld(bool oneImage) => oneImage ? Named("level with one image per item") : Named("level with every image of an item");
+    static World Named(string name) => new(name, "Match, Join, Filter, Group, EmitRelationship", Worlds.Files(name), []);
     static readonly World OneImage = LevelWorld(true), EveryImage = LevelWorld(false);
 
     // ---- the generated input ----

@@ -1,0 +1,14 @@
+{
+  "module": "w",
+  "version": "1.0.0",
+  "imports": [],
+  "entities": [
+    {"name": "Meter", "properties": [{"name": "k", "type": "Text"}, {"name": "hits", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}, {"name": "total", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}]}
+  ],
+  "identities": [
+    {"name": "meter", "type": "Meter", "components": [{"name": "k", "type": "Text"}]}
+  ],
+  "rows": [
+    {"name": "R", "fields": [{"name": "k", "type": "Text"}, {"name": "g", "type": "Text"}, {"name": "n", "type": "Integer"}, {"name": "d", "type": "Decimal", "optional": true}, {"name": "t", "type": "Instant"}]}
+  ]
+}

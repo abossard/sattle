@@ -9,27 +9,46 @@ namespace Sattle.Gkql;
 
 /// <summary>A program: the graphs it reads, its parameters, its verbs and the wires between them. Wires carry rows with named columns; a pattern
 /// variable is a column that holds an element.</summary>
-public sealed record ProgramGraph(string Graph, string Ontology, string? Description, long History, List<Input> Inputs, List<Parameter> Parameters, List<VerbNode> Verbs, List<Wire> Wires);
+public sealed record ProgramGraph(string Graph, string Ontology, string? Description, long History, List<Input> Inputs, List<Parameter> Parameters, List<VerbNode> Verbs, List<Wire> Wires, List<RuleSpec>? Rules = null);
+/// <summary>A rule the sinks of a program name, and what may be edited through it: none (readonly, the default for a rule only a sink names), create, delete and
+/// the properties an update may change. Over the rows of a source an editable rule is written back one for one; over graphs it is a view edited by its stated
+/// rules: `create` names the identity domain of a new element and what it sets, `delete` what a delete sets (without it, a delete removes the element).</summary>
+public sealed record RuleSpec(string Name, string? Description = null, List<string>? Accept = null, List<string>? Update = null, RuleCreate? Create = null, RuleDelete? Delete = null);
+public sealed record RuleCreate(string Key, Dictionary<string, JsonElement>? Set = null);
+public sealed record RuleDelete(Dictionary<string, JsonElement> Set);
 public sealed record Input(string Name, string? Ontology, string? Rows = null);
 public sealed record Parameter(string Name, string Kind, JsonElement? Default);
 /// <summary>A wire from a verb's output to a named input port of another verb: `in`, or `left` and `right` of a join.</summary>
 public sealed record Wire(string From, string To, string Port = "in");
 public sealed record On(string Left, string Right);
 /// <summary>A verb. Which fields it uses depends on `Verb`: graph-match (Graph, Pattern), where (Condition), project and extend (Columns), union,
-/// summarize (Aggregates, By), join (Kind, On), nodes and edges (Target).</summary>
+/// summarize (Aggregates, By), join (Kind, On), nodes and edges (Target), retain (Retain), traverse (Graph, Traverse), link (Link).</summary>
 public sealed record VerbNode(string Id, string Verb, string? Graph, Drawing? Pattern, JsonElement? Condition, Dictionary<string, JsonElement>? Columns,
     Dictionary<string, JsonElement>? Aggregates, Dictionary<string, JsonElement>? By, string? Kind, List<On>? On, Drawing? Target,
-    string? Source = null, WindowSpec? Window = null, SeriesSpec? Series = null, HysteresisSpec? Hysteresis = null, string? Rule = null, ValuesSpec? Values = null);
+    string? Source = null, WindowSpec? Window = null, SeriesSpec? Series = null, HysteresisSpec? Hysteresis = null, string? Rule = null, ValuesSpec? Values = null,
+    RetainSpec? Retain = null, TraverseSpec? Traverse = null, LinkSpec? Link = null);
 public sealed record ValuesSpec(Dictionary<string, string> Columns, List<Dictionary<string, JsonElement>> Rows, string? Key = null);
-public sealed record WindowSpec(string Time, string Period);
-public sealed record SeriesSpec(string Element, string Property, string Lookback, string? Freshness = null);
+/// <summary>Windows of the rows' own time: `period` wide, one every `hop` (the period when not given), so a row is in period / hop windows.</summary>
+public sealed record WindowSpec(string Time, string Period, string? Hop = null);
+/// <summary>`fill`: the value of a window in which the element reported nothing.</summary>
+public sealed record SeriesSpec(string Element, string Property, string Lookback, string? Freshness = null, decimal? Fill = null);
+/// <summary>`aboveBy`, `enterBy`, `belowBy`, `exitBy`: a threshold or dwell time read from the row, in place of the constant.</summary>
 public sealed record HysteresisSpec(string[] By, string Value, decimal Above, long EnterAfter, decimal Below, long ExitAfter,
-    string High, string Low, string Initial, string? NoData = null, bool EvidenceWindow = false);
+    string High, string Low, string Initial, string? NoData = null, bool EvidenceWindow = false,
+    JsonElement? AboveBy = null, JsonElement? EnterBy = null, JsonElement? BelowBy = null, JsonElement? ExitBy = null);
+/// <summary>The rows whose `time` is within `age` before the newest input time.</summary>
+public sealed record RetainSpec(string Time, string Age);
+/// <summary>From the element in column `from`, every element reached over `min` to `max` edges of type `edge` (and its sub-types) in `direction` (out, in,
+/// either), one row each, in the new column `to`.</summary>
+public sealed record TraverseSpec(string Edge, string From, string To, string Direction = "out", long Min = 1, long Max = 1);
+/// <summary>The two identities of a row name the same element, as the equivalence policy `policy` allows, with this confidence.</summary>
+public sealed record LinkSpec(string Policy, JsonElement Left, JsonElement Right, decimal Confidence);
 /// <summary>A drawn graph: the pattern of a graph-match, or the target of a sink with placeholders (expressions over the rows) for ids and properties.</summary>
 public sealed record Drawing(List<DrawnNode>? Nodes, List<DrawnEdge>? Edges);
 /// <summary>`Extend`: a sink's node that adds properties to a node another sink makes.</summary>
 public sealed record DrawnNode(string Var, string Label, JsonElement? Id, bool Extend, Dictionary<string, JsonElement>? Props);
-public sealed record DrawnEdge(string Var, string Label, string From, string To, Dictionary<string, JsonElement>? Props);
+/// <summary>`Extend`: adds properties to an edge another sink makes. `Key`: the name in the edge's id, the label's when not given.</summary>
+public sealed record DrawnEdge(string Var, string Label, string From, string To, Dictionary<string, JsonElement>? Props, bool Extend = false, string? Key = null);
 
 /// <summary>A placeholder: `{"ref": "d.name"}` a column or a property of an element column, `{"lit": 0}`, `{"param": "limit"}`, `{"fn": "iff", "args": [...]}`.</summary>
 abstract record Expr;
@@ -47,8 +66,9 @@ sealed class Refused(string at, string message, string? element) : Exception($"{
     public string? Element => element;
 }
 
-/// <summary>The rows on a wire: the port that carries them, their columns, and the element type of each column that holds an element.</summary>
-sealed record Rows(string Port, List<string> Cols, Dictionary<string, string> Types);
+/// <summary>The rows on a wire: the port that carries them, their columns, and the element type of each column that holds an element.
+/// `Telemetry`: the rows are windows of telemetry (of a series, or a summary of them), so a summary of them keeps the windows.</summary>
+sealed record Rows(string Port, List<string> Cols, Dictionary<string, string> Types, bool Telemetry = false);
 
 // ---- calculation: program graph to operator facts
 
@@ -85,17 +105,25 @@ public static class Lowering
         readonly Dictionary<string, (string Port, string Type)> rowPorts = new(StringComparer.Ordinal);
         readonly Dictionary<string, OntologyView> views = new(StringComparer.Ordinal);
         readonly Dictionary<string, int> opNo = new(StringComparer.Ordinal);
+        /// <summary>Per rule, the type of the element its nodes sink is named by: the element a create or a delete through the rule acts on.</summary>
+        readonly Dictionary<string, string> masters = new(StringComparer.Ordinal);
 
         public void Run()
         {
             var ingestion = p.Inputs.Any(i => i.Rows is not null);
             var rules = p.Verbs.Select(v => v.Rule).OfType<string>().Distinct(StringComparer.Ordinal).ToList();
+            var specs = new Dictionary<string, RuleSpec>(StringComparer.Ordinal);
+            foreach (var spec in p.Rules ?? [])
+            {
+                if (!specs.TryAdd(spec.Name, spec)) throw new Refused(spec.Name, "every rule is listed once", null);
+                if (!rules.Contains(spec.Name)) throw new Refused(spec.Name, "a listed rule labels a sink", null);
+            }
             Pid = B.Contain(Ids.Module(module), "projection", p.Graph, "Projection", null,
                 [("name", T(p.Graph)), ("purpose", T(ingestion ? "ingestion" : "view")),
                     ("retain", Value.Integer(p.History)), ("forward", Value.Boolean(rules.Count == 0)), .. p.Description is { } d ? [("description", T(d))] : Array.Empty<(string, Value)>()]);
             B.Edge(Pid, "outputOntology", Ids.Module(p.Ontology));
             foreach (var rule in rules)
-                B.Contain(Pid, "rule", rule, "Rule", null, ("name", T(rule)), ("class", T("readonly")), ("putput", Value.Boolean(false)));
+                Rule(specs.GetValueOrDefault(rule) ?? new RuleSpec(rule), ingestion);
             foreach (var g in p.Inputs)
             {
                 if (g.Ontology is { } ontology && g.Rows is null)
@@ -127,6 +155,62 @@ public static class Lowering
                     .ToList();
                 if (Lower(v, ins) is { } rows) outs[v.Id] = rows;
             }
+            foreach (var spec in specs.Values) EditDefaults(spec);
+        }
+
+        /// <summary>A rule nothing may edit is readonly; an editable rule over the rows of a source is written back one for one (bijective), over graphs it
+        /// is a view edited by its stated rules (lens).</summary>
+        void Rule(RuleSpec spec, bool ingestion)
+        {
+            var (accept, update) = (spec.Accept ?? [], spec.Update ?? []);
+            if (accept.FirstOrDefault(a => a is not ("create" or "delete")) is { } other) throw new Refused(spec.Name, $"a rule accepts create and delete, not '{other}': an update names its properties in update", null);
+            var cls = accept.Count + update.Count == 0 ? "readonly" : ingestion ? "bijective" : "lens";
+            if (cls != "lens" && (spec.Create ?? (object?)spec.Delete) is not null) throw new Refused(spec.Name, "create and delete belong to an editable rule of a view", null);
+            if (cls == "lens" && accept.Contains("create") != spec.Create is not null) throw new Refused(spec.Name, "a rule that accepts create names the identity domain of a new element in create, and only then", null);
+            if (spec.Delete is not null && !accept.Contains("delete")) throw new Refused(spec.Name, "delete says what a delete sets, so the rule accepts delete", null);
+            List<(string, Value)> props = [("name", T(spec.Name)), ("class", T(cls)), ("putput", Value.Boolean(false)), .. spec.Description is { } d ? [("reason", T(d))] : Array.Empty<(string, Value)>()];
+            if (cls == "lens")
+            {
+                props.Add(("accept", Value.List([.. accept.Select(Value.Text), .. update.Count > 0 ? [Value.Text("update(" + string.Join(",", update) + ")")] : Array.Empty<Value>()])));
+                if (spec.Delete is not null) props.Add(("onDelete", T("set")));
+                else if (accept.Contains("delete")) props.Add(("onDelete", T("remove")));
+            }
+            B.Contain(Pid, "rule", spec.Name, "Rule", null, [.. props]);
+        }
+
+        /// <summary>The key and the values of an element a create through the rule makes, and what a delete sets: properties of the element the rule's
+        /// nodes sink reads, each a constant or a component of the key (`key.name`).</summary>
+        void EditDefaults(RuleSpec spec)
+        {
+            if (spec.Create is null && spec.Delete is null) return;
+            if (!masters.TryGetValue(spec.Name, out var type)) throw new Refused(spec.Name, "create and delete belong to a rule whose nodes sink is named by an element of a graph", null);
+            var rid = Ids.Child(Pid, "rule", spec.Name);
+            var view = View(Ids.ModuleOf(type));
+            void Defaults(Dictionary<string, JsonElement>? set, string slot, IReadOnlyList<string> key)
+            {
+                foreach (var (name, x) in set ?? [])
+                {
+                    var prop = view.PropsOf(type).Keys.Where(k => view.Props[k].Name == name).ToList() is [var one] ? one : throw new Refused(spec.Name, $"{Ids.Name(type)} has no property {name}", null);
+                    var sid = B.Contain(rid, slot, name, "SetProperty");
+                    B.Edge(sid, "property", prop);
+                    switch (Read(spec.Name, x))
+                    {
+                        case Lit { V: var v }: B.Contain(sid, "value", "#0", "Literal", null, ("value", v)); break;
+                        case Ref { Path: var path } when path.StartsWith("key.", StringComparison.Ordinal) && key.Contains(path[4..]): B.Contain(sid, "value", "#0", "FieldRef", null, ("path", T(path))); break;
+                        default: throw new Refused(spec.Name, $"{name} is a constant or a component of the key: {{\"ref\": \"key.{string.Join("|", key)}\"}}", null);
+                    }
+                }
+            }
+            if (spec.Create is { } create)
+            {
+                var defs = new DefView(catalog);
+                var domain = ProjectionChecker.Closure(catalog, p.Ontology).Select(m => Ids.Child(Ids.Module(m), "identity", create.Key))
+                    .Where(d => catalog.Entity(d) is not null && defs.Target(d, "identifies") == type).ToList() is [var one] ? one
+                    : throw new Refused(spec.Name, $"'{create.Key}' is no identity domain of {Ids.Name(type)}", null);
+                B.Edge(rid, "createKey", domain);
+                Defaults(create.Set, "createDefault", [.. defs.Children(domain, "component").Select(Ids.Name)]);
+            }
+            if (spec.Delete is { } delete) Defaults(delete.Set, "deleteSet", []);
         }
 
         string InputPort(string name, string kind) =>
@@ -150,7 +234,7 @@ public static class Lowering
 
         Rows? Lower(VerbNode v, List<(string Port, Rows Rows)> ins)
         {
-            if (v.Rule is not null && v.Verb is not ("nodes" or "edges")) throw new Refused(v.Id, "a rule labels a nodes or edges sink");
+            if (v.Rule is not null && v.Verb is not ("nodes" or "edges" or "link")) throw new Refused(v.Id, "a rule labels a nodes, edges or link sink");
             Rows One() => ins is [("in", var r)] ? r : throw new Refused(v.Id, $"{v.Verb} has one wire in, to its port in");
             return v.Verb switch
             {
@@ -166,6 +250,10 @@ public static class Lowering
                 "series" => Series(v, One()),
                 "hysteresis" => Threshold(v, One()),
                 "join" => Join(v, ins),
+                "distinct" => Distinct(v, One()),
+                "retain" => Retain(v, One()),
+                "traverse" => Traverse(v, One()),
+                "link" => Link(v, One()),
                 "nodes" => Nodes(v, One()),
                 "edges" => Edges(v, One()),
                 var other => throw new Refused(v.Id, $"unknown verb '{other}'"),
@@ -223,9 +311,59 @@ public static class Lowering
         Rows Window(VerbNode v, Rows r)
         {
             if (v.Window is not { } w || !r.Cols.Contains(w.Time)) throw new Refused(v.Id, "window names a timestamp column and a period");
-            var op = Op("Window", v.Id, ("timestampField", T(w.Time)), ("width", Value.Integer(Duration(v.Id, w.Period))), ("late", T("revise")));
+            var (width, hop) = (Duration(v.Id, w.Period), w.Hop is { } h ? Duration(v.Id, h) : (long?)null);
+            var op = Op("Window", v.Id, [("timestampField", T(w.Time)), ("width", Value.Integer(width)), .. hop is { } step && step != width ? new[] { ("hop", Value.Integer(step)) } : [], ("late", T("revise"))]);
             B.Edge(r.Port, "wire", P(op, "in"));
-            return r with { Port = P(op, "out"), Cols = [.. r.Cols, "windowStart", "windowEnd"] };
+            return r with { Port = P(op, "out"), Cols = [.. r.Cols, "windowStart", "windowEnd"], Telemetry = false };
+        }
+
+        Rows Distinct(VerbNode v, Rows r)
+        {
+            var op = Op("Distinct", v.Id);
+            B.Edge(r.Port, "wire", P(op, "in"));
+            return r with { Port = P(op, "out") };
+        }
+
+        Rows Retain(VerbNode v, Rows r)
+        {
+            if (v.Retain is not { } k || !r.Cols.Contains(k.Time)) throw new Refused(v.Id, "retain names a timestamp column and an age");
+            var op = Op("Retain", v.Id, ("timestampField", T(k.Time)), ("age", Value.Integer(Duration(v.Id, k.Age))));
+            B.Edge(r.Port, "wire", P(op, "in"));
+            return r with { Port = P(op, "out") };
+        }
+
+        Rows Traverse(VerbNode v, Rows r)
+        {
+            if (v.Traverse is not { } t || v.Graph is not { } g || !graphPorts.TryGetValue(g, out var port))
+                throw new Refused(v.Id, "traverse names a graph the program reads and an edge type, a start column, a new column, a direction and the bounds of the path");
+            if (!r.Types.TryGetValue(t.From, out var start)) throw new Refused(v.Id, $"'{t.From}' is no column that holds an element");
+            if (r.Cols.Contains(Column(v.Id, t.To))) throw new Refused(v.Id, $"the rows have a column '{t.To}' already");
+            if (t.Direction is not ("out" or "in" or "either")) throw new Refused(v.Id, "a direction is out, in or either");
+            if (t.Min < 0 || t.Max < Math.Max(1, t.Min)) throw new Refused(v.Id, "the bounds of a path are 0 <= min <= max, max >= 1");
+            var op = Op("Traverse", v.Id, ("direction", T(t.Direction)), ("minDepth", Value.Integer(t.Min)), ("maxDepth", Value.Integer(t.Max)), ("start", T(t.From)), ("target", T(t.To)));
+            B.Edge(op, "ofType", TypeOf(v.Id, View(p.Inputs.Single(i => i.Name == g).Ontology!), t.Edge, rel: true));
+            B.Edge(port, "wire", P(op, "graph"));
+            B.Edge(r.Port, "wire", P(op, "in"));
+            return new Rows(P(op, "out"), [.. r.Cols, t.To], new(r.Types) { [t.To] = start }, r.Telemetry);
+        }
+
+        /// <summary>A link sink: the identities of a row name the same element, as an equivalence policy of the program's ontology allows.</summary>
+        Rows? Link(VerbNode v, Rows r)
+        {
+            if (v.Link is not { } l) throw new Refused(v.Id, "link names an equivalence policy, two identities and a confidence");
+            if (l.Confidence is < 0 or > 1) throw new Refused(v.Id, "a confidence is between 0 and 1");
+            var policy = ProjectionChecker.Closure(catalog, p.Ontology).Select(m => Ids.Child(Ids.Module(m), "equivalence", l.Policy)).Where(id => catalog.Entity(id) is not null).ToList() is [var one] ? one
+                : throw new Refused(v.Id, $"'{l.Policy}' is no equivalence policy of {p.Ontology}");
+            var (left, right) = (Read(v.Id, l.Left), Read(v.Id, l.Right));
+            if (left is not Identity || right is not Identity) throw new Refused(v.Id, "a link joins two identities");
+            var sink = Op("Link", v.Id);
+            Govern(v, sink);
+            B.Edge(sink, "policy", policy);
+            B.Edge(r.Port, "wire", P(sink, "in"));
+            Write(v.Id, r, left, sink, "left", 0);
+            Write(v.Id, r, right, sink, "right", 0);
+            Write(v.Id, r, new Lit(Value.Decimal(l.Confidence)), sink, "confidence", 0);
+            return null;
         }
 
         Rows Series(VerbNode v, Rows r)
@@ -236,8 +374,8 @@ public static class Lowering
                 .. s.Freshness is { } ttl ? new[] { ("ttl", Value.Integer(Duration(v.Id, ttl))) } : []]);
             B.Edge(port, "wire", P(op, "graph"));
             B.Edge(r.Port, "wire", P(op, "in"));
-            B.Contain(op, "read", "#0", "FieldRef", 0, ("path", T($"{s.Element}.{s.Property}")));
-            return r with { Port = P(op, "out"), Cols = [.. r.Cols, "windowStart", "windowEnd", s.Property, .. s.Freshness is null ? Array.Empty<string>() : [TThreshold.NoDataColumn]] };
+            B.Contain(op, "read", "#0", "FieldRef", 0, [("path", T($"{s.Element}.{s.Property}")), .. s.Fill is { } fill ? new[] { ("fill", Value.Decimal(fill)) } : []]);
+            return r with { Port = P(op, "out"), Cols = [.. r.Cols, "windowStart", "windowEnd", s.Property, .. s.Freshness is null ? Array.Empty<string>() : [TThreshold.NoDataColumn]], Telemetry = true };
         }
 
         Rows Threshold(VerbNode v, Rows r)
@@ -249,6 +387,8 @@ public static class Lowering
                 .. h.EvidenceWindow ? new[] { ("evidenceWindow", Value.Boolean(true)) } : []]);
             B.Edge(r.Port, "wire", P(op, "in"));
             Write(v.Id, r, new Ref(h.Value), op, "value", 0);
+            foreach (var (slot, x) in new[] { ("aboveBy", h.AboveBy), ("enterBy", h.EnterBy), ("belowBy", h.BelowBy), ("exitBy", h.ExitBy) })
+                if (x is { } e) Write(v.Id, r, Read(v.Id, e), op, slot, 0);
             foreach (var name in h.By)
                 Write(v.Id, r, new Ref(name), B.Contain(op, "key", name, "Assign", null, ("target", T(name))), "value", 0);
             return new Rows(P(op, "out"), [.. h.By, "state", .. h.EvidenceWindow ? new[] { "windowStart" } : []], r.Types.Where(kv => h.By.Contains(kv.Key)).ToDictionary());
@@ -339,7 +479,8 @@ public static class Lowering
             for (var k = 0; k < cols.Count; k++) Write(at, r, cols[k].X, B.Contain(op, "assign", cols[k].Name, "Assign", k, ("target", T(cols[k].Name))), "value", 0);
             B.Edge(r.Port, "wire", P(op, "in"));
             return new Rows(P(op, "out"), [.. cols.Select(c => c.Name)],
-                cols.Where(c => c.X is Ref { Path: var path } && r.Types.ContainsKey(path)).ToDictionary(c => c.Name, c => r.Types[((Ref)c.X).Path], StringComparer.Ordinal));
+                cols.Where(c => c.X is Ref { Path: var path } && r.Types.ContainsKey(path)).ToDictionary(c => c.Name, c => r.Types[((Ref)c.X).Path], StringComparer.Ordinal),
+                r.Telemetry && cols.Any(c => c is ("windowStart", Ref { Path: "windowStart" })));
         }
 
         Rows Union(VerbNode v, List<(string Port, Rows Rows)> ins)
@@ -358,27 +499,51 @@ public static class Lowering
             return acc;
         }
 
-        static readonly Dictionary<string, string> Aggregates = new() { ["count"] = "count", ["sum"] = "sum", ["min"] = "min", ["max"] = "max", ["avg"] = "mean" };
+        static readonly string[] Aggregates = ["count", "countif", "count_distinct", "sum", "min", "max", "avg", "arg_max", "arg_min"];
 
+        /// <summary>A summary of the rows by keys. Over telemetry windows it keeps the windows (a Rollup: `windowStart` is a key, of the window itself);
+        /// over other rows `windowStart` is a key like any other. `arg_max(order, value)` is the value of the row with the greatest order; the
+        /// arg_max and arg_min aggregates with one order read one row, the row of the first of them.</summary>
         Rows Summarize(VerbNode v, Rows r)
         {
-            var op = Op("Group", v.Id);
-            var next = new Rows(P(op, "out"), [], new(StringComparer.Ordinal));
-            foreach (var (name, x) in v.By ?? [])
+            var by = v.By ?? [];
+            if (r.Telemetry && !(by.TryGetValue("windowStart", out var ws) && Read(v.Id, ws) is Ref { Path: "windowStart" }))
+                throw new Refused(v.Id, "a summary of telemetry windows keeps them: windowStart is a key, {\"ref\": \"windowStart\"}");
+            var op = Op(r.Telemetry ? "Rollup" : "Group", v.Id);
+            var next = new Rows(P(op, "out"), [], new(StringComparer.Ordinal), r.Telemetry);
+            foreach (var (name, x) in by)
             {
                 if (name != "windowStart") Column(v.Id, name);
                 var e = Read(v.Id, x);
-                Write(v.Id, r, e, B.Contain(op, "key", name, "Assign", null, ("target", T(name))), "value", 0);
+                if (!(r.Telemetry && name == "windowStart")) Write(v.Id, r, e, B.Contain(op, "key", name, "Assign", null, ("target", T(name))), "value", 0);
                 next.Cols.Add(name);
                 if (e is Ref { Path: var path } && r.Types.TryGetValue(path, out var t)) next.Types[name] = t;
             }
+            var rows = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var (name, x) in v.Aggregates ?? throw new Refused(v.Id, "summarize names its aggregates"))
             {
                 Column(v.Id, name);
-                if (Read(v.Id, x) is not Fn { Name: var fn } call || !Aggregates.TryGetValue(fn, out var engineFn)) throw new Refused(v.Id, $"an aggregate is {string.Join(", ", Aggregates.Keys)} of a value");
-                var a = B.Contain(op, "agg", name, "Aggregate", null, ("target", T(name)), ("fn", T(engineFn)));
-                if (call.Args is [var arg]) Write(v.Id, r, arg, a, "value", 0);
-                else if (!(fn == "count" && call.Args.Length == 0)) throw new Refused(v.Id, $"{fn} takes one value");
+                if (Read(v.Id, x) is not Fn { Name: var fn } call || !Aggregates.Contains(fn)) throw new Refused(v.Id, $"an aggregate is {string.Join(", ", Aggregates)} of a value");
+                var (engineFn, value, order) = (fn, call.Args) switch
+                {
+                    ("count", []) => ("count", null, null),
+                    ("countif", [var c]) => ("sum", new Fn("iff", [c, new Lit(Value.Integer(1)), new Lit(Value.Integer(0))]), null),
+                    ("count_distinct", [var a]) => ("countDistinct", a, null),
+                    ("avg", [var a]) => ("mean", a, null),
+                    ("sum" or "min" or "max", [var a]) => (fn, a, (Expr?)null),
+                    ("arg_max", [var o, var a]) => ("last", a, o),
+                    ("arg_min", [var o, var a]) => ("last", a, new Fn("negate", [o])),
+                    ("arg_max" or "arg_min", _) => throw new Refused(v.Id, $"{fn} takes the order and a value"),
+                    _ => throw new Refused(v.Id, fn is "count" ? "count takes no value" : $"{fn} takes one value"),
+                };
+                if (r.Telemetry && engineFn is not ("count" or "sum" or "min" or "max" or "mean")) throw new Refused(v.Id, $"{fn} does not combine telemetry windows: count, sum, min, max or avg");
+                List<(string, Value)> props = [("target", T(name)), ("fn", T(engineFn))];
+                var sameRow = fn + ":" + (order is null ? "" : x.GetProperty("args")[0].GetRawText());
+                if (order is not null) props.Add(("row", T(rows.TryGetValue(sameRow, out var row) ? row : rows[sameRow] = name)));
+                var agg = B.Contain(op, "agg", name, "Aggregate", null, [.. props]);
+                if (value is not null) Write(v.Id, r, value, agg, "value", 0);
+                if (order is not null) Write(v.Id, r, order, agg, "order", 0);
+                if (value is Ref { Path: var vp } && r.Types.ContainsKey(vp)) throw new Refused(v.Id, $"{fn} gives values, and '{vp}' is an element: read its properties or its id");
                 next.Cols.Add(name);
             }
             B.Edge(r.Port, "wire", P(op, "in"));
@@ -415,7 +580,9 @@ public static class Lowering
             var sink = Op("EmitEntity", v.Id, ("mode", T(n.Extend ? "update" : "create")));
             Govern(v, sink);
             Sink(v.Id, r, sink, type, view, n.Props);
-            Write(v.Id, r, Read(v.Id, n.Id ?? throw new Refused(v.Id, "a target node has an id: a function of the match")), sink, "id", 0);
+            var id = Read(v.Id, n.Id ?? throw new Refused(v.Id, "a target node has an id: a function of the match"));
+            Write(v.Id, r, id, sink, "id", 0);
+            if (v.Rule is { } rule && !n.Extend && id is Ref { Path: var path } && !path.Contains('.') && r.Types.TryGetValue(path, out var master)) masters[rule] = master;
             return null;
         }
 
@@ -431,8 +598,9 @@ public static class Lowering
             var type = TypeOf(v.Id, view, e.Label, rel: true);
             if (!view.Types[type].Sources.Contains(TypeOf(v.Id, view, src.Label, rel: false)) || !view.Types[type].Targets.Contains(TypeOf(v.Id, view, dst.Label, rel: false)))
                 throw new Refused(v.Id, $"{e.Label} does not go from {src.Label} to {dst.Label}");
-            // the key of the relationship's id is the type's name, as a KQL edge step without a key setting has it
-            var sink = Op("EmitRelationship", v.Id, ("mode", T("create")), ("key", T(char.ToLowerInvariant(e.Label[0]) + e.Label[1..])), ("retype", T("reject")));
+            // the key of the relationship's id is the type's name unless the edge names one: two sinks of one type between the same ends name two keys
+            var key = e.Key ?? char.ToLowerInvariant(e.Label[0]) + e.Label[1..];
+            var sink = Op("EmitRelationship", v.Id, ("mode", T(e.Extend ? "update" : "create")), ("key", T(key)), ("retype", T("reject")));
             Govern(v, sink);
             Sink(v.Id, r, sink, type, view, e.Props);
             Write(v.Id, r, Read(v.Id, src.Id!.Value), sink, "source", 0);
@@ -509,6 +677,8 @@ public static class Lowering
             ["and"] = "And", ["or"] = "Or", ["not"] = "Not", ["iff"] = "If", ["coalesce"] = "Coalesce",
             ["startswith"] = "StartsWith", ["endswith"] = "EndsWith", ["contains"] = "Contains",
             ["concat"] = "Concat", ["lower"] = "LowerInvariant", ["trim"] = "Trim",
+            ["+"] = "Add", ["-"] = "Subtract", ["*"] = "Multiply", ["/"] = "Divide", ["negate"] = "Negate", ["todecimal"] = "ToDecimal",
+            ["isnotnull"] = "IsPresent", ["rate"] = "Rate", ["shift"] = "Shift", ["id"] = "EntityId",
         };
 
         void Write(string at, Rows r, Expr x, string parent, string slot, int ordinal, bool ordered = false)
@@ -544,6 +714,8 @@ public static class Lowering
                     break;
                 case Fn { Name: var fn, Args: var args }:
                     if (!Functions.TryGetValue(fn, out var builtin)) throw new Refused(at, $"'{fn}' is not a function here: {string.Join(", ", Functions.Keys)}");
+                    // shift moves an instant by a duration: written "90s", the engine reads nanoseconds
+                    if (fn == "shift" && args is [var instant, Lit { V: TextValue { S: var span } }]) args = [instant, new Lit(Value.Integer(Duration(at, span)))];
                     var id = B.Contain(parent, slot, seg, "Call", ord);
                     B.Edge(id, "function", Ids.KBuiltin(builtin));
                     for (var i = 0; i < args.Length; i++) Write(at, r, args[i], id, "arg", i, true);

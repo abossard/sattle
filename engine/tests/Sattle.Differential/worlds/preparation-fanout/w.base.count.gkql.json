@@ -1,0 +1,18 @@
+{
+  "graph": "count",
+  "ontology": "w.base",
+  "history": 0,
+  "inputs": [{"name": "source", "ontology": "w.base"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "emit_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Item", "id": {"ref": "h"}, "props": {"g": {"ref": "k"}, "k": {"ref": "k"}, "n": {"ref": "n"}}}]}},
+    {"id": "item_1", "verb": "graph-match", "graph": "source", "pattern": {"nodes": [{"var": "h", "label": "Item"}, {"var": "l", "label": "Item"}, {"var": "r", "label": "Item"}], "edges": [{"var": "a", "label": "Edge", "from": "h", "to": "l"}, {"var": "b", "label": "Edge", "from": "h", "to": "r"}]}},
+    {"id": "item_2", "verb": "project", "columns": {"h": {"ref": "h"}, "k": {"ref": "h.k"}, "n": {"ref": "h.n"}}},
+    {"id": "item_3", "verb": "summarize", "by": {"h": {"ref": "h"}, "k": {"ref": "k"}}, "aggregates": {"n": {"fn": "sum", "args": [{"ref": "n"}]}}}
+  ],
+  "wires": [
+    {"from": "item_3", "to": "emit_1"},
+    {"from": "item_1", "to": "item_2"},
+    {"from": "item_2", "to": "item_3"}
+  ]
+}

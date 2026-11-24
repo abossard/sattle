@@ -11,7 +11,7 @@ public class SmallestLogTests
         new(source, Logs.Row(("k", Value.Text(k)), ("g", Value.Text(g)), ("n", Value.Integer(n)), ("d", d is { } q ? Value.Decimal(q) : Value.Null), ("t", Value.Instant(Origin + seconds * Second))), weight);
     static RowInput Edge(long weight, string src, string dst, string source = "edges") => new(source, Logs.Row(("src", Value.Text(src)), ("dst", Value.Text(dst))), weight);
     static RowInput Load(string? uid, string? name, long n, long seconds) => new("loads", Logs.Row(("uid", uid is null ? Value.Null : Value.Text(uid)), ("name", name is null ? Value.Null : Value.Text(name)), ("n", Value.Integer(n)), ("t", Value.Instant(Origin + seconds * Second))), 1);
-    static RowInput Pod(string uid, string name) => new("pods", Logs.Row(("uid", Value.Text(uid)), ("name", Value.Text(name)), ("g", Value.Text("g0"))), 1);
+    static RowInput Instance(string uid, string name) => new("instances", Logs.Row(("uid", Value.Text(uid)), ("name", Value.Text(name)), ("g", Value.Text("g0"))), 1);
     static AdvanceInput Advance(long seconds) => new(Origin + seconds * Second);
     static Input[] Items(int count) => [.. Enumerable.Range(0, count).Select(i => Row("a", 1, "k" + i, "g0", 1, 0))];
     /// <summary>Edges of `edges` between items, each written `from>to`.</summary>
@@ -70,12 +70,12 @@ public class SmallestLogTests
             [Row("b", 1, "k9", "g0", 1, 0, 1.5m), Row("a", 1, "k0", "g0", 1, 0, 1.5m), Row("a", 1, "k1", "g0", 1, 0, 1.50m), Row("a", -1, "k0", "g0", 1, 0, 1.50m), Row("a", -1, "k1", "g0", 1, 0, 1.5m)], null },
 
         // ---- the second code review, defect 22: telemetry of merged identities (Law 7.5 item 3) ----
-        { "a view reads the windows of a merged pod in the step of the merge", "a view's series over a pod that a link merges",
-            [Edge(1, "web", "web", "flows"), Load(null, "Web", 2, 20), Advance(90), Pod("u0", "Web")], "d:w.view/prop:load " },
+        { "a view reads the windows of a merged instance in the step of the merge", "a view's series over an instance that a link merges",
+            [Edge(1, "web", "web", "flows"), Load(null, "Web", 2, 20), Advance(90), Instance("u0", "Web")], "d:w.view/prop:load " },
         { "a window without a value under one id has none after the merge, whichever came first", "two groups by two keys of one class, one telemetry property",
-            [Load(null, "Web", 5, 10), Load(null, "web", 7, 20), Load("u0", null, 3, 30), Advance(90), Pod("u0", "Web")], null },
+            [Load(null, "Web", 5, 10), Load(null, "web", 7, 20), Load("u0", null, 3, 30), Advance(90), Instance("u0", "Web")], null },
         { "a view named by the element follows a merge of the master", "a view named by the element of a linked domain",
-            [Edge(1, "web", "web", "flows"), Pod("u0", "Web")], "d:w.view/prop:name=" },
+            [Edge(1, "web", "web", "flows"), Instance("u0", "Web")], "d:w.view/prop:name=" },
 
         // ---- #113: traverse in increments (an added edge lowers depths from its far end, a lost edge walks its starts again); an advance ends a batch, so the last edges form a patch of their own under every cut ----
         { "an added edge lowers depths two hops past its far end, and an item comes into reach at the maximum depth", "traverse from depth 1 to 3",

@@ -1,0 +1,20 @@
+{
+  "graph": "v",
+  "ontology": "w.view",
+  "history": 0,
+  "inputs": [{"name": "master", "ontology": "w"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "emit_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Seen", "id": {"ref": "p"}, "props": {"load": {"ref": "load"}}}]}},
+    {"id": "seen_1", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "p", "label": "Instance"}], "edges": []}},
+    {"id": "seen_2", "verb": "project", "columns": {"p": {"ref": "p"}}},
+    {"id": "seen_3", "verb": "series", "graph": "master", "series": {"element": "p", "property": "load", "lookback": "30m"}},
+    {"id": "seen_4", "verb": "summarize", "by": {"p": {"ref": "p"}, "windowStart": {"ref": "windowStart"}}, "aggregates": {"load": {"fn": "sum", "args": [{"ref": "load"}]}}}
+  ],
+  "wires": [
+    {"from": "seen_4", "to": "emit_1"},
+    {"from": "seen_1", "to": "seen_2"},
+    {"from": "seen_2", "to": "seen_3"},
+    {"from": "seen_3", "to": "seen_4"}
+  ]
+}

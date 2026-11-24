@@ -1,0 +1,22 @@
+{
+  "graph": "extracted",
+  "ontology": "w.view",
+  "history": 0,
+  "inputs": [{"name": "master", "ontology": "w.base"}],
+  "parameters": [{"name": "minN", "kind": "Integer"}],
+  "verbs": [
+    {"id": "emit_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Pair", "id": {"identity": "pair", "args": [{"ref": "a"}, {"ref": "b"}]}, "props": {"a": {"ref": "a"}, "b": {"ref": "b"}}}]}},
+    {"id": "emit_2", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Pair", "id": {"identity": "pair", "args": [{"ref": "a"}, {"ref": "b"}]}, "extend": true, "props": {"n": {"ref": "n"}}}]}},
+    {"id": "emit_3", "verb": "edges", "target": {"nodes": [{"var": "s", "label": "Copy", "id": {"identity": "copy", "args": [{"ref": "a"}]}}, {"var": "t", "label": "Copy", "id": {"identity": "copy", "args": [{"ref": "b"}]}}], "edges": [{"var": "e", "label": "Near", "from": "s", "to": "t"}]}},
+    {"id": "pairs_1", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "x", "label": "Item"}, {"var": "y", "label": "Item"}], "edges": [{"var": "e", "label": "Edge", "from": "x", "to": "y"}]}},
+    {"id": "pairs_2", "verb": "project", "columns": {"a": {"ref": "x.k"}, "b": {"ref": "y.k"}, "n": {"ref": "y.n"}}},
+    {"id": "pairs_3", "verb": "where", "condition": {"fn": ">=", "args": [{"ref": "n"}, {"param": "minN"}]}}
+  ],
+  "wires": [
+    {"from": "pairs_3", "to": "emit_1"},
+    {"from": "pairs_3", "to": "emit_2"},
+    {"from": "pairs_3", "to": "emit_3"},
+    {"from": "pairs_1", "to": "pairs_2"},
+    {"from": "pairs_2", "to": "pairs_3"}
+  ]
+}

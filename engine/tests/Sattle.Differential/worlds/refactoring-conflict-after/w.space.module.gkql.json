@@ -1,0 +1,21 @@
+{
+  "module": "w.space",
+  "version": "1.0.0",
+  "imports": [
+    {"module": "w.base", "alias": "base", "version": "1.0.0", "digest": null},
+    {"module": "w.view", "alias": "view", "version": "1.0.0", "digest": null}
+  ],
+  "space": {
+    "name": "s",
+    "sources": [
+      {"name": "a", "adapter": "record", "rows": "base.R"},
+      {"name": "b", "adapter": "record", "rows": "base.R"},
+      {"name": "edges", "adapter": "record", "rows": "base.EdgeRow"}
+    ],
+    "graphs": [
+      {"name": "master", "projection": "base.ingest", "master": true, "inputs": {"a": "a", "b": "b", "edges": "edges"}},
+      {"name": "view", "projection": "view.v", "master": false, "inputs": {"master": "master"}},
+      {"name": "viewExtracted", "projection": "view.extracted", "master": false, "inputs": {"master": "master"}}
+    ]
+  }
+}

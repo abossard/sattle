@@ -1,0 +1,20 @@
+{
+  "graph": "extracted",
+  "ontology": "w.view",
+  "history": 0,
+  "inputs": [{"name": "master", "ontology": "w.base"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "emit_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Signal", "id": {"identity": "signal", "args": [{"ref": "c"}]}, "props": {"k": {"ref": "c"}, "v": {"ref": "v"}}}]}},
+    {"id": "signal_1", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "i", "label": "Item"}], "edges": []}},
+    {"id": "signal_2", "verb": "project", "columns": {"i": {"ref": "i"}, "c": {"ref": "i.g"}}},
+    {"id": "signal_3", "verb": "series", "graph": "master", "series": {"element": "i", "property": "hits", "lookback": "30m"}},
+    {"id": "signal_4", "verb": "summarize", "by": {"c": {"ref": "c"}, "windowStart": {"ref": "windowStart"}}, "aggregates": {"v": {"fn": "sum", "args": [{"ref": "hits"}]}}}
+  ],
+  "wires": [
+    {"from": "signal_4", "to": "emit_1"},
+    {"from": "signal_1", "to": "signal_2"},
+    {"from": "signal_2", "to": "signal_3"},
+    {"from": "signal_3", "to": "signal_4"}
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "graph": "v",
+  "ontology": "w.view",
+  "history": 0,
+  "inputs": [{"name": "master", "ontology": "w"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "emit_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Walk", "id": {"identity": "walk", "args": [{"ref": "x"}, {"ref": "y"}, {"ref": "z"}]}, "props": {"x": {"ref": "x"}, "y": {"ref": "y"}, "z": {"ref": "z"}}}]}},
+    {"id": "walk_1", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "x", "label": "Item"}, {"var": "y", "label": "Item"}, {"var": "z", "label": "Item"}], "edges": [{"var": "e", "label": "Edge", "from": "x", "to": "y"}, {"var": "f", "label": "Edge", "from": "y", "to": "z"}]}},
+    {"id": "walk_2", "verb": "project", "columns": {"x": {"ref": "x.k"}, "y": {"ref": "y.k"}, "z": {"ref": "z.k"}}}
+  ],
+  "wires": [
+    {"from": "walk_2", "to": "emit_1"},
+    {"from": "walk_1", "to": "walk_2"}
+  ]
+}

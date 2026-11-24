@@ -1,0 +1,22 @@
+{
+  "graph": "membership",
+  "ontology": "w",
+  "history": 0,
+  "inputs": [{"name": "master", "ontology": "w"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "emit_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Group", "id": {"identity": "group", "args": [{"ref": "g"}]}, "props": {"name": {"ref": "g"}}}]}},
+    {"id": "emit_2", "verb": "edges", "target": {"nodes": [{"var": "s", "label": "Item", "id": {"ref": "i"}}, {"var": "t", "label": "Group", "id": {"identity": "group", "args": [{"ref": "g"}]}}], "edges": [{"var": "e", "label": "Belongs", "from": "s", "to": "t"}]}},
+    {"id": "group_1", "verb": "project", "columns": {"g": {"ref": "g"}}},
+    {"id": "group_2", "verb": "distinct"},
+    {"id": "items_1", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "i", "label": "Item"}], "edges": []}},
+    {"id": "items_2", "verb": "project", "columns": {"i": {"ref": "i"}, "g": {"ref": "i.g"}}}
+  ],
+  "wires": [
+    {"from": "group_2", "to": "emit_1"},
+    {"from": "items_2", "to": "emit_2"},
+    {"from": "items_2", "to": "group_1"},
+    {"from": "group_1", "to": "group_2"},
+    {"from": "items_1", "to": "items_2"}
+  ]
+}

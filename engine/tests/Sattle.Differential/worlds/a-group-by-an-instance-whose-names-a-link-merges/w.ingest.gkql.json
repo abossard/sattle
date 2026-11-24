@@ -1,0 +1,24 @@
+{
+  "graph": "ingest",
+  "ontology": "w",
+  "history": 0,
+  "inputs": [
+    {"name": "calls", "rows": "w.CallRow"},
+    {"name": "instances", "rows": "w.InstanceRow"}
+  ],
+  "parameters": [],
+  "verbs": [
+    {"id": "instances", "verb": "rows", "source": "instances"},
+    {"id": "observed_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Instance", "id": {"identity": "instanceUid", "args": [{"ref": "uid"}]}, "props": {"uid": {"ref": "uid"}}}]}, "rule": "observed"},
+    {"id": "observed_2", "verb": "link", "link": {"policy": "uidIsName", "left": {"identity": "instanceUid", "args": [{"ref": "uid"}]}, "right": {"identity": "instanceName", "args": [{"ref": "name"}]}, "confidence": 1.0}, "rule": "observed"},
+    {"id": "calls", "verb": "rows", "source": "calls"},
+    {"id": "observed_3", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Call", "id": {"identity": "call", "args": [{"ref": "src"}, {"ref": "at"}]}, "props": {"at": {"ref": "at"}, "src": {"ref": "src"}}}]}, "rule": "observed"},
+    {"id": "observed_4", "verb": "edges", "target": {"nodes": [{"var": "s", "label": "Call", "id": {"identity": "call", "args": [{"ref": "src"}, {"ref": "at"}]}}, {"var": "t", "label": "Instance", "id": {"identity": "instanceName", "args": [{"ref": "src"}]}}], "edges": [{"var": "e", "label": "Of", "from": "s", "to": "t"}]}, "rule": "observed"}
+  ],
+  "wires": [
+    {"from": "instances", "to": "observed_1"},
+    {"from": "instances", "to": "observed_2"},
+    {"from": "calls", "to": "observed_3"},
+    {"from": "calls", "to": "observed_4"}
+  ]
+}

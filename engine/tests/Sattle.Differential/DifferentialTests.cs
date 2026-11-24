@@ -86,21 +86,21 @@ public class DifferentialTests
         Assert.True(expired > 0 && retracted > 0 && advances > 0, $"expired on arrival {expired}, retracted {retracted}, advances {advances}");
     }
 
-    /// <summary>T-MERGE-TELE (Law 7.5 item 3): one window of a pod written by a group over its uid and a group over its name, with the link that merges the two identities before both rows, between them or after both, in every order and batching. The window is the same in every case and equals the reference: the combination of the two values by the property's rule, where a rule that does not combine two different values leaves no value.</summary>
+    /// <summary>T-MERGE-TELE (Law 7.5 item 3): one window of an instance written by a group over its uid and a group over its name, with the link that merges the two identities before both rows, between them or after both, in every order and batching. The window is the same in every case and equals the reference: the combination of the two values by the property's rule, where a rule that does not combine two different values leaves no value.</summary>
     [Theory]
     [InlineData("delta sum", 1, 2, "3")] [InlineData("delta sum", 2, 2, "4")]
     [InlineData("gauge min", 1, 2, "1")] [InlineData("gauge max", 1, 2, "2")] [InlineData("gauge max", 2, 2, "2")]
     [InlineData("gauge mean", 1, 2, null)] [InlineData("gauge mean", 2, 2, "2")]                                   // a mean stored as one number: only equal values combine
     [InlineData("gauge last", 1, 2, null)] [InlineData("gauge last", 2, 2, "2")]                                   // a last without its order: the same
-    [InlineData("gauge mean", 1, 2, "1.5", "avg(n)", "Decimal")] [InlineData("gauge mean", 2, 2, "2", "avg(n)", "Decimal")]       // a mean with its sum and count
-    [InlineData("gauge last", 1, 2, "2", "arg_max(t, n)")] [InlineData("gauge last", 3, 2, "2", "arg_max(t, n)")]                         // a last with its order: the name's row is later
-    [InlineData("gauge mean", 1, 4, "2.3333333333333333333333333333", "avg(n)", "Decimal", 2L)]                                  // (1 + 2 + 4) / 3, not the mean 2.75 of the two means
-    [InlineData("delta sum", 1, 4, "7", "sum(n)", "Integer", 2L)]
-    public void A_merge_combines_windows_as_if_written_under_the_survivor(string rule, long byUid, long byName, string? expected, string aggregate = "sum(n)", string kind = "Integer", long? secondByUid = null)
+    [InlineData("gauge mean", 1, 2, "1.5", "avg", "Decimal")] [InlineData("gauge mean", 2, 2, "2", "avg", "Decimal")]       // a mean with its sum and count
+    [InlineData("gauge last", 1, 2, "2", "arg_max")] [InlineData("gauge last", 3, 2, "2", "arg_max")]                         // a last with its order: the name's row is later
+    [InlineData("gauge mean", 1, 4, "2.3333333333333333333333333333", "avg", "Decimal", 2L)]                                  // (1 + 2 + 4) / 3, not the mean 2.75 of the two means
+    [InlineData("delta sum", 1, 4, "7", "sum", "Integer", 2L)]
+    public void A_merge_combines_windows_as_if_written_under_the_survivor(string rule, long byUid, long byName, string? expected, string aggregate = "sum", string kind = "Integer", long? secondByUid = null)
     {
         var w = Worlds.LinkedLoadsUnder(rule, aggregate, kind);
         static Sattle.Reference.RowInput Load(string? uid, string? name, long n, long seconds) => new("loads", Logs.Row(("uid", uid is null ? Value.Null : Value.Text(uid)), ("name", name is null ? Value.Null : Value.Text(name)), ("n", Value.Integer(n)), ("t", Value.Instant(Logs.Origin + seconds * Logs.Second))), 1);
-        var link = new Sattle.Reference.RowInput("pods", Logs.Row(("uid", Value.Text("u0")), ("name", Value.Text("Web")), ("g", Value.Text("g0"))), 1);
+        var link = new Sattle.Reference.RowInput("instances", Logs.Row(("uid", Value.Text("u0")), ("name", Value.Text("Web")), ("g", Value.Text("g0"))), 1);
         // the advance that closes the window takes every place too: a merge of windows already stored, of rows not yet closed, and rows that revise a closed window
         Sattle.Reference.Input[] parts = [Load("u0", null, byUid, 10), Load(null, "Web", byName, 20), link, new Sattle.Reference.AdvanceInput(Logs.Origin + 90 * Logs.Second), .. secondByUid is { } more ? new[] { Load("u0", null, more, 15) } : []];
         static IEnumerable<int[]> Permutations(int[] xs) => xs.Length <= 1 ? [xs] : xs.SelectMany(x => Permutations([.. xs.Where(y => y != x)]).Select(rest => (int[])[x, .. rest]));
@@ -119,7 +119,7 @@ public class DifferentialTests
         Assert.Equal([expected ?? ""], seen);
     }
 
-    /// <summary>T-B3 (Theorem 6.2 premise B3, Proposition 1.8): pods named by uid and by name, links that join random sets of them into classes, the first uses and the links in 20 random orders, each cut three ways. A uid named twice links two names, so a link can join two classes that already hold several keys. Every key resolves to the smallest own id of its class, every forwarding record points to a smaller id, and the state is the same for every order and cut. On the first order, the views that group by the merged pod (a count, and a sum through a union and joins) end equal to the reference under the three cuts: one group over all keys of a class.</summary>
+    /// <summary>T-B3 (Theorem 6.2 premise B3, Proposition 1.8): instances named by uid and by name, links that join random sets of them into classes, the first uses and the links in 20 random orders, each cut three ways. A uid named twice links two names, so a link can join two classes that already hold several keys. Every key resolves to the smallest own id of its class, every forwarding record points to a smaller id, and the state is the same for every order and cut. On the first order, the views that group by the merged pod (a count, and a sum through a union and joins) end equal to the reference under the three cuts: one group over all keys of a class.</summary>
     [Theory]
     [InlineData(1)] [InlineData(2)] [InlineData(3)] [InlineData(4)] [InlineData(5)]
     public void Identity_is_independent_of_key_arrival_order_on_generated_inputs(int seed)
@@ -130,10 +130,10 @@ public class DifferentialTests
         var rows = new List<Sattle.Reference.RowInput>();
         for (var u = 0; u < uids; u++)
             foreach (var name in rng.Next(3) == 0 ? new[] { rng.Next(names), rng.Next(names) }.Distinct() : [rng.Next(names)])
-                rows.Add(new("pods", Logs.Row(("uid", Value.Text("u" + u)), ("name", Value.Text("P" + name)), ("g", Value.Text("g0"))), 1));
+                rows.Add(new("instances", Logs.Row(("uid", Value.Text("u" + u)), ("name", Value.Text("P" + name)), ("g", Value.Text("g0"))), 1));
         for (var n = 0; n < names; n++) rows.Add(new("flows", Logs.Row(("src", Value.Text("p" + n)), ("dst", Value.Text("p" + rng.Next(names)))), 1));
-        var links = rows.Where(r => r.Source == "pods").Select(r => new Sattle.Reference.LinkFact(
-            new Sattle.Reference.IdentityKey("d:w/identity:podUid", [((TextValue)r.Fields["uid"]).S]), new Sattle.Reference.IdentityKey("d:w/identity:podName", [((TextValue)r.Fields["name"]).S.ToLowerInvariant()]))).ToList();
+        var links = rows.Where(r => r.Source == "instances").Select(r => new Sattle.Reference.LinkFact(
+            new Sattle.Reference.IdentityKey("d:w/identity:instanceUid", [((TextValue)r.Fields["uid"]).S]), new Sattle.Reference.IdentityKey("d:w/identity:instanceName", [((TextValue)r.Fields["name"]).S.ToLowerInvariant()]))).ToList();
         var expected = new Sattle.Reference.Identities("lab", links);
         var digests = new HashSet<string>();
         for (var order = 0; order < 20; order++)
@@ -176,7 +176,7 @@ public class DifferentialTests
         var w = Worlds.All.Single(x => x.Name == "link");
         using var engine = new Engine(w.Catalog, w.Catalog.Spaces.Keys.Single());
         var rows = new[] { ("u0", "Web"), ("u1", "api"), ("u2", "DB"), ("u3", "cache") }
-            .Select(p => new Sattle.Reference.RowInput("pods", Logs.Row(("uid", Value.Text(p.Item1)), ("name", Value.Text(p.Item2)), ("g", Value.Text("g0"))), 1)).ToList();
+            .Select(p => new Sattle.Reference.RowInput("instances", Logs.Row(("uid", Value.Text(p.Item1)), ("name", Value.Text(p.Item2)), ("g", Value.Text("g0"))), 1)).ToList();
         if (rowByRow) { var seq = 0L; foreach (var r in rows) EngineRun.Ingest(engine, [r], ++seq); } else EngineRun.Ingest(engine, [.. rows], 1);
         Assert.NotEmpty(engine.Identities.Forwarding);
         Assert.NotEmpty(engine.Master.State.Entities);
@@ -189,7 +189,7 @@ public class DifferentialTests
     public void The_state_digest_does_not_depend_on_the_order_of_the_link_and_the_rows()
     {
         static Sattle.Reference.RowInput Load(string? uid, string? name, long n, long seconds) => new("loads", Logs.Row(("uid", uid is null ? Value.Null : Value.Text(uid)), ("name", name is null ? Value.Null : Value.Text(name)), ("n", Value.Integer(n)), ("t", Value.Instant(Logs.Origin + seconds * Logs.Second))), 1);
-        var link = new Sattle.Reference.RowInput("pods", Logs.Row(("uid", Value.Text("u0")), ("name", Value.Text("Web")), ("g", Value.Text("g0"))), 1);
+        var link = new Sattle.Reference.RowInput("instances", Logs.Row(("uid", Value.Text("u0")), ("name", Value.Text("Web")), ("g", Value.Text("g0"))), 1);
         string Digest(params Sattle.Reference.Input[] log)
         {
             using var engine = new Engine(Worlds.LinkedLoads.Catalog, Worlds.LinkedLoads.Catalog.Spaces.Keys.Single());
@@ -208,7 +208,7 @@ public class DifferentialTests
     {
         var w = Worlds.LinkedLoads;
         static Sattle.Reference.RowInput Load(string? uid, string? name, long n, long seconds, long weight = 1) => new("loads", Logs.Row(("uid", uid is null ? Value.Null : Value.Text(uid)), ("name", name is null ? Value.Null : Value.Text(name)), ("n", Value.Integer(n)), ("t", Value.Instant(Logs.Origin + seconds * Logs.Second))), weight);
-        var link = new Sattle.Reference.RowInput("pods", Logs.Row(("uid", Value.Text("u0")), ("name", Value.Text("Web")), ("g", Value.Text("g0"))), 1);
+        var link = new Sattle.Reference.RowInput("instances", Logs.Row(("uid", Value.Text("u0")), ("name", Value.Text("Web")), ("g", Value.Text("g0"))), 1);
         var space = w.Catalog.Spaces.Keys.Single();
         using var original = new Engine(w.Catalog, space);
         EngineRun.Ingest(original, [Load("u0", null, 1, 10)], 1); EngineRun.Ingest(original, [Load(null, "Web", 2, 20)], 2); EngineRun.Ingest(original, [link], 3);

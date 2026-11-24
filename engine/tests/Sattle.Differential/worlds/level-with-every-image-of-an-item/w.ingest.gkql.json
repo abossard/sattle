@@ -1,0 +1,32 @@
+{
+  "graph": "ingest",
+  "ontology": "w",
+  "history": 0,
+  "inputs": [
+    {"name": "belongs", "rows": "w.BelongsRow"},
+    {"name": "calls", "rows": "w.CallRow"},
+    {"name": "items", "rows": "w.ItemRow"}
+  ],
+  "parameters": [],
+  "verbs": [
+    {"id": "calls", "verb": "rows", "source": "calls"},
+    {"id": "edge_1", "verb": "window", "window": {"time": "t", "period": "1m"}},
+    {"id": "edge_2", "verb": "summarize", "by": {"dst": {"ref": "dst"}, "src": {"ref": "src"}, "windowStart": {"ref": "windowStart"}}, "aggregates": {"calls": {"fn": "sum", "args": [{"ref": "n"}]}}},
+    {"id": "items", "verb": "rows", "source": "items"},
+    {"id": "observed_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Item", "id": {"identity": "item", "args": [{"ref": "k"}]}, "props": {"k": {"ref": "k"}}}]}, "rule": "observed"},
+    {"id": "belongs", "verb": "rows", "source": "belongs"},
+    {"id": "observed_2", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Group", "id": {"identity": "group", "args": [{"ref": "g"}]}, "props": {"name": {"ref": "g"}}}]}, "rule": "observed"},
+    {"id": "observed_3", "verb": "edges", "target": {"nodes": [{"var": "s", "label": "Item", "id": {"identity": "item", "args": [{"ref": "k"}]}}, {"var": "t", "label": "Group", "id": {"identity": "group", "args": [{"ref": "g"}]}}], "edges": [{"var": "e", "label": "Belongs", "from": "s", "to": "t"}]}, "rule": "observed"},
+    {"id": "observed_4", "verb": "edges", "target": {"nodes": [{"var": "s", "label": "Item", "id": {"identity": "item", "args": [{"ref": "src"}]}}, {"var": "t", "label": "Item", "id": {"identity": "item", "args": [{"ref": "dst"}]}}], "edges": [{"var": "e", "label": "Edge", "from": "s", "to": "t"}]}, "rule": "observed"},
+    {"id": "observed_5", "verb": "edges", "target": {"nodes": [{"var": "s", "label": "Item", "id": {"identity": "item", "args": [{"ref": "src"}]}}, {"var": "t", "label": "Item", "id": {"identity": "item", "args": [{"ref": "dst"}]}}], "edges": [{"var": "e", "label": "Edge", "from": "s", "to": "t", "props": {"calls": {"ref": "calls"}}, "extend": true}]}, "rule": "observed"}
+  ],
+  "wires": [
+    {"from": "calls", "to": "edge_1"},
+    {"from": "edge_1", "to": "edge_2"},
+    {"from": "items", "to": "observed_1"},
+    {"from": "belongs", "to": "observed_2"},
+    {"from": "belongs", "to": "observed_3"},
+    {"from": "calls", "to": "observed_4"},
+    {"from": "edge_2", "to": "observed_5"}
+  ]
+}

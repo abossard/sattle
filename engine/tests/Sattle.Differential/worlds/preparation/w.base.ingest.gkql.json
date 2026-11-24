@@ -1,0 +1,24 @@
+{
+  "graph": "ingest",
+  "ontology": "w.base",
+  "history": 0,
+  "inputs": [{"name": "samples", "rows": "w.base.R"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "samples", "verb": "rows", "source": "samples"},
+    {"id": "closed_1", "verb": "window", "window": {"time": "t", "period": "1m"}},
+    {"id": "closed_2", "verb": "summarize", "by": {"k": {"ref": "k"}, "windowStart": {"ref": "windowStart"}}, "aggregates": {"n": {"fn": "sum", "args": [{"ref": "n"}]}}},
+    {"id": "item_1", "verb": "where", "condition": {"fn": ">", "args": [{"ref": "n"}, {"lit": 4}]}},
+    {"id": "observed_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Item", "id": {"identity": "item", "args": [{"ref": "k"}]}, "props": {"hits": {"ref": "n"}, "k": {"ref": "k"}, "n": {"ref": "n"}}}]}, "rule": "observed"},
+    {"id": "observed_2", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Item", "id": {"identity": "item", "args": [{"ref": "k"}]}, "extend": true, "props": {"reading": {"fn": "/", "args": [{"ref": "n"}, {"lit": 2.0}]}}}]}, "rule": "observed"},
+    {"id": "observed_3", "verb": "edges", "target": {"nodes": [{"var": "s", "label": "Item", "id": {"identity": "item", "args": [{"ref": "k"}]}}, {"var": "t", "label": "Item", "id": {"identity": "item", "args": [{"ref": "k"}]}}], "edges": [{"var": "e", "label": "Edge", "from": "s", "to": "t"}]}, "rule": "observed"}
+  ],
+  "wires": [
+    {"from": "samples", "to": "closed_1"},
+    {"from": "closed_1", "to": "closed_2"},
+    {"from": "closed_2", "to": "item_1"},
+    {"from": "closed_2", "to": "observed_1"},
+    {"from": "item_1", "to": "observed_2"},
+    {"from": "closed_2", "to": "observed_3"}
+  ]
+}

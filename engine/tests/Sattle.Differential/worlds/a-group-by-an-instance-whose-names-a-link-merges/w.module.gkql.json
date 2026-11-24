@@ -1,0 +1,22 @@
+{
+  "module": "w",
+  "version": "1.0.0",
+  "imports": [],
+  "entities": [
+    {"name": "Instance", "properties": [{"name": "uid", "type": "Text", "optional": true}]},
+    {"name": "Call", "properties": [{"name": "src", "type": "Text"}, {"name": "at", "type": "Text"}]}
+  ],
+  "relationships": [{"name": "Of", "from": "Call", "to": "Instance"}],
+  "identities": [
+    {"name": "instanceUid", "type": "Instance", "components": [{"name": "uid", "type": "Text"}]},
+    {"name": "instanceName", "type": "Instance", "components": [{"name": "name", "type": "Text"}]},
+    {"name": "call", "type": "Call", "components": [{"name": "src", "type": "Text"}, {"name": "at", "type": "Text"}]}
+  ],
+  "equivalences": [
+    {"name": "uidIsName", "left": "instanceUid", "right": "instanceName", "mode": "assert", "threshold": 1.0}
+  ],
+  "rows": [
+    {"name": "InstanceRow", "fields": [{"name": "uid", "type": "Text"}, {"name": "name", "type": "Text"}]},
+    {"name": "CallRow", "fields": [{"name": "src", "type": "Text"}, {"name": "at", "type": "Text"}]}
+  ]
+}

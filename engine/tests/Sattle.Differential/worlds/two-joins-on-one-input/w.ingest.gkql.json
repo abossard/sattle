@@ -1,0 +1,36 @@
+{
+  "graph": "ingest",
+  "ontology": "w",
+  "history": 0,
+  "inputs": [{"name": "a", "rows": "w.R"}, {"name": "b", "rows": "w.R"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "observed_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Out", "id": {"identity": "out", "args": [{"ref": "k"}, {"ref": "g"}]}, "props": {"c": {"ref": "c"}, "g": {"ref": "g"}, "k": {"ref": "k"}, "s": {"ref": "s"}}}]}, "rule": "observed"},
+    {"id": "out_1", "verb": "summarize", "by": {"g": {"ref": "g"}, "k": {"ref": "k"}}, "aggregates": {"c": {"fn": "count"}, "s": {"fn": "sum", "args": [{"ref": "n"}]}}},
+    {"id": "a", "verb": "rows", "source": "a"},
+    {"id": "p_1", "verb": "project", "columns": {"k": {"ref": "k"}, "g": {"ref": "g"}, "n": {"ref": "n"}}},
+    {"id": "b", "verb": "rows", "source": "b"},
+    {"id": "q_1", "verb": "project", "columns": {"rk": {"ref": "k"}, "rg": {"ref": "g"}, "rn": {"ref": "n"}}},
+    {"id": "x_1", "verb": "join", "kind": "inner", "on": [{"left": "g", "right": "rg"}]},
+    {"id": "x_2", "verb": "project", "columns": {"k": {"fn": "concat", "args": [{"ref": "k"}, {"fn": "concat", "args": [{"lit": "+"}, {"ref": "rk"}]}]}, "g": {"ref": "g"}, "n": {"ref": "n"}}},
+    {"id": "x_3", "verb": "join", "kind": "inner", "on": [{"left": "rg", "right": "g"}]},
+    {"id": "x_4", "verb": "where", "condition": {"fn": ">", "args": [{"ref": "rn"}, {"lit": 1}]}},
+    {"id": "x_5", "verb": "project", "columns": {"k": {"fn": "concat", "args": [{"ref": "rk"}, {"fn": "concat", "args": [{"lit": "-"}, {"ref": "k"}]}]}, "g": {"ref": "rg"}, "n": {"ref": "rn"}}},
+    {"id": "x_6", "verb": "union"}
+  ],
+  "wires": [
+    {"from": "out_1", "to": "observed_1"},
+    {"from": "x_6", "to": "out_1"},
+    {"from": "a", "to": "p_1"},
+    {"from": "b", "to": "q_1"},
+    {"from": "p_1", "to": "x_1", "port": "left"},
+    {"from": "q_1", "to": "x_1", "port": "right"},
+    {"from": "x_1", "to": "x_2"},
+    {"from": "q_1", "to": "x_3", "port": "left"},
+    {"from": "p_1", "to": "x_3", "port": "right"},
+    {"from": "x_3", "to": "x_4"},
+    {"from": "x_4", "to": "x_5"},
+    {"from": "x_2", "to": "x_6"},
+    {"from": "x_5", "to": "x_6"}
+  ]
+}

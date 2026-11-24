@@ -1,0 +1,16 @@
+{
+  "module": "w.space",
+  "version": "1.0.0",
+  "imports": [
+    {"module": "w.base", "alias": "base", "version": "1.0.0", "digest": null}
+  ],
+  "space": {
+    "name": "s",
+    "sources": [{"name": "samples", "adapter": "record", "rows": "base.R"}],
+    "graphs": [
+      {"name": "master", "projection": "base.ingest", "master": true, "inputs": {"samples": "samples"}},
+      {"name": "first", "projection": "base.copy", "master": false, "inputs": {"source": "master"}},
+      {"name": "second", "projection": "base.copy", "master": false, "inputs": {"source": "master"}}
+    ]
+  }
+}

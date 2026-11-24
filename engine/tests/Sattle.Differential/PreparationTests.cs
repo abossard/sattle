@@ -10,38 +10,8 @@ public class PreparationTests
 {
     const int Keys = 8193; // uneven partitions, with enough distinct texts to reuse interner cache slots
     const long Minute = 60_000_000_000;
-    static readonly Lazy<Catalog> Catalog = new(() => EngineRun.Load([
-        new SourceFile("w.base.sattle", """
-            module w.base @ 1.0.0;
-            entity Item { k: Text; n: Integer; reading?: Decimal; hits?: Integer telemetry delta sum every 60s; }
-            relationship Edge (Item) -> (Item);
-            identity item for Item version "1" { k: Text by exact; }
-            rows R { k: Text; n: Integer; t: Instant; }
-            """),
-        Worlds.Kql("w.base", "ingest", """
-            graph ingest : w.base;
-            input samples : R;
-            let closed = samples | summarize n = sum(n) by k, windowStart = bin(t, 60s);
-            nodes Item on i with (rule = "observed") = closed | project i = identity("item", k), k, n, windowStart, hits = n;
-            extend nodes Item on i with (rule = "observed") = closed | where n > 4 | project i = identity("item", k), reading = n / 2.0;
-            edges Edge from i to j with (rule = "observed") = closed | project i = identity("item", k), j = identity("item", k);
-            """),
-        Worlds.Kql("w.base", "copy", """
-            graph copy : w.base;
-            input source : w.base;
-            let items = graph("source") | graph-match (i) where labels(i) has "Item" project i = i.id, k = i.k, n = i.n, reading = i.reading;
-            nodes Item on i = items | project i, k, n, reading;
-            extend nodes Item on i = items | join kind=inner (telemetry("source", 3m) | where property == "hits" | project i = id, windowStart, value) on i
-                | summarize hits = sum(value) by i, windowStart | project i, windowStart, hits;
-            edges Edge from s to d = graph("source") | graph-match (s)-[e]->(d) where labels(e) has "Edge" project s = s.id, d = d.id;
-            """),
-        Worlds.Space("import w.base @ 1.0.0 sha256:… as base;", """
-            source samples adapter "record" rows base.R;
-            master graph master = base.ingest(samples: samples);
-            graph first = base.copy(source: master);
-            graph second = base.copy(source: master);
-            """)
-    ]));
+    /// <summary>A master of items from samples summed per window of 60 s, with hits, a reading and an edge to itself, and two copies of it.</summary>
+    static readonly Lazy<Catalog> Catalog = new(() => EngineRun.Load(Worlds.Files("preparation")));
 
     static Engine Open(int workers) => new(Catalog.Value, Catalog.Value.Spaces.Keys.Single(),
         new EngineOptions { PreparationWorkers = workers });
@@ -192,29 +162,7 @@ public class PreparationTests
     }
 
     // The center of a star and every ordered pair of its outgoing edges, weighted by the center's n.
-    static readonly Lazy<Catalog> Fanout = new(() => EngineRun.Load([
-        new SourceFile("w.base.sattle", Worlds.BaseModule),
-        Worlds.Kql("w.base", "ingest", """
-            graph ingest : w.base;
-            input nodes : R;
-            input links : EdgeRow;
-            nodes Item on i with (rule = "observed") = nodes | project i = identity("item", k), k, g, n;
-            edges Edge from s to d with (rule = "observed") = links | project s = identity("item", src), d = identity("item", dst);
-            """),
-        Worlds.Kql("w.base", "count", """
-            graph count : w.base;
-            input source : w.base;
-            nodes Item on h = graph("source") | graph-match (h)-[a]->(l), (h)-[b]->(r)
-                where labels(a) has "Edge" and labels(b) has "Edge" project h = h.id, k = h.k, n = h.n
-                | summarize n = sum(n) by h, k | project h, k, g = k, n;
-            """),
-        Worlds.Space("import w.base @ 1.0.0 sha256:… as base;", """
-            source nodes adapter "record" rows base.R;
-            source links adapter "record" rows base.EdgeRow;
-            master graph master = base.ingest(nodes: nodes, links: links);
-            graph counts = base.count(source: master);
-            """)
-    ]));
+    static readonly Lazy<Catalog> Fanout = new(() => EngineRun.Load(Worlds.Files("preparation fanout")));
 
     static Engine Forks(int workers) => new(Fanout.Value, Fanout.Value.Spaces.Keys.Single(), new EngineOptions { PreparationWorkers = workers });
 

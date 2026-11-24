@@ -1,0 +1,46 @@
+{
+  "graph": "talk",
+  "ontology": "w",
+  "history": 0,
+  "inputs": [
+    {"name": "groups", "ontology": "w"},
+    {"name": "master", "ontology": "w"}
+  ],
+  "parameters": [],
+  "verbs": [
+    {"id": "emit_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Group", "id": {"ref": "g"}, "props": {"name": {"ref": "name"}}}]}},
+    {"id": "emit_2", "verb": "edges", "target": {"nodes": [{"var": "s", "label": "Group", "id": {"ref": "sg"}}, {"var": "t", "label": "Group", "id": {"ref": "tg"}}], "edges": [{"var": "e", "label": "Talks", "from": "s", "to": "t"}]}},
+    {"id": "emit_3", "verb": "edges", "target": {"nodes": [{"var": "s", "label": "Item", "id": {"ref": "i"}}, {"var": "t", "label": "Group", "id": {"ref": "g"}}], "edges": [{"var": "e", "label": "Seen", "from": "s", "to": "t"}]}},
+    {"id": "group_1", "verb": "graph-match", "graph": "groups", "pattern": {"nodes": [{"var": "g", "label": "Group"}], "edges": []}},
+    {"id": "group_2", "verb": "project", "columns": {"g": {"ref": "g"}, "name": {"ref": "g.name"}}},
+    {"id": "images_1", "verb": "graph-match", "graph": "groups", "pattern": {"nodes": [{"var": "i", "label": "Group"}, {"var": "m", "label": "Item"}], "edges": [{"var": "bl", "label": "Belongs", "from": "m", "to": "i"}]}},
+    {"id": "images_2", "verb": "project", "columns": {"m": {"ref": "m"}, "i": {"ref": "i"}}},
+    {"id": "seen_1", "verb": "graph-match", "graph": "groups", "pattern": {"nodes": [{"var": "g", "label": "Group"}, {"var": "i", "label": "Item"}], "edges": [{"var": "bl", "label": "Belongs", "from": "i", "to": "g"}]}},
+    {"id": "seen_2", "verb": "where", "condition": {"fn": "!=", "args": [{"fn": "coalesce", "args": [{"ref": "g.name"}, {"lit": ""}]}, {"lit": "g0"}]}},
+    {"id": "seen_3", "verb": "project", "columns": {"i": {"ref": "i"}, "g": {"ref": "g"}}},
+    {"id": "talks_1", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "s", "label": "Item"}, {"var": "t", "label": "Item"}], "edges": [{"var": "e", "label": "Edge", "from": "s", "to": "t"}]}},
+    {"id": "talks_2", "verb": "project", "columns": {"s": {"ref": "s"}, "t": {"ref": "t"}}},
+    {"id": "talks_3", "verb": "project", "columns": {"sm": {"ref": "m"}, "sg": {"ref": "i"}}},
+    {"id": "talks_4", "verb": "join", "kind": "inner", "on": [{"left": "s", "right": "sm"}]},
+    {"id": "talks_5", "verb": "project", "columns": {"tm": {"ref": "m"}, "tg": {"ref": "i"}}},
+    {"id": "talks_6", "verb": "join", "kind": "inner", "on": [{"left": "t", "right": "tm"}]},
+    {"id": "talks_7", "verb": "where", "condition": {"fn": "!=", "args": [{"ref": "sg"}, {"ref": "tg"}]}}
+  ],
+  "wires": [
+    {"from": "group_2", "to": "emit_1"},
+    {"from": "talks_7", "to": "emit_2"},
+    {"from": "seen_3", "to": "emit_3"},
+    {"from": "group_1", "to": "group_2"},
+    {"from": "images_1", "to": "images_2"},
+    {"from": "seen_1", "to": "seen_2"},
+    {"from": "seen_2", "to": "seen_3"},
+    {"from": "talks_1", "to": "talks_2"},
+    {"from": "images_2", "to": "talks_3"},
+    {"from": "talks_2", "to": "talks_4", "port": "left"},
+    {"from": "talks_3", "to": "talks_4", "port": "right"},
+    {"from": "images_2", "to": "talks_5"},
+    {"from": "talks_4", "to": "talks_6", "port": "left"},
+    {"from": "talks_5", "to": "talks_6", "port": "right"},
+    {"from": "talks_6", "to": "talks_7"}
+  ]
+}

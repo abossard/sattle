@@ -1,0 +1,15 @@
+{
+  "module": "w",
+  "version": "1.0.0",
+  "imports": [],
+  "entities": [
+    {"name": "Item", "properties": [{"name": "k", "type": "Text", "optional": true}]}
+  ],
+  "relationships": [{"name": "Edge", "from": "Item", "to": "Item"}],
+  "identities": [
+    {"name": "item", "type": "Item", "components": [{"name": "k", "type": "Text"}]}
+  ],
+  "rows": [
+    {"name": "EdgeRow", "fields": [{"name": "src", "type": "Text"}, {"name": "dst", "type": "Text"}]}
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "graph": "ingest",
+  "ontology": "w",
+  "history": 0,
+  "inputs": [
+    {"name": "flows", "rows": "w.FlowRow"},
+    {"name": "instances", "rows": "w.InstanceRow"}
+  ],
+  "parameters": [],
+  "verbs": [
+    {"id": "instances", "verb": "rows", "source": "instances"},
+    {"id": "observed_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Instance", "id": {"identity": "instanceUid", "args": [{"ref": "uid"}]}, "props": {"g": {"ref": "g"}, "uid": {"ref": "uid"}}}]}, "rule": "observed"},
+    {"id": "observed_2", "verb": "link", "link": {"policy": "uidIsName", "left": {"identity": "instanceUid", "args": [{"ref": "uid"}]}, "right": {"identity": "instanceName", "args": [{"ref": "name"}]}, "confidence": 1.0}, "rule": "observed"},
+    {"id": "observed_3", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Instance", "id": {"identity": "instanceName", "args": [{"ref": "name"}]}, "props": {"name": {"fn": "lower", "args": [{"ref": "name"}]}}}]}, "rule": "observed"},
+    {"id": "flows", "verb": "rows", "source": "flows"},
+    {"id": "observed_4", "verb": "edges", "target": {"nodes": [{"var": "s", "label": "Instance", "id": {"identity": "instanceName", "args": [{"ref": "src"}]}}, {"var": "t", "label": "Instance", "id": {"identity": "instanceName", "args": [{"ref": "dst"}]}}], "edges": [{"var": "e", "label": "Calls", "from": "s", "to": "t"}]}, "rule": "observed"},
+    {"id": "instance_1", "verb": "project", "columns": {"name": {"ref": "src"}}},
+    {"id": "instance_2", "verb": "distinct"}
+  ],
+  "wires": [
+    {"from": "instances", "to": "observed_1"},
+    {"from": "instances", "to": "observed_2"},
+    {"from": "instance_2", "to": "observed_3"},
+    {"from": "flows", "to": "observed_4"},
+    {"from": "flows", "to": "instance_1"},
+    {"from": "instance_1", "to": "instance_2"}
+  ]
+}

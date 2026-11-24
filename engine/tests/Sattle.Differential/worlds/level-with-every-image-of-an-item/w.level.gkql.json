@@ -1,0 +1,42 @@
+{
+  "graph": "level",
+  "ontology": "w",
+  "history": 0,
+  "inputs": [{"name": "master", "ontology": "w"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "belongs_1", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "g", "label": "Group"}, {"var": "i", "label": "Item"}], "edges": [{"var": "m", "label": "Belongs", "from": "i", "to": "g"}]}},
+    {"id": "belongs_2", "verb": "project", "columns": {"item": {"ref": "i"}, "grp": {"ref": "g"}}},
+    {"id": "emit_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Group", "id": {"ref": "g"}, "props": {"name": {"ref": "name"}}}]}},
+    {"id": "emit_2", "verb": "edges", "target": {"nodes": [{"var": "s", "label": "Group", "id": {"ref": "sg"}}, {"var": "t", "label": "Group", "id": {"ref": "tg"}}], "edges": [{"var": "e", "label": "Talks", "from": "s", "to": "t"}]}},
+    {"id": "emit_3", "verb": "edges", "target": {"nodes": [{"var": "s", "label": "Group", "id": {"ref": "sg"}}, {"var": "t", "label": "Group", "id": {"ref": "tg"}}], "edges": [{"var": "e", "label": "Talks", "from": "s", "to": "t", "props": {"calls": {"ref": "calls"}}, "extend": true}]}},
+    {"id": "group_1", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "g", "label": "Group"}], "edges": []}},
+    {"id": "group_2", "verb": "project", "columns": {"g": {"ref": "g"}, "name": {"ref": "g.name"}}},
+    {"id": "lifted_1", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "a", "label": "Item"}, {"var": "b", "label": "Item"}], "edges": [{"var": "e", "label": "Edge", "from": "a", "to": "b"}]}},
+    {"id": "lifted_2", "verb": "project", "columns": {"edge": {"ref": "e"}, "fromItem": {"ref": "a"}, "toItem": {"ref": "b"}}},
+    {"id": "lifted_3", "verb": "project", "columns": {"fromImage": {"ref": "item"}, "sg": {"ref": "grp"}}},
+    {"id": "lifted_4", "verb": "join", "kind": "inner", "on": [{"left": "fromItem", "right": "fromImage"}]},
+    {"id": "lifted_5", "verb": "project", "columns": {"toImage": {"ref": "item"}, "tg": {"ref": "grp"}}},
+    {"id": "lifted_6", "verb": "join", "kind": "inner", "on": [{"left": "toItem", "right": "toImage"}]},
+    {"id": "lifted_7", "verb": "where", "condition": {"fn": "!=", "args": [{"ref": "sg"}, {"ref": "tg"}]}},
+    {"id": "talks_1", "verb": "series", "graph": "master", "series": {"element": "edge", "property": "calls", "lookback": "24h"}},
+    {"id": "talks_2", "verb": "summarize", "by": {"sg": {"ref": "sg"}, "tg": {"ref": "tg"}, "windowStart": {"ref": "windowStart"}}, "aggregates": {"calls": {"fn": "sum", "args": [{"ref": "calls"}]}}}
+  ],
+  "wires": [
+    {"from": "belongs_1", "to": "belongs_2"},
+    {"from": "group_2", "to": "emit_1"},
+    {"from": "lifted_7", "to": "emit_2"},
+    {"from": "talks_2", "to": "emit_3"},
+    {"from": "group_1", "to": "group_2"},
+    {"from": "lifted_1", "to": "lifted_2"},
+    {"from": "belongs_2", "to": "lifted_3"},
+    {"from": "lifted_2", "to": "lifted_4", "port": "left"},
+    {"from": "lifted_3", "to": "lifted_4", "port": "right"},
+    {"from": "belongs_2", "to": "lifted_5"},
+    {"from": "lifted_4", "to": "lifted_6", "port": "left"},
+    {"from": "lifted_5", "to": "lifted_6", "port": "right"},
+    {"from": "lifted_6", "to": "lifted_7"},
+    {"from": "lifted_7", "to": "talks_1"},
+    {"from": "talks_1", "to": "talks_2"}
+  ]
+}

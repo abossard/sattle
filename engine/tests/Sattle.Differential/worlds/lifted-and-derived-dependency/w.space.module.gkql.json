@@ -1,0 +1,18 @@
+{
+  "module": "w.space",
+  "version": "1.0.0",
+  "imports": [
+    {"module": "w", "alias": "base", "version": "1.0.0", "digest": null}
+  ],
+  "space": {
+    "name": "s",
+    "sources": [
+      {"name": "items", "adapter": "record", "rows": "base.ItemRow"},
+      {"name": "edges", "adapter": "record", "rows": "base.EdgeRow"}
+    ],
+    "graphs": [
+      {"name": "master", "projection": "base.ingest", "master": true, "inputs": {"items": "items", "edges": "edges"}},
+      {"name": "view", "projection": "base.groups", "master": false, "inputs": {"master": "master"}}
+    ]
+  }
+}

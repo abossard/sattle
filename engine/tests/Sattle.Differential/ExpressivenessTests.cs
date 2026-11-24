@@ -13,81 +13,20 @@ public class ExpressivenessTests
     static readonly SourceSpec A = Bag("a"), B = Bag("b");
     static SourceSpec Bag(string name) => new(name, (r, _) => Row(("k", Text(r, "k", 4)), ("g", Text(r, "g", 2))));
 
-    /// <summary>An ingestion of the rows `a` and `b`: `types` are its entity types, `body` its statements.</summary>
-    static World Rows(string name, string kind, string types, string body) => new(name, kind,
-        [
-            new SourceFile("w.sattle", $"module w @ 1.0.0;\n{types}\n{R}\n"),
-            Worlds.Kql("w", "ingest", $"graph ingest : w;\ninput a : R;\ninput b : R;\n{body}\n"),
-            Worlds.Space("import w @ 1.0.0 sha256:… as base;", """
-                  source a adapter "record" rows base.R;
-                  source b adapter "record" rows base.R;
-                  master graph master = base.ingest(a: a, b: b);
-                """),
-        ], [A, B]);
+    /// <summary>An ingestion of the rows `a` and `b`.</summary>
+    static World Rows(string name, string kind) => new(name, kind, Worlds.Files(name), [A, B]);
 
     /// <summary>A − B on the column `k`: the rows of `a` tagged (1, 0), those of `b` tagged (0, 1), summed per key; a key of `a` that no row of `b` has keeps the tags (n, 0).</summary>
-    static readonly World Difference = Rows("difference by tags and a group", "Union, Group, Filter", """
-        entity Only { k: Text; }
-        identity only for Only version "1" { k: Text by exact; }
-        """, """
-        let fromA = a | project k, ina = 1, inb = 0;
-        let fromB = b | project k, ina = 0, inb = 1;
-        nodes Only on o with (rule = "observed") = union fromA, fromB
-            | summarize ina = sum(ina), inb = sum(inb) by k
-            | where ina > 0 and inb == 0
-            | project o = identity("only", k), k;
-        """) with { Witnesses = ["Only"] };
+static readonly World Difference = Rows("difference by tags and a group", "Union, Group, Filter") with { Witnesses = ["Only"] };
 
     /// <summary>A × B on the column `k`: both sides get a constant column, and the join is an equality of the constants.</summary>
-    static readonly World Product = Rows("product by a join on a constant", "Map, Join", """
-        entity Pair { left: Text; right: Text; }
-        identity pair for Pair version "1" { left: Text by exact; right: Text by exact; }
-        """, """
-        let x = a | project left = k, one = 1
-            | join kind=inner (b | project right = k, other = 1) on $left.one == $right.other;
-        nodes Pair on p with (rule = "observed") = x | project p = identity("pair", left, right), left, right;
-        """) with { Witnesses = ["Pair"] };
+    static readonly World Product = Rows("product by a join on a constant", "Map, Join") with { Witnesses = ["Pair"] };
 
     static readonly SourceSpec Items = new("a", (r, _) => Row(("k", Text(r, "k", 4)), ("g", Value.Text("g0"))), f => ((TextValue)f["k"]).S);
     static readonly SourceSpec Edges = new("edges", (r, _) => Row(("src", Text(r, "k", 4)), ("dst", Text(r, "k", 4))), f => ((TextValue)f["src"]).S + ">" + ((TextValue)f["dst"]).S);
 
     /// <summary>The pattern x → y → z over `Edge`: one row per pair of edges where the first ends at the start of the second; x and z may be one item (homomorphism semantics).</summary>
-    static readonly World TwoEdges = new("pattern of two edges", "Match",
-        [
-            new SourceFile("w.sattle", """
-                module w @ 1.0.0;
-                entity Item { k: Text; g: Text; }
-                relationship Edge (Item) -> (Item);
-                identity item for Item version "1" { k: Text by exact; }
-                rows R { k: Text; g: Text; }
-                rows EdgeRow { src: Text; dst: Text; }
-                """),
-            Worlds.Kql("w", "ingest", """
-                graph ingest : w;
-                input a : R;
-                input edges : EdgeRow;
-                nodes Item on i with (rule = "observed") = a | project i = identity("item", k), k, g;
-                edges Edge from s to d with (rule = "observed") = edges | project s = identity("item", src), d = identity("item", dst);
-                """),
-            new SourceFile("w.view.sattle", """
-                module w.view @ 1.0.0;
-                import w @ 1.0.0 sha256:… as base;
-                entity Walk { x: Text; y: Text; z: Text; }
-                identity walk for Walk version "1" { x: Text by exact; y: Text by exact; z: Text by exact; }
-                """),
-            Worlds.Kql("w.view", "v", """
-                graph v : w.view;
-                input master : base;
-                nodes Walk on t = graph("master") | graph-match (x)-[e]->(y)-[f]->(z) where labels(e) has "Edge" and labels(f) has "Edge" project x = x.k, y = y.k, z = z.k
-                    | project t = identity("walk", x, y, z), x, y, z;
-                """),
-            Worlds.Space("import w @ 1.0.0 sha256:… as base;\nimport w.view @ 1.0.0 sha256:… as view;", """
-                  source a adapter "record" rows base.R;
-                  source edges adapter "record" rows base.EdgeRow;
-                  master graph master = base.ingest(a: a, edges: edges);
-                  graph view = view.v(master: master);
-                """),
-        ], [Items, Edges, Edges]) { Witnesses = ["Walk"] };
+    static readonly World TwoEdges = new("pattern of two edges", "Match", Worlds.Files("pattern of two edges"), [Items, Edges, Edges]) { Witnesses = ["Walk"] };
 
     public static TheoryData<string> WorldNames => [.. new[] { Difference, Product, TwoEdges }.Select(w => w.Name)];
     static World Named(string name) => new[] { Difference, Product, TwoEdges }.Single(w => w.Name == name);
@@ -148,54 +87,49 @@ public class ExpressivenessTests
 
     // ---- what the language refuses ----
 
-    const string ViewIngest = """
-        graph ingest : w.base;
-        input a : R;
-        input b : R;
-        input edges : EdgeRow;
-        nodes Item on i with (rule = "observed") = a | project i = identity("item", k), k, g, n;
-        edges Edge from s to d with (rule = "observed") = edges | project s = identity("item", src), d = identity("item", dst);
-        extend nodes Item on i with (rule = "observed") = b | summarize hits = sum(n) by k, windowStart = bin(t, 60s) | project i = identity("item", k), windowStart, hits;
-        """;
+    /// <summary>The world "match nodes" with the view `v` made of the gkql `verbs` and `wires`, over the master of items and their hits; `input` is what `v` reads, `graphs` the graphs of the space that run it.</summary>
+    static SourceFile[] View(string verbs, string wires, string input = """{"name": "master", "ontology": "w.base"}""", string graphs = """{"name": "view", "projection": "view.v", "master": false, "inputs": {"master": "master"}}""")
+    {
+        var files = Worlds.Files("match nodes");
+        var space = files.Single(f => f.Path == "w.space.module.gkql.json");
+        return [.. files.Where(f => f.Path is not ("w.view.v.gkql.json" or "w.space.module.gkql.json")),
+            new("w.view.v.gkql.json", $$"""{"graph": "v", "ontology": "w.view", "history": 0, "inputs": [{{input}}], "parameters": [], "verbs": [{{verbs}}], "wires": [{{wires}}]}"""),
+            space with { Text = space.Text.Replace("""{"name": "view", "projection": "view.v", "master": false, "inputs": {"master": "master"}}""", graphs, StringComparison.Ordinal) }];
+    }
 
-    /// <summary>The master of items, edges and hits, and a view `v` with the statements `body`; `input` is the view's graph port, `graphs` the view's graphs in the space.</summary>
-    static SourceFile[] View(string body, string input = "input master : base;", string graphs = "  graph view = view.v(master: master);") =>
-    [
-        new SourceFile("w.base.sattle", Worlds.BaseModule), Worlds.Kql("w.base", "ingest", ViewIngest),
-        new SourceFile("w.view.sattle", "module w.view @ 1.0.0;\nimport w.base @ 1.0.0 sha256:… as base;\nentity Out { k: Text; }\nidentity out for Out version \"1\" { k: Text by exact; }\n"),
-        Worlds.Kql("w.view", "v", $"graph v : w.view;\n{input}\n{body}\n"),
-        Worlds.Space("import w.base @ 1.0.0 sha256:… as base;\nimport w.view @ 1.0.0 sha256:… as view;", """
-              source a adapter "record" rows base.R;
-              source b adapter "record" rows base.R;
-              source edges adapter "record" rows base.EdgeRow;
-              master graph master = base.ingest(a: a, b: b, edges: edges);
-            """ + graphs),
-    ];
-
-    const string ItemRows = """graph("master") | graph-match (i) where labels(i) has "Item" project i = i.id, k = i.k, n = i.n""";
-    const string Hits = """graph("master") | graph-match (i) where labels(i) has "Item" project i = i.id, k = i.k | join kind=inner (telemetry("master", 3m) | where property == "hits" | project i = id, windowStart, value) on i""";
-    const string Out = """ | project o = identity("out", k), k;""";
-    static string Path(string path) => $$"""nodes Out on o = graph("master") | graph-match {{path}} where labels(i) has "Item" and all(p, labels(p) has "Edge") project k = d.k""" + Out;
+    const string ItemMatch = """{"id": "items", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "i", "label": "Item"}]}}""";
+    const string HitSeries = ItemMatch + """, {"id": "hits", "verb": "series", "graph": "master", "series": {"element": "i", "property": "hits", "lookback": "3m"}}""";
+    /// <summary>A sink of `Copy` named by the column `k`, with `g` and `n`.</summary>
+    const string Copy = """{"id": "copy", "verb": "nodes", "target": {"nodes": [{"var": "c", "label": "Copy", "id": {"identity": "copy", "args": [{"ref": "k"}]}, "props": {"k": {"ref": "k"}, "g": {"ref": "g"}, "n": {"ref": "n"}}}]}}""";
+    static string Wire(string from, string to, string port = "in") => $$"""{"from": "{{from}}", "to": "{{to}}", "port": "{{port}}"}""";
+    static string Columns(string id, string columns) => $$"""{"id": "{{id}}", "verb": "project", "columns": """ + "{" + columns + "}}";
+    const string KGN = """ "k": {"ref": "d.k"}, "g": {"ref": "d.g"}, "n": {"ref": "d.n"}""";
 
     public static TheoryData<string, SourceFile[], string> Refused => new()
     {
-        { "E4: a path without an upper bound", View(Path("(i)-[p*1..]->(d)")), "Missing expression" },
-        { "E4: a path deeper than the kernel's bound", View(Path("(i)-[p*1..65]->(d)")), "depth must satisfy 0 <= min <= max <= 64" },
-        { "E4: two paths in one pattern", View("""nodes Out on o = graph("master") | graph-match (i)-[p*1..2]->(d)-[q*1..2]->(e) where labels(i) has "Item" and all(p, labels(p) has "Edge") and all(q, labels(q) has "Edge") project k = e.k""" + Out), "a pattern has at most one path of several edges" },
-        { "E3: an edge from a node to itself in a pattern", View("""nodes Out on o = graph("master") | graph-match (i)-[e]->(i) where labels(e) has "Edge" project k = i.k""" + Out), "an edge from a node to itself is not kept apart from the others of its type" },
-        { "E1: an order between two elements", View("""nodes Out on o = graph("master") | graph-match (x)-[e]->(y) where labels(e) has "Edge" project a = x.id, b = y.id, k = x.k | where a < b""" + Out), "is not defined for the operand types string and string" },
-        { "E2: a filter on a measurement (P4)", View("nodes Out on o = " + Hits + " | where value > 2" + Out), "filter predicate must be (Boolean, req, data)" },
-        { "E2: a join on a measurement (P4)", View("nodes Out on o = " + Hits + " | project k, v = value | join kind=inner (" + ItemRows + " | project k2 = k, v2 = real(1)) on $left.v == $right.v2" + Out), "join takes data rows: no windowed or telemetry input" },
-        { "E2: a group key that is a measurement (P4)", View("nodes Out on o = " + Hits + " | summarize c = count() by k, value, windowStart" + Out), "aggregate the telemetry column 'value'" },
-        { "E6: a let that reads a later let", View("let x = y | project k;\nlet y = x | project k;\nnodes Out on o = y" + Out), "The name 'y' does not refer to any known table" },
-        { "E6: a function that calls itself", View("let f = (n:long) { f(n) };\nnodes Out on o = " + ItemRows + Out), "The name 'f' does not refer to any known function" },
-        { "E6: two graphs that read each other", View("""nodes Out on o = graph("g") | graph-match (i) where labels(i) has "Out" project k = i.k""" + Out, "input g : w.view;", "  graph x = view.v(g: y);\n  graph y = view.v(g: x);"), "graph production has a cycle" },
-        { "E6: a graph that reads itself", View("""nodes Out on o = graph("g") | graph-match (i) where labels(i) has "Out" project k = i.k""" + Out, "input g : w.view;", "  graph x = view.v(g: x);"), "graph production has a cycle" },
-        { "E9: an order over rows", View("nodes Out on o = " + ItemRows + " | serialize | extend p = prev(k)" + Out), "serialize is not in the KQL profile" },
-        { "E9: a percentile", View("nodes Out on o = " + ItemRows + " | summarize p = percentile(n, 50) by k" + Out), "percentile is not an aggregate of the profile" },
-        { "E9: a group by an identity column (#114)", View("nodes Out on o = " + ItemRows + """ | project p = identity("out", k) | summarize c = count() by p | project o = p, k = "x";"""), "'p' is an identity: it names a node or an end of an edge, it is not a value" },
-        { "E9: a join on an identity column (#114)", View("let ids = " + ItemRows + """ | project p = identity("out", k), k;""" + "\nnodes Out on o = ids | join kind=inner (ids | project p2 = p, k2 = k) on $left.p == $right.p2 | project o = p, k;"), "'p' is an identity: it names a node or an end of an edge, it is not a value" },
-        { "E9: an identity used as a value", View("nodes Out on o = " + ItemRows + """ | project p = identity("out", k), k | where p == p | project o = p, k;"""), "is an identity: it names a node or an end of an edge, it is not a value" },
+        { "E4: a path deeper than the kernel's bound", View(ItemMatch + """, {"id": "reach", "verb": "traverse", "graph": "master", "traverse": {"edge": "Edge", "from": "i", "to": "d", "min": 1, "max": 65}}, """ + Columns("keys", KGN) + ", " + Copy,
+            Wire("items", "reach") + ", " + Wire("reach", "keys") + ", " + Wire("keys", "copy")), "depth must satisfy 0 <= min <= max <= 64" },
+        { "E3: an edge from a node to itself in a pattern", View("""{"id": "loop", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "i", "label": "Item"}], "edges": [{"var": "e", "label": "Edge", "from": "i", "to": "i"}]}}, """ + Columns("keys", """ "k": {"ref": "i.k"}, "g": {"ref": "i.g"}, "n": {"ref": "i.n"}""") + ", " + Copy,
+            Wire("loop", "keys") + ", " + Wire("keys", "copy")), "an edge from a node to itself" },
+        { "E1: an order between two elements", View("""{"id": "pairs", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "x", "label": "Item"}, {"var": "d", "label": "Item"}], "edges": [{"var": "e", "label": "Edge", "from": "x", "to": "d"}]}}, {"id": "ordered", "verb": "where", "condition": {"fn": "<", "args": [{"ref": "x"}, {"ref": "d"}]}}, """ + Columns("keys", KGN) + ", " + Copy,
+            Wire("pairs", "ordered") + ", " + Wire("ordered", "keys") + ", " + Wire("keys", "copy")), "LessThan needs two ordered operands" },
+        { "E2: a filter on a measurement (P4)", View(HitSeries + """, {"id": "high", "verb": "where", "condition": {"fn": ">", "args": [{"ref": "hits"}, {"lit": 2}]}}, """ + Columns("keys", """ "k": {"ref": "i.k"}, "g": {"ref": "i.g"}, "n": {"ref": "i.n"}""") + ", " + Copy,
+            Wire("items", "hits") + ", " + Wire("hits", "high") + ", " + Wire("high", "keys") + ", " + Wire("keys", "copy")), "filter predicate must be (Boolean, req, data)" },
+        { "E2: a join on a measurement (P4)", View(HitSeries + ", " + Columns("measured", """ "k": {"ref": "i.k"}, "v": {"ref": "hits"}""") + ", " + Columns("ones", """ "k2": {"ref": "i.k"}, "g": {"ref": "i.g"}, "n": {"ref": "i.n"}, "v2": {"lit": 1}""")
+            + """, {"id": "same", "verb": "join", "kind": "inner", "on": [{"left": "v", "right": "v2"}]}, """ + Copy,
+            Wire("items", "hits") + ", " + Wire("hits", "measured") + ", " + Wire("items", "ones") + ", " + Wire("measured", "same", "left") + ", " + Wire("ones", "same", "right") + ", " + Wire("same", "copy")), "join takes data rows: no windowed or telemetry input" },
+        { "E2: a group key that is a measurement (P4)", View(HitSeries + """, {"id": "byValue", "verb": "summarize", "by": {"k": {"ref": "i.k"}, "hits": {"ref": "hits"}, "windowStart": {"ref": "windowStart"}}, "aggregates": {"c": {"fn": "count"}}}""",
+            Wire("items", "hits") + ", " + Wire("hits", "byValue")), "must be (κ, req, data)" },
+        { "E6: verbs that read each other", View(Columns("x", """ "k": {"ref": "k"}""") + ", " + Columns("y", """ "k": {"ref": "k"}"""), Wire("x", "y") + ", " + Wire("y", "x")), "the wires make a loop" },
+        { "E6: two graphs that read each other", View("""{"id": "outs", "verb": "graph-match", "graph": "g", "pattern": {"nodes": [{"var": "i", "label": "Copy"}]}}, """ + Columns("keys", """ "k": {"ref": "i.k"}, "g": {"ref": "i.g"}, "n": {"ref": "i.n"}""") + ", " + Copy,
+            Wire("outs", "keys") + ", " + Wire("keys", "copy"), """{"name": "g", "ontology": "w.view"}""",
+            """{"name": "x", "projection": "view.v", "master": false, "inputs": {"g": "y"}}, {"name": "y", "projection": "view.v", "master": false, "inputs": {"g": "x"}}"""), "graph production has a cycle" },
+        { "E6: a graph that reads itself", View("""{"id": "outs", "verb": "graph-match", "graph": "g", "pattern": {"nodes": [{"var": "i", "label": "Copy"}]}}, """ + Columns("keys", """ "k": {"ref": "i.k"}, "g": {"ref": "i.g"}, "n": {"ref": "i.n"}""") + ", " + Copy,
+            Wire("outs", "keys") + ", " + Wire("keys", "copy"), """{"name": "g", "ontology": "w.view"}""", """{"name": "x", "projection": "view.v", "master": false, "inputs": {"g": "x"}}"""), "graph production has a cycle" },
+        { "E9: an order over rows", View(ItemMatch + """, {"id": "previous", "verb": "serialize"}""", Wire("items", "previous")), "unknown verb 'serialize'" },
+        { "E9: a percentile", View(ItemMatch + """, {"id": "p50", "verb": "summarize", "by": {"k": {"ref": "i.k"}}, "aggregates": {"p": {"fn": "percentile", "args": [{"ref": "i.n"}, {"lit": 50}]}}}""", Wire("items", "p50")), "an aggregate is count" },
+        { "E9: a group by an identity (#114)", View(ItemMatch + """, {"id": "named", "verb": "project", "columns": {"p": {"identity": "copy", "args": [{"ref": "i.k"}]}}}, {"id": "byName", "verb": "summarize", "by": {"p": {"ref": "p"}}, "aggregates": {"c": {"fn": "count"}}}""",
+            Wire("items", "named") + ", " + Wire("named", "byName")), "identity(...) stands only in the key of a nodes statement" },
     };
 
     [Theory, MemberData(nameof(Refused))]
@@ -207,75 +141,40 @@ public class ExpressivenessTests
 
     // ---- a group by an element that a link merges (#114) ----
 
-    /// <summary>Pods by uid, each linked to the name it is seen under, so a uid seen under two names merges them into one pod; calls name their pod by name. A view counts the calls of each pod by the pod it matches (Def. 5.9). A group by the identity column `identity("podName", src)` in the master would stay split into one group per name, and the front end refuses it.</summary>
-    static readonly World GroupByMergedPod = new("a group by a pod whose names a link merges", "Link, Match, Group, EmitEntity in a view",
+    /// <summary>Instances by uid, each linked to the name it is seen under, so a uid seen under two names merges them into one instance; calls name their instance by name. A view counts the calls of each instance by the instance it matches (Def. 5.9). A group by the identity column `identity("podName", src)` in the master would stay split into one group per name, and the front end refuses it.</summary>
+    static readonly World GroupByMergedInstance = new("a group by an instance whose names a link merges", "Link, Match, Group, EmitEntity in a view", Worlds.Files("a group by an instance whose names a link merges"),
         [
-            new SourceFile("w.sattle", """
-                module w @ 1.0.0;
-                entity Pod { uid?: Text; }
-                entity Call { src: Text; at: Text; }
-                relationship Of (Call) -> (Pod);
-                identity podUid for Pod version "1" { uid: Text by exact; }
-                identity podName for Pod version "1" { name: Text by exact; }
-                identity call for Call version "1" { src: Text by exact; at: Text by exact; }
-                equivalence uidIsName between podUid, podName assert threshold 1.0;
-                rows PodRow { uid: Text; name: Text; }
-                rows CallRow { src: Text; at: Text; }
-                """),
-            Worlds.Kql("w", "ingest", """
-                graph ingest : w;
-                input pods : PodRow;
-                input calls : CallRow;
-                nodes Pod on p with (rule = "observed") = pods | project p = identity("podUid", uid), uid;
-                link uidIsName from byUid to byName with (confidence = 1.0, rule = "observed") = pods | project byUid = identity("podUid", uid), byName = identity("podName", name);
-                nodes Call on c with (rule = "observed") = calls | project c = identity("call", src, at), src, at;
-                edges Of from c to p with (rule = "observed") = calls | project c = identity("call", src, at), p = identity("podName", src);
-                """),
-            new SourceFile("w.view.sattle", "module w.view @ 1.0.0;\nimport w @ 1.0.0 sha256:… as base;\nentity Caller { calls: Integer; }\n"),
-            Worlds.Kql("w.view", "v", """
-                graph v : w.view;
-                input master : base;
-                nodes Caller on p = graph("master") | graph-match (c)-[o]->(p) where labels(o) has "Of" project p = p.id | summarize calls = count() by p;
-                """),
-            Worlds.Space("import w @ 1.0.0 sha256:… as base;\nimport w.view @ 1.0.0 sha256:… as view;", """
-                  source pods adapter "record" rows base.PodRow;
-                  source calls adapter "record" rows base.CallRow;
-                  master graph master = base.ingest(pods: pods, calls: calls);
-                  graph view = view.v(master: master);
-                """),
-        ],
-        [
-            new("pods", (r, _) => Row(("uid", Text(r, "u", 2)), ("name", Text(r, "a", 3)))),
+            new("instances", (r, _) => Row(("uid", Text(r, "u", 2)), ("name", Text(r, "a", 3)))),
             new("calls", (r, _) => Row(("src", Text(r, "a", 3)), ("at", Text(r, "t", 5)))),
             new("calls", (r, _) => Row(("src", Text(r, "a", 3)), ("at", Text(r, "t", 5)))),
         ]) { Witnesses = ["prop:calls="] };
 
     [Fact]
-    public void A_group_by_a_merged_pod_agrees_with_the_reference_however_the_log_is_cut()
+    public void A_group_by_a_merged_instance_agrees_with_the_reference_however_the_log_is_cut()
     {
-        var report = Differential.Check(GroupByMergedPod, seeds: 12, length: 14, reordered: false);
+        var report = Differential.Check(GroupByMergedInstance, seeds: 12, length: 14, reordered: false);
         Assert.True(report is null, report);
     }
 
-    /// <summary>Def. 5.9: a merge re-keys a group by an element. After every default log, the calls of the pods add up to the calls whose name belongs to a pod, counted once per pod over all its names, and no pod has two values for its calls; some logs merge two names of one pod.</summary>
+    /// <summary>Def. 5.9: a merge re-keys a group by an element. After every default log, the calls of the instances add up to the calls whose name belongs to an instance, counted once per instance over all its names, and no instance has two values for its calls; some logs merge two names of one pod.</summary>
     [Fact]
-    public void A_group_by_a_merged_pod_counts_it_once_over_all_its_names()
+    public void A_group_by_a_merged_instance_counts_it_once_over_all_its_names()
     {
-        var w = GroupByMergedPod;
+        var w = GroupByMergedInstance;
         var merged = 0;
         foreach (var seed in Enumerable.Range(0, 12))
         {
             var log = w.Log(seed, 14);
             var view = ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), log).Graphs["view"];
-            // links are timeless (Theorem 1.5): every pods row ever inserted joins its uid and its name
+            // links are timeless (Theorem 1.5): every instances row ever inserted joins its uid and its name
             var parent = new Dictionary<string, string>(StringComparer.Ordinal);
             string Find(string x) => parent.TryGetValue(x, out var p) && p != x ? parent[x] = Find(p) : x;
-            foreach (var r in log.OfType<RowInput>().Where(r => r.Source == "pods" && r.Weight > 0))
+            foreach (var r in log.OfType<RowInput>().Where(r => r.Source == "instances" && r.Weight > 0))
             {
                 var (u, n) = (Find("uid:" + ((TextValue)r.Fields["uid"]).S), Find("name:" + ((TextValue)r.Fields["name"]).S));
                 if (u != n) parent[u] = n;
             }
-            var present = Integrated(log, "pods").Select(f => Find("uid:" + ((TextValue)f["uid"]).S)).ToHashSet(StringComparer.Ordinal);
+            var present = Integrated(log, "instances").Select(f => Find("uid:" + ((TextValue)f["uid"]).S)).ToHashSet(StringComparer.Ordinal);
             var expected = Integrated(log, "calls").Select(f => (Src: ((TextValue)f["src"]).S, At: ((TextValue)f["at"]).S)).Distinct()
                 .Count(c => present.Contains(Find("name:" + c.Src)));
             if (parent.Keys.Concat(parent.Values).Where(k => k.StartsWith("name:", StringComparison.Ordinal)).Distinct().GroupBy(Find).Any(g => g.Count() > 1)) merged++;
@@ -283,7 +182,7 @@ public class ExpressivenessTests
             Assert.True(view.Conflicts.IsEmpty, $"seed {seed}: conflicts {string.Join("; ", view.Conflicts)}");
             Assert.Equal(expected, calls);
         }
-        Assert.True(merged > 0, "no default log merges two names of one pod");
+        Assert.True(merged > 0, "no default log merges two names of one instance");
     }
 
     /// <summary>The rows of `source` with positive integrated weight, each as often as its weight.</summary>

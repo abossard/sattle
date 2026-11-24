@@ -1,0 +1,13 @@
+{
+  "module": "w.view",
+  "version": "1.0.0",
+  "imports": [
+    {"module": "w.base", "alias": "base", "version": "1.0.0", "digest": null}
+  ],
+  "entities": [
+    {"name": "Pair", "properties": [{"name": "a", "type": "Text"}, {"name": "b", "type": "Text"}, {"name": "g", "type": "Text"}]}
+  ],
+  "identities": [
+    {"name": "pair", "type": "Pair", "components": [{"name": "a", "type": "Text"}, {"name": "b", "type": "Text"}]}
+  ]
+}

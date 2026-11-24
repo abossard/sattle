@@ -1,0 +1,28 @@
+{
+  "graph": "ingest",
+  "ontology": "w.base",
+  "history": 0,
+  "inputs": [
+    {"name": "a", "rows": "w.base.R"},
+    {"name": "edges", "rows": "w.base.EdgeRow"},
+    {"name": "fast", "rows": "w.base.EdgeRow"},
+    {"name": "other", "rows": "w.base.EdgeRow"}
+  ],
+  "parameters": [],
+  "verbs": [
+    {"id": "a", "verb": "rows", "source": "a"},
+    {"id": "observed_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Item", "id": {"identity": "item", "args": [{"ref": "k"}]}, "props": {"g": {"ref": "g"}, "k": {"ref": "k"}, "n": {"ref": "n"}}}]}, "rule": "observed"},
+    {"id": "edges", "verb": "rows", "source": "edges"},
+    {"id": "observed_2", "verb": "edges", "target": {"nodes": [{"var": "s", "label": "Item", "id": {"identity": "item", "args": [{"ref": "src"}]}}, {"var": "t", "label": "Item", "id": {"identity": "item", "args": [{"ref": "dst"}]}}], "edges": [{"var": "e", "label": "Edge", "from": "s", "to": "t"}]}, "rule": "observed"},
+    {"id": "fast", "verb": "rows", "source": "fast"},
+    {"id": "observed_3", "verb": "edges", "target": {"nodes": [{"var": "s", "label": "Item", "id": {"identity": "item", "args": [{"ref": "src"}]}}, {"var": "t", "label": "Item", "id": {"identity": "item", "args": [{"ref": "dst"}]}}], "edges": [{"var": "e", "label": "Fast", "from": "s", "to": "t"}]}, "rule": "observed"},
+    {"id": "other", "verb": "rows", "source": "other"},
+    {"id": "observed_4", "verb": "edges", "target": {"nodes": [{"var": "s", "label": "Item", "id": {"identity": "item", "args": [{"ref": "src"}]}}, {"var": "t", "label": "Item", "id": {"identity": "item", "args": [{"ref": "dst"}]}}], "edges": [{"var": "e", "label": "Other", "from": "s", "to": "t"}]}, "rule": "observed"}
+  ],
+  "wires": [
+    {"from": "a", "to": "observed_1"},
+    {"from": "edges", "to": "observed_2"},
+    {"from": "fast", "to": "observed_3"},
+    {"from": "other", "to": "observed_4"}
+  ]
+}

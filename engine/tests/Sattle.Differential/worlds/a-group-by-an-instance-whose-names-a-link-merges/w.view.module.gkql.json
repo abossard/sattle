@@ -1,0 +1,10 @@
+{
+  "module": "w.view",
+  "version": "1.0.0",
+  "imports": [
+    {"module": "w", "alias": "base", "version": "1.0.0", "digest": null}
+  ],
+  "entities": [
+    {"name": "Caller", "properties": [{"name": "calls", "type": "Integer"}]}
+  ]
+}

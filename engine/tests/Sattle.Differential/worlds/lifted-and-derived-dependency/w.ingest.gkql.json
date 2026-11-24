@@ -1,0 +1,24 @@
+{
+  "graph": "ingest",
+  "ontology": "w",
+  "history": 0,
+  "inputs": [
+    {"name": "edges", "rows": "w.EdgeRow"},
+    {"name": "items", "rows": "w.ItemRow"}
+  ],
+  "parameters": [],
+  "verbs": [
+    {"id": "items", "verb": "rows", "source": "items"},
+    {"id": "observed_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Item", "id": {"identity": "item", "args": [{"ref": "k"}]}, "props": {"g": {"ref": "g"}, "k": {"ref": "k"}}}]}, "rule": "observed"},
+    {"id": "observed_2", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Group", "id": {"identity": "group", "args": [{"ref": "g"}]}, "props": {"name": {"ref": "g"}}}]}, "rule": "observed"},
+    {"id": "observed_3", "verb": "edges", "target": {"nodes": [{"var": "s", "label": "Item", "id": {"identity": "item", "args": [{"ref": "k"}]}}, {"var": "t", "label": "Group", "id": {"identity": "group", "args": [{"ref": "g"}]}}], "edges": [{"var": "e", "label": "Belongs", "from": "s", "to": "t"}]}, "rule": "observed"},
+    {"id": "edges", "verb": "rows", "source": "edges"},
+    {"id": "observed_4", "verb": "edges", "target": {"nodes": [{"var": "s", "label": "Item", "id": {"identity": "item", "args": [{"ref": "src"}]}}, {"var": "t", "label": "Item", "id": {"identity": "item", "args": [{"ref": "dst"}]}}], "edges": [{"var": "e", "label": "Edge", "from": "s", "to": "t"}]}, "rule": "observed"}
+  ],
+  "wires": [
+    {"from": "items", "to": "observed_1"},
+    {"from": "items", "to": "observed_2"},
+    {"from": "items", "to": "observed_3"},
+    {"from": "edges", "to": "observed_4"}
+  ]
+}

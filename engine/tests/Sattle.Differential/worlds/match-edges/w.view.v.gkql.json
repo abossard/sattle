@@ -1,0 +1,16 @@
+{
+  "graph": "v",
+  "ontology": "w.view",
+  "history": 0,
+  "inputs": [{"name": "master", "ontology": "w.base"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "emit_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Pair", "id": {"identity": "pair", "args": [{"ref": "a"}, {"ref": "b"}]}, "props": {"a": {"ref": "a"}, "b": {"ref": "b"}, "g": {"ref": "g"}}}]}},
+    {"id": "pair_1", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "x", "label": "Item"}, {"var": "y", "label": "Item"}], "edges": [{"var": "e", "label": "Edge", "from": "x", "to": "y"}]}},
+    {"id": "pair_2", "verb": "project", "columns": {"a": {"ref": "x.k"}, "b": {"ref": "y.k"}, "g": {"ref": "y.g"}}}
+  ],
+  "wires": [
+    {"from": "pair_2", "to": "emit_1"},
+    {"from": "pair_1", "to": "pair_2"}
+  ]
+}

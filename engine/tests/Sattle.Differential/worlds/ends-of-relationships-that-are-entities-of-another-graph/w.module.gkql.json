@@ -1,0 +1,24 @@
+{
+  "module": "w",
+  "version": "1.0.0",
+  "imports": [],
+  "entities": [
+    {"name": "Item", "properties": [{"name": "k", "type": "Text", "label": true}, {"name": "g", "type": "Text"}]},
+    {"name": "Group", "properties": [{"name": "name", "type": "Text", "label": true}]}
+  ],
+  "relationships": [
+    {"name": "Edge", "from": "Item", "to": "Item", "kind": "communication"},
+    {"name": "Belongs", "from": "Item", "to": "Group", "kind": "composition"},
+    {"name": "Talks", "from": "Group", "to": "Group", "kind": "communication"},
+    {"name": "Needs", "from": "Group", "to": "Group", "kind": "dependency"},
+    {"name": "Seen", "from": "Item", "to": "Group"}
+  ],
+  "identities": [
+    {"name": "item", "type": "Item", "components": [{"name": "k", "type": "Text"}]},
+    {"name": "group", "type": "Group", "components": [{"name": "name", "type": "Text"}]}
+  ],
+  "rows": [
+    {"name": "ItemRow", "fields": [{"name": "k", "type": "Text"}, {"name": "g", "type": "Text"}]},
+    {"name": "EdgeRow", "fields": [{"name": "src", "type": "Text"}, {"name": "dst", "type": "Text"}]}
+  ]
+}
