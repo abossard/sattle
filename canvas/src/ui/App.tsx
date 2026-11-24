@@ -1,10 +1,10 @@
 // Application shell. Everything on screen is a Fluent component; the WebGL canvas sits behind CanvasHost.
 import {
   Button, FluentProvider, Menu, MenuItemRadio, MenuList, MenuPopover, MenuTrigger, MessageBar, MessageBarActions, MessageBarBody, MessageBarTitle, Select, Spinner, Tab, TabList, Text,
-  Toolbar, ToolbarButton, makeStyles, tokens,
+  ToggleButton, Toolbar, ToolbarButton, makeStyles, tokens,
 } from "@fluentui/react-components";
 import { Keyboard20Regular, WeatherMoon20Regular } from "@fluentui/react-icons";
-import { Suspense, lazy, useEffect } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { runtime } from "../state/runtime";
 import { SOURCES } from "../state/sources";
 import { dispatch, useStore } from "../state/store";
@@ -35,6 +35,7 @@ const useStyles = makeStyles({
   workspace: { minWidth: 0, minHeight: 0, overflow: "auto" },
   standardView: { height: "100%" },
   status: { display: "flex", columnGap: tokens.spacingHorizontalL, flexWrap: "wrap", padding: `${tokens.spacingVerticalXXS} ${tokens.spacingHorizontalM}`, borderTop: `1px solid ${tokens.colorNeutralStroke2}`, backgroundColor: tokens.colorNeutralBackground1, color: tokens.colorNeutralForeground2, "& b": { fontFamily: tokens.fontFamilyMonospace, fontWeight: tokens.fontWeightRegular, color: tokens.colorNeutralForeground1 } },
+  timings: { marginLeft: "auto", minWidth: 0, height: "auto", padding: `0 ${tokens.spacingHorizontalXS}`, fontWeight: tokens.fontWeightRegular },
   skip: { position: "absolute", left: "-999px", ":focus": { left: tokens.spacingHorizontalM, top: tokens.spacingVerticalM, zIndex: 100, backgroundColor: tokens.colorNeutralBackground1, padding: tokens.spacingHorizontalM } },
   hidden: { position: "absolute", width: "1px", height: "1px", overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" },
 });
@@ -44,8 +45,11 @@ const Mark = () => (
   <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M1.5 1.5h13v13h-13z M1.5 5.5h2 M1.5 10.5h2 M5.5 1.5v2 M10.5 1.5v2 M9 10h5.5v4.5" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg>
 );
 
+/** The status bar says what the user looks at: the graph, its gaps, the engine and the source. The timings of the canvas itself
+ * (layout, frame, labels, ingest, load) are for whoever tunes it, so they wait behind a toggle. */
 function Status() {
   const s = useStyles();
+  const [timings, setTimings] = useState(false);
   const st = { load: useStore((x) => x.load), conn: useStore((x) => x.connection), active: useStore((x) => x.activeGraph), graphs: useStore((x) => x.graphs) };
   useStore((x) => x.time.now);
   const ws = runtime.ws;
@@ -58,10 +62,13 @@ function Status() {
     <div className={s.status} role="contentinfo">
       {g && <Text size={200}>Graph <b>{g.id}</b>: <b>{g.nodes.toLocaleString()}</b> nodes · <b>{g.edges.toLocaleString()}</b> edges</Text>}
       {pane && pane.graph.unresolvedEdgeCount > 0 && <Text size={200}><b>{pane.graph.unresolvedEdgeCount}</b> edges with a missing endpoint (not drawn)</Text>}
-      {pane && <Text size={200}>{pane.layoutRunning ? `layout ${Math.round(pane.layoutProgress * 100)}%` : pane.lastLayoutMs ? `layout ${Math.round(pane.lastLayoutMs)} ms` : "layout idle"} · frame <b>{avg.toFixed(1)}</b> ms CPU · labels {pane.view.stats.visibleLabels}</Text>}
-      {hub?.hasData && <Text size={200}>telemetry · ingest <b>{hub.store.stats.avgMs.toFixed(1)}</b> ms</Text>}
-      {st.conn && <Text size={200} title={st.conn.detail}>engine <b>{st.conn.state}</b> · reconnects {st.conn.reconnects} · gaps filled {st.conn.gapsFilled}</Text>}
-      {ws && <Text size={200}>source: {ws.source.name} · loaded in {Math.round(st.load.ms)} ms</Text>}
+      {pane && pane.layoutRunning && <Text size={200}>layout {Math.round(pane.layoutProgress * 100)}%</Text>}
+      {st.conn && <Text size={200} title={st.conn.detail}>engine <b>{st.conn.state}</b>{st.conn.reconnects > 0 && <> · reconnects <b>{st.conn.reconnects}</b></>}{st.conn.gapsFilled > 0 && <> · gaps filled <b>{st.conn.gapsFilled}</b></>}</Text>}
+      {ws && <Text size={200}>source: {ws.source.name}</Text>}
+      {timings && pane && <Text size={200}>{pane.lastLayoutMs ? <>layout <b>{Math.round(pane.lastLayoutMs)}</b> ms · </> : null}frame <b>{avg.toFixed(1)}</b> ms CPU · labels <b>{pane.view.stats.visibleLabels}</b></Text>}
+      {timings && hub?.hasData && <Text size={200}>telemetry ingest <b>{hub.store.stats.avgMs.toFixed(1)}</b> ms</Text>}
+      {timings && ws && <Text size={200}>loaded in <b>{Math.round(st.load.ms)}</b> ms</Text>}
+      {ws && <ToggleButton className={s.timings} size="small" appearance="transparent" checked={timings} onClick={() => setTimings((t) => !t)}>Timings</ToggleButton>}
     </div>
   );
 }

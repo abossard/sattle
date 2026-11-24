@@ -162,7 +162,7 @@ The timeline's `+ added`, `− removed` and `Δ changed` are neutral badges; the
 Paper header with a 1px rule underneath, a 16px sheet mark (a frame with zone ticks, stroked in current color) beside the product name, Fluent tab list for the views. Toolbars are small, with subtle icon buttons; the draft toolbar holds the single primary button, Commit, at the right.
 
 ### Status bar
-Paper strip with a 1px top rule, small text, wrapping.
+Paper strip with a 1px top rule, small text, wrapping. It says what the user looks at: the graph and its counts, edges not drawn, layout progress while it runs, the engine state (reconnects and filled gaps once there are any) and the source. The canvas's own timings (layout, frame, labels, ingest, load) wait behind a subtle Timings toggle at the right end.
 
 ## Do's and Don'ts
 
