@@ -64,6 +64,7 @@ describe("the rows after each verb in a preview", () => {
     ["one operator per verb", [{ op: `${P}/op:match_1`, rows: "40" }, { op: `${P}/op:keep_1`, rows: "12" }], { "verb:match": "40", "verb:keep": "12" }],
     ["a verb's last operator is its output", [{ op: `${P}/op:match_1`, rows: "40" }, { op: `${P}/op:match_2`, rows: "30" }], { "verb:match": "30" }],
     ["operators of another projection are left out", [{ op: "d:m/projection:q/op:keep_1", rows: "9" }], {}],
+    ["a sink has no count", [{ op: `${P}/op:out_1`, rows: "0" }], {}],
     ["an operator of no verb of the program is left out", [{ op: `${P}/op:gone_1`, rows: "9" }], {}],
   ])("%s", (_, operators, rows) => expect(Object.fromEntries(rowsByVerb(program, P, operators))).toEqual(rows));
 });

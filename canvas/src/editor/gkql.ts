@@ -152,12 +152,16 @@ export function focusOf(program: GkqlProgram, projectionId: string, focus: strin
   return null;
 }
 
-/** The rows after each verb, from a draft preview's operators (in plan order): a verb's last operator is its output. */
+/**
+ * The rows after each verb, from a draft preview's operators (in plan order): a verb's last operator is its output. A sink writes to its
+ * graph and holds no rows, so it has no count.
+ */
 export function rowsByVerb(program: GkqlProgram, projectionId: string, operators: readonly { op: string; rows: string }[]): Map<string, string> {
+  const sinks = new Set(program.verbs.filter((v) => outputVerbs.has(v.verb)).map((v) => verbFocus(v.id)));
   const rows = new Map<string, string>();
   for (const o of operators) {
     const focus = focusOf(program, projectionId, o.op);
-    if (focus?.startsWith("verb:")) rows.set(focus, o.rows);
+    if (focus?.startsWith("verb:") && !sinks.has(focus)) rows.set(focus, o.rows);
   }
   return rows;
 }
