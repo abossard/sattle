@@ -163,6 +163,8 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     }
     readonly Dictionary<string, Served> served = new(StringComparer.Ordinal);
     readonly List<Patch> catalogHistory = [];
+    /// <summary>The text of each definition document (a module or a projection file) from the catalog revision on that set it; null when the document was removed. A release of a module is restored from these texts.</summary>
+    readonly List<(long Revision, string Module, string Document, string? Text)> documents = [];
     /// <summary>The engine inputs so far, for a space without a journal and up to the row cap. A space with a journal keeps none: the journal holds them, and a copy in memory would grow with the input.</summary>
     List<EngineInput>? kept;
     readonly List<Subscription> subs = [];
@@ -235,6 +237,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         var bad = AdapterRegistry.Verify(cat, cat.Spaces[spaceId], Adapters);
         if (bad.Count > 0) throw new InvalidOperationException(string.Join("\n", bad));
         catalogHistory.AddRange(cat.Log.Commits.Select(c => c.Patch));
+        RecordDocuments(0, [.. sources.Keys, .. others.Select(f => Path.GetFileName(f.Path))]);
         Engine = NewEngine(cat);
         Rebuild();
         HookEngine();
@@ -452,12 +455,13 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         public Dictionary<string, Served> Served = null!;
         public List<(long Seq, string? Graph, string Kind, string Text)> Ring = null!;
         public List<Patch> CatalogHistory = null!;
+        public List<(long Revision, string Module, string Document, string? Text)> Documents = null!;
         public Dictionary<string, (string Path, string Text)> Sources = null!;
         public long Seq, LambdaSeen, InputRows; public int Generation; public bool Done;
         public IReadOnlyList<ISourceAdapter> Adapters = null!; public Replay? Live; public Dictionary<string, string> SourcePositions = null!; public Queue<string> LiveKeyOrder = null!; public HashSet<string> LiveKeys = null!;
     }
 
-    HostState StateRootOf() => new() { Engine = Engine.StateRootOf(), Served = served, Ring = ring, CatalogHistory = catalogHistory, Sources = sources, Seq = Seq, LambdaSeen = lambdaSeen, InputRows = inputRows, Generation = generation, Done = Done, Adapters = Adapters, Live = live, SourcePositions = sourcePositions, LiveKeyOrder = liveKeyOrder, LiveKeys = liveKeys };
+    HostState StateRootOf() => new() { Engine = Engine.StateRootOf(), Served = served, Ring = ring, CatalogHistory = catalogHistory, Documents = documents, Sources = sources, Seq = Seq, LambdaSeen = lambdaSeen, InputRows = inputRows, Generation = generation, Done = Done, Adapters = Adapters, Live = live, SourcePositions = sourcePositions, LiveKeyOrder = liveKeyOrder, LiveKeys = liveKeys };
 
     static string BuildId => typeof(SpaceHost).Assembly.ManifestModule.ModuleVersionId.ToString();
 
@@ -977,6 +981,23 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         return cat;
     }
 
+    void RecordDocuments(long revision, IEnumerable<string> names)
+    {
+        foreach (var n in names)
+        {
+            if (!IsFileName(n)) { documents.Add((revision, n, n, sources[n].Text)); continue; }
+            var text = others.FirstOrDefault(f => Path.GetFileName(f.Path) == n)?.Text;
+            var module = text is null ? documents.LastOrDefault(x => x.Document == n).Module
+                : Catalog.FileOf.Where(kv => Path.GetFileName(kv.Value) == n).Select(kv => Ids.ModuleOf(kv.Key)).FirstOrDefault();
+            if (module is not null) documents.Add((revision, module, n, text));
+        }
+    }
+
+    /// <summary>The documents of `module` as they were at catalog revision `revision`: every document it ever had, null for one it did not have then.</summary>
+    Dictionary<string, string?> DocumentsAt(string module, long revision) =>
+        documents.Where(x => x.Module == module).GroupBy(x => x.Document)
+            .ToDictionary(g => g.Key, g => g.LastOrDefault(x => x.Revision <= revision).Text);
+
     string ModuleOfPath(string? path) => sources.FirstOrDefault(kv => kv.Value.Path == path).Key ?? (path is null ? "" : Path.GetFileNameWithoutExtension(path));
 
     JsonNode DiagJson(Diagnostic d) => new JsonObject
@@ -1124,6 +1145,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
                 foreach (var f in removed) File.Delete(f.Path);
             }
             if (catPatch.Edits.Length > 0) catalogHistory.Add(catPatch); else catalogHistory.Add(new Patch("catalog", catalogHistory.Count, catalogHistory.Count + 1, []));
+            RecordDocuments(catalogHistory.Count, texts.Keys);
             Rebuild();
             foreach (var (g, p) in newPatches) { served[g].Add(p, lambdaSeen); Trim(served[g]); }
             foreach (var g in fresh.Graphs) served[g.Name].Offset = served[g.Name].Head - g.Head;

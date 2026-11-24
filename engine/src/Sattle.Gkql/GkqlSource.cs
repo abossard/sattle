@@ -31,7 +31,7 @@ public sealed record Drawing(List<DrawnNode>? Nodes, List<DrawnEdge>? Edges);
 public sealed record DrawnNode(string Var, string Label, JsonElement? Id, bool Extend, Dictionary<string, JsonElement>? Props);
 public sealed record DrawnEdge(string Var, string Label, string From, string To, Dictionary<string, JsonElement>? Props);
 
-/// <summary>A placeholder: `{"ref": "d.cluster"}` a column or a property of an element column, `{"lit": 0}`, `{"param": "minReady"}`, `{"fn": "iff", "args": [...]}`.</summary>
+/// <summary>A placeholder: `{"ref": "d.name"}` a column or a property of an element column, `{"lit": 0}`, `{"param": "limit"}`, `{"fn": "iff", "args": [...]}`.</summary>
 abstract record Expr;
 sealed record Ref(string Path) : Expr;
 sealed record Lit(Value V) : Expr;
@@ -39,7 +39,12 @@ sealed record Param(string Name) : Expr;
 sealed record Fn(string Name, Expr[] Args) : Expr;
 sealed record Identity(string Domain, Expr[] Args) : Expr;
 
-sealed class Refused(string at, string message) : Exception($"{at}: {message}");
+/// <summary>Why a program cannot be lowered, and the authored element that makes it so (`verb:ID`, `wire:FROM>TO`, `port:NAME`; none for the whole program).</summary>
+sealed class Refused(string at, string message, string? element) : Exception($"{at}: {message}")
+{
+    public Refused(string at, string message) : this(at, message, "verb:" + at) { }
+    public string? Element => element;
+}
 
 /// <summary>The rows on a wire: the port that carries them, their columns, and the element type of each column that holds an element.</summary>
 sealed record Rows(string Port, List<string> Cols, Dictionary<string, string> Types);
@@ -52,12 +57,13 @@ public static class Lowering
 
     public static ProgramGraph Parse(string text) => JsonSerializer.Deserialize<ProgramGraph>(text, Json) ?? throw new JsonException("empty program");
 
-    /// <summary>The operator facts of `program` as the projection `module/projection:graph`, or why it cannot be lowered.</summary>
-    public static (string ProjectionId, IReadOnlyList<Element> Facts, string? Fault) Lower(ProgramGraph program, Graph catalog, string module)
+    /// <summary>The operator facts of `program` as the projection `module/projection:graph`, or why it cannot be lowered and the element that is the cause (`Focus`: the projection, or an authored verb, wire or input of it).</summary>
+    public static (string ProjectionId, IReadOnlyList<Element> Facts, string? Fault, string Focus) Lower(ProgramGraph program, Graph catalog, string module)
     {
         var w = new Writer(catalog, module, program);
-        try { w.Run(); return (w.Pid, [.. w.B.Elements()], null); }
-        catch (Exception e) when (e is Refused or JsonException) { return (w.Pid, [], e.Message); }
+        try { w.Run(); return (w.Pid, [.. w.B.Elements()], null, w.Pid); }
+        catch (Refused e) { return (w.Pid, [], e.Message, e.Element is { } element ? w.Pid + "/" + element : w.Pid); }
+        catch (JsonException e) { return (w.Pid, [], e.Message, w.Pid); }
     }
 
     internal static Value Literal(JsonElement v) => v.ValueKind switch
@@ -95,17 +101,17 @@ public static class Lowering
                 {
                     var id = InputPort(g.Name, "graph");
                     B.Edge(id, "expects", Ids.Module(ontology));
-                    if (!graphPorts.TryAdd(g.Name, id)) throw new Refused(g.Name, "duplicate graph input");
+                    if (!graphPorts.TryAdd(g.Name, id)) throw new Refused(g.Name, "duplicate graph input", "port:" + g.Name);
                 }
                 else if (g.Rows is { } rows && g.Ontology is null && rows.LastIndexOf('.') is > 0 and var dot)
                 {
                     var type = Ids.Child(Ids.Module(rows[..dot]), "rows", rows[(dot + 1)..]);
-                    if (catalog.Entity(type) is null) throw new Refused(g.Name, $"'{rows}' is not a row type");
+                    if (catalog.Entity(type) is null) throw new Refused(g.Name, $"'{rows}' is not a row type", "port:" + g.Name);
                     var id = InputPort(g.Name, "rows");
                     B.Edge(id, "rowType", type);
-                    if (!rowPorts.TryAdd(g.Name, (id, type))) throw new Refused(g.Name, "duplicate row input");
+                    if (!rowPorts.TryAdd(g.Name, (id, type))) throw new Refused(g.Name, "duplicate row input", "port:" + g.Name);
                 }
-                else throw new Refused(g.Name, "an input names either an ontology or a qualified row type");
+                else throw new Refused(g.Name, "an input names either an ontology or a qualified row type", "port:" + g.Name);
             }
             foreach (var q in p.Parameters)
             {
@@ -129,13 +135,13 @@ public static class Lowering
         List<VerbNode> Order()
         {
             var ids = p.Verbs.Select(v => v.Id).ToList();
-            if (ids.Distinct(StringComparer.Ordinal).Count() != ids.Count) throw new Refused(p.Graph, "every verb has its own id");
-            foreach (var x in p.Wires.Where(x => !ids.Contains(x.From) || !ids.Contains(x.To))) throw new Refused($"{x.From} -> {x.To}", "a wire joins two verbs of the program");
+            if (ids.GroupBy(i => i, StringComparer.Ordinal).FirstOrDefault(g => g.Count() > 1) is { } twice) throw new Refused(twice.Key, "every verb has its own id");
+            foreach (var x in p.Wires.Where(x => !ids.Contains(x.From) || !ids.Contains(x.To))) throw new Refused($"{x.From} -> {x.To}", "a wire joins two verbs of the program", $"wire:{x.From}>{x.To}");
             var order = new List<VerbNode>(); var done = new HashSet<string>(StringComparer.Ordinal);
             while (order.Count < p.Verbs.Count)
             {
                 var next = p.Verbs.FirstOrDefault(v => !done.Contains(v.Id) && p.Wires.Where(x => x.To == v.Id).All(x => done.Contains(x.From)))
-                    ?? throw new Refused(p.Graph, "the wires make a loop: a program graph has none, recursion is a bounded path on a pattern edge");
+                    ?? throw new Refused(p.Graph, "the wires make a loop: a program graph has none, recursion is a bounded path on a pattern edge", null);
                 order.Add(next); done.Add(next.Id);
             }
             return order;
@@ -303,7 +309,7 @@ public static class Lowering
             IntegerValue i => Value.Integer(i.N + 1),
             DecimalValue d => Value.Decimal(d.Q == decimal.MaxValue ? 0 : d.Q + 1),
             TextValue t => Value.Text(t.S + "\u0001"),
-            _ => throw new Refused("pattern", $"{v} is not a value a pattern node can require"),
+            _ => throw new Refused("pattern", $"{v} is not a value a pattern node can require", null),
         };
 
         Rows Filter(string at, Rows r, Expr cond)
@@ -572,9 +578,9 @@ public sealed partial class GkqlSource : IProjectionSource
             var pid = Ids.Child(Ids.Module(module), "projection", name[(dot + 1)..]);
             try
             {
-                var (actual, facts, fault) = Lowering.Lower(Lowering.Parse(f.Text), catalog, module);
-                if (fault is null && actual != pid) fault = $"the program names its graph {Ids.Name(actual)}, the file {Ids.Name(pid)}";
-                if (fault is not null) { diags.Add(new Diagnostic("Program", "error", pid, fault, f.Path, 1, 1)); continue; }
+                var (actual, facts, fault, focus) = Lowering.Lower(Lowering.Parse(f.Text), catalog, module);
+                if (fault is null && actual != pid) (fault, focus) = ($"the program names its graph {Ids.Name(actual)}, the file {Ids.Name(pid)}", pid);
+                if (fault is not null) { diags.Add(new Diagnostic("Program", "error", focus, fault, f.Path, 1, 1)); continue; }
                 projections[pid] = facts;
                 places[pid] = (f.Path, new Pos(1, 1));
                 foreach (var op in facts.OfType<Entity>().Where(e => e.Id.StartsWith(pid + "/op:", StringComparison.Ordinal)))

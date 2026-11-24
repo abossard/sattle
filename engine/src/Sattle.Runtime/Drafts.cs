@@ -315,7 +315,7 @@ public sealed partial class SpaceHost
     Graph FactsAt(Release r) => ModuleFacts(StateAt("catalog", r.Revision), r.Module);
 
     public JsonNode ReleaseSnapshot(string digest) { lock (Gate) { var r = FindRelease(digest); return catalogExport.SnapshotOf(FactsAt(r), catalogExport.CatalogDescriptor(r.Revision)); } }
-    public string ReleaseText(string digest) { lock (Gate) { var r = FindRelease(digest); return Printer.Print(StateAt("catalog", r.Revision), r.Module); } }
+    public string ReleaseText(string digest) { lock (Gate) { var r = FindRelease(digest); return NativeModule(r.Module) ? DocumentsAt(r.Module, r.Revision)[r.Module]! : Printer.Print(StateAt("catalog", r.Revision), r.Module); } }
     public JsonNode ReleaseDiff(string from, string to)
     {
         lock (Gate)
@@ -330,6 +330,14 @@ public sealed partial class SpaceHost
         lock (Gate)
         {
             var d = GetDraft(id); var r = FindRelease(digest);
+            if (NativeModule(r.Module))
+            {
+                // a module written as documents: the draft takes the texts the release was made from
+                JsonNode check = CheckDraftLocked(d);
+                foreach (var (doc, text) in DocumentsAt(r.Module, r.Revision))
+                    if (text != (d.Files.TryGetValue(doc, out var f) ? f.Text : DraftBaseText(d, doc))) check = SetDraftText(id, doc, text, d.Revision);
+                return check;
+            }
             var edits = Graph.Diff(ModuleFacts(d.Graph, r.Module), FactsAt(r));
             var patch = catalogExport.Patch(new Patch("catalog", d.Revision, d.Revision + 1, edits));
             var res = (JsonObject)ApplyDraftPatch(id, patch, d.Revision);
