@@ -356,8 +356,8 @@ public sealed class ProjectionChecker(Graph defs)
                     if (init != high && init != low) Err("Threshold", op, "initial must be one of the two states");
                     var (noData, ignore) = (d.Text(op, "nodata"), d.Bool(op, "nodataIgnore"));
                     var marked = R.Find(TThreshold.NoDataColumn) is { } nd && nd.T.Ty.Tag == Tag.Boolean && !nd.T.Role.IsData;
-                    if (marked && noData is null && !ignore) Err("Threshold", op, "a series with a freshness limit needs hysteresis to specify what no data gives (noData in GKQL, the fourth argument in KQL)");
-                    if (!marked && (noData is not null || ignore)) Err("Threshold", op, "a no-data state needs telemetry with a time to live upstream (series.freshness in GKQL, telemetry_filled in KQL) and the noData column in the row");
+                    if (marked && noData is null && !ignore) Err("Threshold", op, "a series with a freshness limit needs hysteresis to specify what no data gives (noData)");
+                    if (!marked && (noData is not null || ignore)) Err("Threshold", op, "a no-data state needs telemetry with a time to live upstream (series.freshness) and the noData column in the row");
                     if (noData is not null && (noData == high || noData == low)) Err("Threshold", op, "the value for no data must differ from the two states");
                     var target = d.Text(op, "target") ?? "status";
                     var cols = kcols.Concat(carry).Append(new Col(target, new FType(Ty.Text, true, Role.Data))).ToList();
@@ -1069,7 +1069,7 @@ public sealed class ProjectionChecker(Graph defs)
                 }
             case "Shift":
                 {
-                    // an instant moved by a duration in nanoseconds: KQL's `t + 5m`, `t - 5m`
+                    // an instant moved by a duration in nanoseconds (`shift`, `t + 5m`, `t - 5m`)
                     if (!Arity(2, 2)) break;
                     if (args[0].Type.Ty.Tag != Tag.Instant || args[1].Type.Ty.Tag != Tag.Integer) { Err("E-Call", node, $"Shift moves an Instant by a duration, found {args[0].Type.Ty} and {args[1].Type.Ty}"); return null; }
                     role = Types.Join(fn, roles, out je); if (role is null) { Err("E-Call", node, je!); return null; }

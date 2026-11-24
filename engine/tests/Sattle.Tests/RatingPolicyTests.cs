@@ -4,7 +4,7 @@ using Sattle.Runtime;
 
 namespace Sattle.Tests;
 
-public class HealthPolicyTests
+public class RatingPolicyTests
 {
     static readonly string Example = Path.Combine(Repo.Root, "engine", "examples", "kiln");
 

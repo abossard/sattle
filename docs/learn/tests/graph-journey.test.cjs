@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {readFileSync} = require('node:fs');
+const {execFileSync} = require('node:child_process');
 const {join} = require('node:path');
 const vm = require('node:vm');
 
@@ -198,7 +199,10 @@ test('the five output views trace their answers back to the same shop evidence',
 test('the GKQL drawing and replay follow the authored query and captured inputs', () => {
   const source = readFileSync(join(__dirname, '../foundry/gkql-example.js'), 'utf8');
   const example = JSON.parse(vm.runInNewContext(source + '\nJSON.stringify(ShopGkqlExample)'));
-  const fromRepo = file => readFileSync(join(__dirname, '../../..', file), 'utf8');
+  const recorded = 'https://github.com/abossard/sattle/blob/fcf7725/';      // a source the example was recorded with, before gkql: read at that commit
+  const fromRepo = file => file.startsWith(recorded)
+    ? execFileSync('git', ['show', 'fcf7725:' + file.slice(recorded.length)], {cwd: join(__dirname, '../../..'), encoding: 'utf8', maxBuffer: 1 << 26})
+    : readFileSync(join(__dirname, '../../..', file), 'utf8');
   const records = file => fromRepo(file).trim().split('\n').map(line => JSON.parse(line));
   const program = JSON.parse(fromRepo(example.sources.program));
   assert.deepEqual(example.verbs.map(({id,verb}) => ({id,verb})), program.verbs.map(({id,verb}) => ({id,verb})));
@@ -260,7 +264,7 @@ test('the Health Tree preserves the recorded Affects branches and the source of 
     assert.equal(Object.hasOwn(frame.treeOwn,'service:web'), false);
     for (const key of branch) assert.equal(frame.treeStates[key], alarm && affected.has(key) ? 'Unhealthy' : 'Healthy');
   }
-  const query = repo('engine/definitions/acme.workload.workloadHealth.kql');
+  const query = execFileSync('git', ['show', 'fcf7725:engine/definitions/acme.workload.workloadHealth.kql'], {cwd: join(__dirname, '../../..'), encoding: 'utf8'});      // the query the replay was recorded with, before gkql
   const clauses = [...lesson('guide.js').matchAll(/<dd><code>(.*?)<\/code>/g)].map(match => match[1].replaceAll('&gt;', '>'));
   assert.equal(clauses.length, 3);
   for (const clause of clauses) assert.ok(query.includes(clause), clause);

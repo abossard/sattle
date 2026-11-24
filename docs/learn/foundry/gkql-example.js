@@ -94,10 +94,10 @@ const ShopGkqlExample = {
     {"from": "withDst", "to": "talks"}
   ],
   sources: {
-    "program": "engine/experiments/X12-picture-c/acme.deployhealth.deploymentHealth.gkql.json",
-    "kubernetes": "engine/tests/Sattle.Tests/fixtures/deploy-health/kubernetes/watch.ndjson",
-    "hubble": "engine/tests/Sattle.Tests/fixtures/deploy-health/hubble/flows.ndjson",
-    "tests": "engine/experiments/X12-picture-c/PictureCTests.cs",
-    "patchTests": "engine/tests/Sattle.Tests/DeployHealthTests.cs"
+    "program": "https://github.com/abossard/sattle/blob/fcf7725/engine/experiments/X12-picture-c/acme.deployhealth.deploymentHealth.gkql.json",
+    "kubernetes": "https://github.com/abossard/sattle/blob/fcf7725/engine/tests/Sattle.Tests/fixtures/deploy-health/kubernetes/watch.ndjson",
+    "hubble": "https://github.com/abossard/sattle/blob/fcf7725/engine/tests/Sattle.Tests/fixtures/deploy-health/hubble/flows.ndjson",
+    "tests": "https://github.com/abossard/sattle/blob/fcf7725/engine/experiments/X12-picture-c/PictureCTests.cs",
+    "patchTests": "https://github.com/abossard/sattle/blob/fcf7725/engine/tests/Sattle.Tests/DeployHealthTests.cs"
   }
 };

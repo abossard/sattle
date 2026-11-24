@@ -233,6 +233,8 @@ public class LensTests
     {
         { "a rule with create that does not accept create", """{"accept": ["delete"]}""", "create says what a create makes, so the rule accepts create" },
         { "a lens whose nodes sink accepts create without create", """{"create": null}""", "a rule whose nodes sink accepts create names the identity domain of a new element in create" },
+        { "a delete that sets a property the type does not have", """{"delete": {"set": {"nosuch": {"lit": "gone"}}}}""", "Capability has no property nosuch" },
+        { "a delete that sets a value read from the row", """{"delete": {"set": {"status": {"ref": "status"}}}}""", "status is a constant or a component of the key" },
     };
 
     [Theory, MemberData(nameof(RulesRefused))]

@@ -6,7 +6,7 @@ using Sattle.Runtime;
 namespace Sattle.Tests;
 
 /// <summary>Unit readiness as definitions only (acme.readiness): the state of a Unit follows its ready instances by patches in both directions.</summary>
-public class DeployHealthTests
+public class ReadinessTests
 {
     const long Min = 60_000_000_000;
     static string Fixture => Path.Combine(Repo.Root, "engine", "tests", "Sattle.Tests", "fixtures", "deploy-health");

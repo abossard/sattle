@@ -688,7 +688,7 @@ public static class Lowering
             };
         }
 
-        // KQL's names for the scalar functions, and the engine's
+        // gkql's names for the scalar functions, and the engine's
         static readonly Dictionary<string, string> Functions = new()
         {
             ["=="] = "Equal", ["!="] = "NotEqual", ["<"] = "LessThan", ["<="] = "LessOrEqual", [">"] = "GreaterThan", [">="] = "GreaterOrEqual",
@@ -750,7 +750,7 @@ public static class Lowering
     }
 }
 
-// ---- action at the edge: the catalog reads program files beside the KQL files
+// ---- action at the edge: the catalog reads program files beside the module documents
 
 /// <summary>Graph-native projection programs and declarations.</summary>
 public sealed partial class GkqlSource : IProjectionSource

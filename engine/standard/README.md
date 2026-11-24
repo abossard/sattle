@@ -99,12 +99,12 @@ Ousterhout’s deep-module principle determines what the owner edits here. One r
 1. Give the owner one durable identity for an operation pattern and separate identities for its executions. Join only on source-provided correlation. Replay shuffled arrivals, retries, duplicates, withdrawals, aggregates and late parents. Compare directed edges, source references and the closed-window digest. [Flow tests](../tests/Sattle.Tests/FlowDiscoveryTests.cs)
 2. Count the scoped population before applying project rules. Compute findings in both directions and record the source's reporting limits. Verify the five-item reconciliation, two sources, conflicting roles and a historical query after correction. [Coverage tests](../tests/Sattle.Tests/CoverageTests.cs)
 3. Let the viewer read the findings and edit one small GKQL rule table. Keep evidence ingestion, draft replay and publication at their existing boundaries. Drive the form with an unrelated source, then use a real engine to preview, publish, read the old revision and compare the new graph with an independent CLI replay. [Form tests](../../canvas/tests/coverage-review.test.tsx) · [Live test](../../canvas/tests/engine/coverage-review.test.ts)
-4. Keep project health decisions in definitions. Feed the same recorded windows to two policies and check exactly which transition moves. Verify expiry, dependency impact and terminal evidence by identity. [Health tests](../tests/Sattle.Tests/HealthPolicyTests.cs)
+4. Keep project health decisions in definitions. Feed the same recorded windows to two policies and check exactly which transition moves. Verify expiry, dependency impact and terminal evidence by identity. [Health tests](../tests/Sattle.Tests/RatingPolicyTests.cs)
 
 Run the acceptance harness from the repository root.
 
 ```sh
-dotnet test engine/tests/Sattle.Tests --filter 'FullyQualifiedName~FlowDiscoveryTests|FullyQualifiedName~CoverageTests|FullyQualifiedName~HealthPolicyTests'
+dotnet test engine/tests/Sattle.Tests --filter 'FullyQualifiedName~FlowDiscoveryTests|FullyQualifiedName~CoverageTests|FullyQualifiedName~RatingPolicyTests'
 npm --prefix canvas test -- --project pure coverage-review.test.tsx engine-source.test.ts
 npm --prefix canvas test -- --project engine tests/engine/coverage-review.test.ts
 ```

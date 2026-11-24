@@ -141,7 +141,7 @@ public class CheckerTests
         """,
         Program("w", "w", """[{"name": "g", "ontology": "v"}]""", verbs, wires));
 
-    /// <summary>A view with one text parameter `only`, bound by the space as `binding` says (Prop. 5.8: a parameter is a constant of the binding; `DeployHealthTests` runs one projection under two bindings).</summary>
+    /// <summary>A view with one text parameter `only`, bound by the space as `binding` says (Prop. 5.8: a parameter is a constant of the binding; `ReadinessTests` runs one projection under two bindings).</summary>
     static SourceFile[] Bound(string binding) => View(
         Items + ", " + """{"id": "chosen", "verb": "where", "condition": {"fn": "==", "args": [{"ref": "g"}, {"param": "only"}]}}, """ + Out,
         string.Join(", ", FromItems, Wire("fields", "chosen"), Wire("chosen", "out")),
@@ -181,6 +181,15 @@ public class CheckerTests
             {"id": "both", "verb": "union"},
             {"id": "out", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Out", "id": {"identity": "out", "args": [{"lit": "k"}]}, "props": {"k": {"lit": "k"}}}]}}
             """, string.Join(", ", Wire("items", "a"), Wire("others", "b"), Wire("a", "both"), Wire("b", "both"), Wire("both", "out"))), "Union", "union inputs must have the same columns" },
+        { "a union of the ids of two identity domains: an id is made only in a sink, so no other verb carries one past a merge", View(Items + ", " + """
+            {"id": "a", "verb": "project", "columns": {"x": {"identity": "out", "args": [{"ref": "k"}]}}},
+            {"id": "b", "verb": "project", "columns": {"x": {"identity": "outByGroup", "args": [{"ref": "g"}]}}},
+            {"id": "both", "verb": "union"},
+            {"id": "out", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Out", "id": {"ref": "x"}, "props": {"k": {"lit": "k"}}}]}}
+            """, string.Join(", ", FromItems, Wire("fields", "a"), Wire("fields", "b"), Wire("a", "both"), Wire("b", "both"), Wire("both", "out")),
+            """{"identities": [{"name": "outByGroup", "type": "Out", "components": [{"name": "g", "type": "Text"}]}]}"""), "IdentityOutsideSink", "stands only in the key of a nodes statement" },
+        { "two Texts compared by order", View(Items + ", " + """{"id": "first", "verb": "where", "condition": {"fn": "<", "args": [{"ref": "k"}, {"ref": "g"}]}}, """ + Out,
+            string.Join(", ", FromItems, Wire("fields", "first"), Wire("first", "out"))), "E-Call", "needs two ordered operands of one kind and unit, found Text and Text" },
         { "a row of a table of values with another type than its column", View("""
             {"id": "names", "verb": "values", "values": {"columns": {"tk": "Text", "label": "Text"}, "rows": [{"tk": "g1", "label": "L1"}, {"tk": "g2", "label": 2}]}},
             {"id": "out", "verb": "nodes", "target": {"nodes": [{"var": "o", "label": "Out", "id": {"identity": "out", "args": [{"ref": "tk"}]}, "props": {"k": {"ref": "tk"}, "flag": {"ref": "label"}}}]}}

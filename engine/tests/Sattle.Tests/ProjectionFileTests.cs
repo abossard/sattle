@@ -124,4 +124,14 @@ public class ProjectionFileTests
         Assert.Equal(expected, got);
         Assert.Equal(revision, h.CatalogRevision);
     }
+
+    /// <summary>A file of another language in the definitions folder is no definition: the load names it with one typed error, and nothing reads it.</summary>
+    [Theory]
+    [InlineData("acme.extra.sattle", "module acme.extra @ 1.0.0;")]
+    [InlineData("acme.svc.extra.kql", "graph extra : sattle.infra with (rule = \"r\") = flows | project a = 1;")]
+    public void A_file_of_another_language_in_the_definitions_is_unread(string file, string text)
+    {
+        var errors = new Catalog(Repo.Projections).Load([.. Catalog.ReadDirectory(Repo.Definitions), new SourceFile(file, text)], updatePins: true).Diagnostics.Where(d => d.IsError).ToList();
+        Assert.Equal(("UnreadFile", file), (Assert.Single(errors).Code, errors[0].File));
+    }
 }

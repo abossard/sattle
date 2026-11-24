@@ -1,14 +1,14 @@
 "use strict";
 
-const structureFile="engine/definitions/acme.workload.workloadStructure.kql";
-const healthFile="engine/definitions/acme.workload.workloadHealth.kql";
+const structureFile="https://github.com/abossard/sattle/blob/fcf7725/engine/definitions/acme.workload.workloadStructure.kql";
+const healthFile="https://github.com/abossard/sattle/blob/fcf7725/engine/definitions/acme.workload.workloadHealth.kql";
 const lessons={
   estate:["The shop’s master graph","Sattle connects records from the shop’s systems. Start with the stuck refund for order O-104. Follow its payment call, then switch views to see which pods run the refund job.",exploreJourney,[
     ["Sources and adapters","paper/ch10-sources-and-adapters.md"],["Identity","paper/core/ch02-values-and-identity.md"],
     ["Shop source records","docs/learn/foundry/graph-journey.js"],["Retail architecture and sources","docs/learn/foundry/sources.md"]]],
   rollup:["Health Tree","The database answered at 10:10 UTC. A minute later its check failed. Follow the web service’s branch to PostgreSQL, then move through the checks to see when the alarm clears.",exploreHealthTree,[
-    ["How the graphs are connected","engine/definitions/acme.space.sattle"],["Where the branches come from",structureFile],
-    ["Database and cache rules","engine/tests/Sattle.Tests/fixtures/estate/authoring/rules.ndjson"],["How the health query rolls up severity",healthFile],
+    ["How the graphs are connected","https://github.com/abossard/sattle/blob/fcf7725/engine/definitions/acme.space.sattle"],["Where the branches come from",structureFile],
+    ["Database and cache rules","https://github.com/abossard/sattle/blob/fcf7725/engine/tests/Sattle.Tests/fixtures/estate/authoring/rules.ndjson"],["How the health query rolls up severity",healthFile],
     ["How the runtime updates reachable components","engine/src/Sattle.Runtime/Engine.cs#L208"],
     ["Recorded workload patches","canvas/public/demo/estate/workload.patches.ndjson"]]],
   discovery:["System Changes","Redis already appears under web in the shop’s health model. When the API starts using the same cache, Sattle adds Redis under the API too. Follow the new branch back to the call that put it there.",exploreDiscovery,[

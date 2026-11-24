@@ -4,7 +4,7 @@
   "description": "A report on the readiness of the Unit as a document: counts and one line per Unit.",
   "history": 4,
   "inputs": [
-    {"name": "health", "ontology": "acme.readiness"}
+    {"name": "readiness", "ontology": "acme.readiness"}
   ],
   "parameters": [],
   "verbs": [
@@ -16,7 +16,7 @@
     {"id": "emit_4", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Block", "id": {"identity": "block", "args": [{"lit": "header"}, {"ref": "k"}]}, "props": {"a": {"lit": "Namespace"}, "b": {"lit": "Unit"}, "c": {"lit": "State"}, "d": {"lit": "Ready instances"}, "kind": {"lit": "header"}, "order": {"lit": "2"}}}]}},
     {"id": "emit_5", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Block", "id": {"identity": "block", "args": [{"lit": "row"}, {"ref": "key"}]}, "props": {"a": {"ref": "namespace"}, "b": {"ref": "name"}, "c": {"ref": "state"}, "kind": {"lit": "row"}, "n": {"ref": "readyInstances"}, "order": {"fn": "concat", "args": [{"lit": "3/"}, {"ref": "key"}]}}}]}},
     {"id": "totals_1", "verb": "summarize", "by": {"k": {"lit": "all"}}, "aggregates": {"total": {"fn": "count"}, "notReady": {"fn": "sum", "args": [{"fn": "iff", "args": [{"fn": "==", "args": [{"fn": "coalesce", "args": [{"ref": "state"}, {"lit": ""}]}, {"lit": "NotReady"}]}, {"lit": 1}, {"lit": 0}]}]}}},
-    {"id": "workloads_1", "verb": "graph-match", "graph": "health", "pattern": {"nodes": [{"var": "w", "label": "Workload"}], "edges": []}},
+    {"id": "workloads_1", "verb": "graph-match", "graph": "readiness", "pattern": {"nodes": [{"var": "w", "label": "Workload"}], "edges": []}},
     {"id": "workloads_2", "verb": "project", "columns": {"key": {"fn": "concat", "args": [{"ref": "w.site"}, {"fn": "concat", "args": [{"lit": "/"}, {"fn": "concat", "args": [{"ref": "w.namespace"}, {"fn": "concat", "args": [{"lit": "/"}, {"ref": "w.name"}]}]}]}]}, "namespace": {"ref": "w.namespace"}, "name": {"ref": "w.name"}, "state": {"fn": "coalesce", "args": [{"ref": "w.state"}, {"lit": "Unknown"}]}, "readyInstances": {"ref": "w.readyInstances"}}}
   ],
   "wires": [

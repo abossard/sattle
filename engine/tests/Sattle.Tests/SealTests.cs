@@ -60,7 +60,7 @@ public class SealTests
             Assert.Equal((catalog, state), (r.Catalog.Graph.Digest(), r.StateDigest()));
         }
         d.Close();
-        Assert.Contains("no module reads the store's projection files", Assert.ThrowsAny<Exception>(() => SpaceHost.OpenDurable(d.Open(), null, Options(sealEvery) with { UseSeal = false, Projections = null })).Message);      // the same store, opened without a source
+        Assert.Contains("nothing reads the store's definition files", Assert.ThrowsAny<Exception>(() => SpaceHost.OpenDurable(d.Open(), null, Options(sealEvery) with { UseSeal = false, Projections = null })).Message);      // the same store, opened without a source
         Assert.Contains("has no projection source", Assert.Throws<InvalidOperationException>(() => new SpaceHost(files, Options(0) with { Projections = null })).Message);
     }
 

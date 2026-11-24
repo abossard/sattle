@@ -41,7 +41,7 @@
       {"name": "serviceTree", "projection": "svc.serviceDeps", "master": false, "inputs": {"master": "master"}},
       {"name": "capabilities", "projection": "biz.capabilityView", "master": false, "inputs": {"authored": "authored", "tree": "serviceTree"}},
       {"name": "readiness", "projection": "dh.readiness", "master": false, "inputs": {"master": "master"}},
-      {"name": "readinessReport", "projection": "rpt.readinessReport", "master": false, "inputs": {"health": "readiness"}}
+      {"name": "readinessReport", "projection": "rpt.readinessReport", "master": false, "inputs": {"readiness": "readiness"}}
     ]
   }
 }

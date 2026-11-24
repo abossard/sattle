@@ -182,7 +182,6 @@ public static class Server
         app.MapPost("/drafts/{id}/commit", (string id, HttpRequest r) => WithBody(r, b => { return Json(host.CommitDraft(id, Rev(b["expectedCatalogRevision"]?.GetValue<string>()) ?? throw new HostError("BadRequest", "expectedCatalogRevision is required", 400))); }));
         app.MapPost("/drafts/{id}/restore", (string id, HttpRequest r) => WithBody(r, b => { return Json(host.Restore(id, b["digest"]!.GetValue<string>())); }));
         app.MapPost("/drafts/{id}/preview", (string id, HttpRequest r) => WithBody(r, b => { return Json(host.Preview(id, b)); }));
-        // the editors' calls on a projection's KQL text (research 11, section 2): stateless, read against the head catalog
         app.MapGet("/releases", (HttpContext c, string? module) => Guard(() => Cached(c, host, $"releases-{module}", Cache.Head, () => JsonP(host.Releases(module)))));
         app.MapGet("/releases/diff", (HttpContext c, string from, string to) => Guard(() => Cached(c, host, $"rdiff-{from}-{to}", Cache.Digest, () => JsonP(host.ReleaseDiff(from, to)))));
         app.MapGet("/releases/{digest}", (HttpContext c, string digest) => Guard(() => Cached(c, host, "rel-" + digest, Cache.Digest, () => JsonP(host.ReleaseSnapshot(digest)))));
