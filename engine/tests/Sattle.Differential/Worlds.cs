@@ -149,6 +149,8 @@ public static class Worlds
     public static readonly World FilteredEmit = Rows("filtered emit", "Filter, EmitEntity");
     public static readonly World OptionalProperty = Rows("optional property", "EmitEntity") with { Witnesses = ["prop:d="] };
     /// <summary>A threshold whose look-back (3 minutes) is shorter than the logs: the state has to outlive the windows that set it.</summary>
+    /// <summary>#159 G2: a hysteresis by the group `g` of the items, straight over their series, so two items of one group give two rows for one key and window.</summary>
+    public static readonly World SharedKeyThreshold = View("threshold by a key two items share", "Series, Threshold", 0.3, Dense) with { Witnesses = ["state=t:off"] };
     public static readonly World Hysteresis = View("threshold over a short look-back", "Series, Rollup, Threshold", 0.3, Dense) with { Witnesses = ["state=t:on", "state=t:off"] };
     /// <summary>T-B4 (premise B4 of Theorem 6.2): a threshold over a roll-up by group, whose members change group (a keyed item row is replaced with another group, so the item leaves one key and joins another), with windows that leave the retained range of three minutes (the look-back, the least the engine accepts). Every advance is its own step in the engine and in the reference, so an advance and a structure change never share one; the harness cuts the rows between them every way.</summary>
     public static readonly World MembersLeave = View("threshold over a roll-up whose members leave", "Series, Rollup, Threshold, structure change", 0.3, [
@@ -270,7 +272,7 @@ public static class Worlds
         TraverseOneToThree, TraverseIn, TraverseSubtype, JoinOnTraverseStart, JoinOnTraverseStartRight,
         View("emit update", "EmitEntity update") with { Witnesses = ["degree=n:"] },
         View("series and rollup", "Series, Rollup", 0.25) with { Witnesses = ["d:w.view/prop:v"] },
-        Hysteresis, RowParameters, SharedWindow, Fill, FillAroundLoss, FillOverHop, TimeToLive, RollupAll, TwoKeyRules, LiftedDependency, OptionalProperty,
+        Hysteresis, SharedKeyThreshold, RowParameters, SharedWindow, Fill, FillAroundLoss, FillOverHop, TimeToLive, RollupAll, TwoKeyRules, LiftedDependency, OptionalProperty,
         Rows("conflicting fragments", "EmitEntity, Def. 6.4") with { Witnesses = ["prop:g=", "prop:n="] },
         View("threshold", "Series, Rollup, Threshold", 0.3, Dense) with { Witnesses = ["state=t:on", "state=t:off"] },
     ];

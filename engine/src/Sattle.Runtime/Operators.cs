@@ -1093,7 +1093,9 @@ sealed class RollupOp : AggregatingOp
 sealed class ThresholdOp : PhysOp
 {
     /// <summary>Per key with a window in the look-back: those windows, and one carried state: the state machine after the newest window that left the look-back (`State`, `Run`, `Last` its start), so a state never changes because a window grew old (Def. 7.10, D33).</summary>
-    sealed class KeyState { public readonly SortedList<long, (decimal V, int P)> Windows = []; public string? Emitted; public string Id = ""; public long[] Key = []; public string State = ""; public long Run; public long Last = long.MinValue;
+    sealed class KeyState { public readonly SortedList<long, (decimal V, int P)> Windows = [];
+        /// <summary>#159 G2: the rows of a window that has other than exactly one row, with their weights. Such a window has no reading: it is left out, as a gap is.</summary>
+        public Dictionary<long, List<((decimal V, int P) W, long N)>>? Shared; public string? Emitted; public string Id = ""; public long[] Key = []; public string State = ""; public long Run; public long Last = long.MinValue;
         /// <summary>The marker records the key has (Def. 7.16): while there is one, the key is in no data.</summary>
         public long Silent, MarkerWindow, EmittedWindow, StateWindow; }
     /// <summary>The parameters of one window: the constants of the statement, or what the row of the window gives. Rules are few and windows many, so a window holds an index into `parameters`.</summary>
@@ -1148,6 +1150,25 @@ sealed class ThresholdOp : PhysOp
     /// <summary>The frontier from which no accepted window can start less than `within` after the last one of the key.</summary>
     long DropAt(KeyState st) => st.Last == long.MinValue || lookBack is not { } within ? long.MinValue : OpContext.Clamp((Int128)st.Last + within + horizon);
 
+    /// <summary>A row of a window in or out. A window is read when exactly one row holds it; a second row makes it shared (counted under invalid parameters),
+    /// with no reading whichever row came first, until one row holds it again.</summary>
+    static void Add(KeyState st, long ws, (decimal V, int P) window, long w, RuntimeFaults faults)
+    {
+        if (st.Shared?.TryGetValue(ws, out var rows) != true)
+        {
+            if (!st.Windows.TryGetValue(ws, out var one)) { if (w == 1) { st.Windows[ws] = window; return; } rows = []; }
+            else if (w == -1 && one == window) { st.Windows.Remove(ws); return; }
+            else { st.Windows.Remove(ws); rows = [(one, 1)]; }
+            (st.Shared ??= [])[ws] = rows;
+        }
+        var at = rows!.FindIndex(x => x.W == window);
+        if (at < 0) rows.Add((window, w)); else rows[at] = (window, rows[at].N + w);
+        rows.RemoveAll(x => x.N == 0);
+        if (w > 0) faults.InvalidParameter++;
+        if (rows.Count == 0) st.Shared!.Remove(ws);
+        else if (rows is [{ N: 1 } single]) { st.Shared!.Remove(ws); st.Windows[ws] = single.W; }
+    }
+
     string Run(KeyState st, out long stateWindow)
     {
         var state = st.State; var run = st.Run; var last = st.Last;
@@ -1178,7 +1199,7 @@ sealed class ThresholdOp : PhysOp
         while (idle.Count > 0 && idle.Min is var due && due.At <= frontier)
         {
             idle.Remove(due);
-            if (states.TryGetValue(due.Id, out var gone) && gone.Windows.Count == 0 && gone.Silent == 0 && DropAt(gone) <= frontier) states.Remove(due.Id);
+            if (states.TryGetValue(due.Id, out var gone) && gone.Windows.Count == 0 && gone.Shared is not { Count: > 0 } && gone.Silent == 0 && DropAt(gone) <= frontier) states.Remove(due.Id);
         }
         var b = In(inputs, "in"); if (b is null || b.Rows == 0) return null;
         var kc = keys.Select(k => k.Eval(b)).ToArray(); var vc = value.Eval(b);
@@ -1209,13 +1230,13 @@ sealed class ThresholdOp : PhysOp
             var st = StateOf(byText, chars);
             var ws = b.Cols[inWs].L[row]; var window = (V: vc.IsDec ? vc.D[row] : vc.L[row], P: IndexOf(p));
             if (ws < edge) { if (b.Weight(row) > 0) cx.LateDropped++; }     // behind the look-back: a late row is dropped and counted, and the row that withdraws a window because it grew old withdraws nothing here
-            else if (b.Weight(row) > 0) st.Windows[ws] = window;
-            else if (st.Windows.TryGetValue(ws, out var cur) && cur == window) st.Windows.Remove(ws);
+            else Add(st, ws, window, b.Weight(row), cx.Faults);
             if (seen.Add(st)) touched.Add(st);
         }
         var bb = EmptyOutput();
         foreach (var st in touched)
         {
+            st.Shared?.Keys.Where(ws => ws < edge).ToList().ForEach(ws => st.Shared.Remove(ws));
             while (st.Windows.Count > 0 && st.Windows.Keys[0] < edge) { Step(ref st.State, ref st.Run, ref st.Last, ref st.StateWindow, st.Windows.Keys[0], st.Windows.Values[0]); st.Windows.RemoveAt(0); }
             long window = 0;
             var next = st.Windows.Count == 0 ? null : Run(st, out window);

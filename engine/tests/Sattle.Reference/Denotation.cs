@@ -424,11 +424,12 @@ public static class Denotation
 
         bool Silent(Relation rel, ImmutableArray<Value> row) => t.ReadsNoData && True(rel.Reader(row)(TThreshold.NoDataColumn));      // the record of a key in no data: no window of the episode
         ILookup<string, ImmutableArray<Value>> Windows(Relation rel, Func<long, bool> keep) =>
-            rel.Rows.Where(r => r.Weight > 0 && !Silent(rel, r.Row) && Key(rel, r.Row) is not null && IsMachine(rel.Reader(r.Row)) && keep(Instant(rel.Reader(r.Row)("windowStart")))).ToLookup(r => Key(rel, r.Row)!, r => r.Row, StringComparer.Ordinal);
+            rel.Rows.Where(r => r.Weight > 0 && !Silent(rel, r.Row) && Key(rel, r.Row) is not null && IsMachine(rel.Reader(r.Row)) && keep(Instant(rel.Reader(r.Row)("windowStart"))))
+                .SelectMany(r => Enumerable.Repeat(r, (int)r.Weight)).ToLookup(r => Key(rel, r.Row)!, r => r.Row, StringComparer.Ordinal);
         Carried? Fold(Carried? from, Relation rel, IEnumerable<ImmutableArray<Value>> rows)
         {
-            var byWindow = rows.GroupBy(row => Instant(rel.Reader(row)("windowStart"))).OrderBy(w => w.Key).ToArray();
-            if (byWindow.Any(w => w.Count() > 1)) throw new Undefined($"Threshold {t.Name}: two rows for one key and window");
+            // #159 G2: a window that two rows hold has no reading, as a gap has none
+            var byWindow = rows.GroupBy(row => Instant(rel.Reader(row)("windowStart"))).Where(w => w.Count() == 1).OrderBy(w => w.Key).ToArray();
             return byWindow.Aggregate(from, (c, w) => Step(c, rel.Reader(w.Single())));
         }
 
@@ -441,7 +442,7 @@ public static class Denotation
             var afterLeft = Fold(carried.GetValueOrDefault(key), previous, left[key]);
             var isLive = live.Contains(key);
             if (afterLeft is not null && (isLive || frontier is null || frontier - afterLeft.LastStart < keep)) next[key] = afterLeft;
-            if (!isLive) continue;
+            if (!isLive || !live[key].GroupBy(row => Instant(current.Reader(row)("windowStart"))).Any(w => w.Count() == 1)) continue;       // a key whose windows are all shared has no reading (G2)
             var first = live[key].First();
             rows.Add((Shape(t, t.Keys.Select(x => (x.Name, Expressions.Eval(x.Value, current.Reader(first)))).Append((t.Target, Value.Text(Fold(afterLeft, current, live[key])!.State)))
                 .ToDictionary(x => x.Item1, x => x.Item2, StringComparer.Ordinal)), 1L));

@@ -324,6 +324,28 @@ public class DifferentialTests
         }
     }
 
+    /// <summary>#159 G2 (R1): two items of one group give a hysteresis by the group two rows for one window. The program is accepted. The window at 0 s
+    /// (k0 above) turns the group on. The window at 60 s gets a row below from one item before the advance to 150 s closes it, and a row above from the other
+    /// after: it has no reading whichever came first, so the group stays on, under every cut, as in the reference.</summary>
+    [Theory]
+    [InlineData("k0", 0, "k1", 3)]
+    [InlineData("k1", 3, "k0", 0)]
+    public void Two_rows_for_one_key_and_window_give_one_state(string first, long firstHits, string second, long secondHits)
+    {
+        var w = Worlds.SharedKeyThreshold;
+        Sattle.Reference.Input[] log = [PlainRow("a", 1, "k0", "g0", 1, 0), PlainRow("a", 1, "k1", "g0", 1, 0), PlainRow("b", 1, "k0", "g0", 3, 10),
+            PlainRow("b", 1, first, "g0", firstHits, 70), new Sattle.Reference.AdvanceInput(Logs.Origin + 150 * Logs.Second),
+            PlainRow("b", 1, second, "g0", secondHits, 80), new Sattle.Reference.AdvanceInput(Logs.Origin + 180 * Logs.Second)];
+        static string States(Sattle.Reference.SpaceFacts f) => string.Join(" ", f.Graphs["view"].Entities.Values.SelectMany(e => e.Props).Where(kv => kv.Key.EndsWith("prop:state", StringComparison.Ordinal)).Select(kv => kv.Value is TextValue t ? t.S : "-").Order(StringComparer.Ordinal));
+        const string expected = "on";
+        Assert.Equal(expected, States(Sattle.Reference.ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), log)));
+        foreach (var chunking in new[] { Chunking.OneByOne, Chunking.Largest, Chunking.Reversed })
+        {
+            var engine = States(EngineRun.Final(w.Catalog, log, chunking));
+            Assert.True(engine == expected, $"{first} first, {chunking.Name}: engine {engine}, expected {expected}");
+        }
+    }
+
     /// <summary>A node row of `ranked` (item `k`, rank `n`, none for null) or an edge row `from>to` with its impact after a colon, signed.</summary>
     static Sattle.Reference.RowInput FixpointRow(string change)
     {
