@@ -14,56 +14,27 @@ sealed class Draft
     public Dictionary<string, (string? Base, string? Text)> Files = new(StringComparer.Ordinal);
     /// <summary>The space's projection files when the draft was made: a draft's text is read with them, so a commit elsewhere after it does not enter the draft.</summary>
     public required IReadOnlyList<SourceFile> Others;
-    public required IReadOnlyDictionary<string, string> NativeModules;
+    /// <summary>The module documents when the draft was made, by module name.</summary>
+    public required IReadOnlyDictionary<string, string> Modules;
     public Dictionary<string, string?> FileTexts() => Files.ToDictionary(kv => kv.Key, kv => kv.Value.Text);
     public Dictionary<string, string?> ChangedFiles() => Files.Where(kv => kv.Value.Base != kv.Value.Text).ToDictionary(kv => kv.Key, kv => kv.Value.Text);
 }
 
-/// <summary>Drafts (an overlay on the catalog), structural edits, releases and previews (PROTOCOL.md v3). A draft's canonical text is the printer's output, so text and graph stay two views of one definition graph.</summary>
+/// <summary>Drafts (an overlay on the catalog), releases and previews (PROTOCOL.md v3). Every definition is a gkql document: a draft changes texts, and its graph holds the facts they lower to.</summary>
 public sealed partial class SpaceHost
 {
     readonly Dictionary<string, Draft> drafts = new(StringComparer.Ordinal);
-    (long Rev, Dictionary<string, string> Texts)? headTexts;
 
     Draft GetDraft(string id) => drafts.TryGetValue(id, out var d) ? d : throw new HostError("UnknownDraft", $"no draft {id}", 404);
 
-    static IEnumerable<string> ModulesOf(Graph g) => g.Entities.Where(e => Ids.Name(e.Type) == "Module" && e.Id != Kernel.ModuleId).Select(e => e.Id[2..]).Order(StringComparer.Ordinal);
+    bool IsModule(string name) => sources.ContainsKey(name);
 
-    bool NativeModule(string name) => sources.TryGetValue(name, out var f) && options.Projections?.IsModuleFile(f.Path) == true;
-
-    bool DraftFile(string name) => IsFileName(name) || NativeModule(name);
+    bool DraftFile(string name) => IsFileName(name) || IsModule(name);
 
     string? DraftBaseText(Draft d, string file) =>
-        d.NativeModules.GetValueOrDefault(file) ?? d.Others.FirstOrDefault(o => Path.GetFileName(o.Path) == file)?.Text;
+        d.Modules.GetValueOrDefault(file) ?? d.Others.FirstOrDefault(o => Path.GetFileName(o.Path) == file)?.Text;
 
-    string? HeadDraftFile(string name) => NativeModule(name) ? sources[name].Text : others.FirstOrDefault(o => Path.GetFileName(o.Path) == name)?.Text;
-
-    Dictionary<string, string> TextsOf(Graph g, List<Diagnostic>? problems = null)
-    {
-        var res = new Dictionary<string, string>();
-        foreach (var m in ModulesOf(g))
-        {
-            try
-            {
-                if (NativeModule(m)) continue;
-                res[m] = Printer.Print(g, m);
-            }
-            catch (UnprintableException e) { problems?.Add(new Diagnostic("Unprintable", "error", e.Element, e.Message)); }
-            catch (Exception e) when (e is InvalidOperationException or KeyNotFoundException or NullReferenceException or IndexOutOfRangeException or ArgumentException or InvalidCastException)
-            {
-                problems?.Add(new Diagnostic("Unprintable", "error", Ids.Module(m), $"module {m} cannot be printed: a declaration is incomplete ({e.GetType().Name})"));
-            }
-        }
-        return res;
-    }
-
-    Dictionary<string, string> HeadTexts()
-    {
-        if (headTexts is { } h && h.Rev == catalogHistory.Count) return h.Texts;
-        var t = TextsOf(Catalog.Graph);
-        headTexts = (catalogHistory.Count, t);
-        return t;
-    }
+    string? HeadDraftFile(string name) => IsModule(name) ? sources[name].Text : others.FirstOrDefault(o => Path.GetFileName(o.Path) == name)?.Text;
 
     // ---- patch decoding (catalog graph, kernel names) ----
     static string TypeId(string name, bool rel) => rel ? Ids.KRel(name) : Ids.KEntity(name);
@@ -104,7 +75,7 @@ public sealed partial class SpaceHost
                 Id = "d" + Guid.NewGuid().ToString("N"), Base = b,
                 Graph = b == catalogHistory.Count ? Catalog.Graph.Clone() : StateAt("catalog", b),
                 Others = [.. others],
-                NativeModules = sources.Where(kv => NativeModule(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value.Text),
+                Modules = sources.ToDictionary(kv => kv.Key, kv => kv.Value.Text),
             };
             drafts.Add(d.Id, d);
             return DraftInfo(d.Id);
@@ -136,15 +107,12 @@ public sealed partial class SpaceHost
             var d = GetDraft(id);
             if (expectedRevision != d.Revision) throw new HostError("StaleRevision", $"draft {id} is at revision {d.Revision}", 409, new JsonObject { ["actual"] = Rev(d.Revision) });
             if (!DraftFile(file)) throw new HostError("BadRequest", $"{file} is no editable definition file", 400);
-            if (text is null && NativeModule(file)) throw new HostError("BadRequest", $"a module cannot be removed from this draft", 400);
-            var problems = new List<Diagnostic>();
-            var texts = TextsOf(d.Graph, problems).ToDictionary(kv => kv.Key, kv => (string?)kv.Value);
-            if (problems.Count > 0) throw new HostError("Invalid", "the draft cannot be printed", 422, new JsonObject { ["diagnostics"] = new JsonArray([.. problems.Select(DiagJson)]) });
+            if (text is null && IsModule(file)) throw new HostError("BadRequest", $"a module cannot be removed from this draft", 400);
+            if (text is not null && IsModule(file)) ParseModuleName(file, text);
             var baseText = d.Files.TryGetValue(file, out var had) ? had.Base : DraftBaseText(d, file);
             if (text is null && (had.Text ?? baseText) is null) throw new HostError("UnknownModule", $"no definition file {file} in the draft", 404);
-            var files = d.FileTexts(); files[file] = text;
-            // the draft's own state: every module as the draft prints it, and the projection files as they were when it was made, with the draft's in their place
-            foreach (var (n, t) in files) texts[n] = t;
+            // the draft's own state: its texts, and the projection files as they were when it was made
+            var texts = d.FileTexts(); texts[file] = text;
             var cand = Candidate(texts, out var res, out _, d.Others);
             var edits = res.HasErrors ? [] : Graph.Diff(d.Graph, cand.Graph);
             var err = d.Graph.Apply(edits);
@@ -170,7 +138,7 @@ public sealed partial class SpaceHost
             }
     }
 
-    /// <summary>Applies a structural edit (or the inverse of an earlier one) to the draft. from and to of the patch are informational; the guards decide.</summary>
+    /// <summary>A structural edit is refused: every definition is a gkql document, edited as text (`ProjectionText` with the file of a projection, else `ModuleText`). An empty patch is a revision of the draft.</summary>
     public JsonNode ApplyDraftPatch(string id, JsonNode patch, long expectedRevision)
     {
         lock (Gate)
@@ -181,23 +149,9 @@ public sealed partial class SpaceHost
             try { p = DecodePatch(patch, d.Revision); }
             catch (Exception e) when (e is KeyNotFoundException or NullReferenceException or InvalidOperationException or FormatException) { throw new HostError("BadRequest", "malformed patch: " + e.Message, 400); }
             RefuseProjections(p.Edits.Select(e => (e.Before ?? e.After) is Rel r ? r.Source : e.Key.Id));     // an edge from outside into the projection (a graph produced by it) belongs to the other text
-            foreach (var edit in p.Edits)
-                if (NativeModule(Ids.ModuleOf(edit.Key.Id)))
-                    throw new HostError("ModuleText", $"edit the GKQL module in the draft text", 422);
-            string? err;
-            try { err = d.Graph.Apply(p.Edits); }
-            catch (Exception e) when (e is ArgumentException or InvalidOperationException or KeyNotFoundException or NullReferenceException) { throw new HostError("BadPatch", "the patch cannot be applied: " + e.Message, 422); }
-            if (err is not null) throw new HostError("GuardFailed", err, 409, new JsonObject { ["element"] = err.Split(' ').Skip(1).FirstOrDefault()?.TrimEnd(':') });
+            if (p.Edits.Any()) throw new HostError("ModuleText", "edit the gkql module in the draft text", 422);
             d.Patches.Add(p);
-            JsonObject res;
-            try { res = CheckDraftLocked(d); }
-            catch (Exception e) when (e is not HostError)
-            {
-                // a patch the check cannot even read (a number beyond what a definition can hold, for example) is not recorded: the draft stays as it was
-                d.Patches.RemoveAt(d.Patches.Count - 1);
-                d.Graph.Apply([.. p.Edits.Reverse().Select(x => new Edit(x.Key, x.After, x.Before))]);
-                throw new HostError("BadPatch", $"the patch cannot be checked ({e.GetType().Name}: {e.Message}); the draft is unchanged", 422);
-            }
+            var res = CheckDraftLocked(d);
             Publish(new JsonObject { ["type"] = "draft", ["draft"] = id, ["revision"] = Rev(d.Revision), ["ok"] = res["ok"]!.DeepClone(), ["diagnostics"] = res["diagnostics"]!.DeepClone() }, null);
             return res;
         }
@@ -205,33 +159,16 @@ public sealed partial class SpaceHost
 
     public JsonNode CheckDraft(string id) { lock (Gate) return CheckDraftLocked(GetDraft(id)); }
 
-    /// <summary>What a draft changes: its module texts that differ from the texts at its base revision. A module that only the head changed since is not a change of the draft.</summary>
-    Dictionary<string, string> ChangesOf(Draft d, Dictionary<string, string> texts)
-    {
-        var baseTexts = d.Base == catalogHistory.Count ? HeadTexts() : TextsOf(StateAt("catalog", d.Base));
-        return texts.Where(kv => !baseTexts.TryGetValue(kv.Key, out var b) || b != kv.Value).ToDictionary(kv => kv.Key, kv => kv.Value);
-    }
-
-    /// <summary>What a draft changes: its module texts that differ from the texts at its base revision, and its projection files that differ from the head's text when it first changed them.</summary>
-    Dictionary<string, string?> DraftChanges(Draft d, Dictionary<string, string> texts)
-    {
-        var res = ChangesOf(d, texts).ToDictionary(kv => kv.Key, kv => (string?)kv.Value);
-        foreach (var (n, t) in d.ChangedFiles()) res[n] = t;
-        return res;
-    }
-
     JsonObject CheckDraftLocked(Draft d)
     {
-        var problems = new List<Diagnostic>();
-        var texts = TextsOf(d.Graph, problems);
-        var changed = DraftChanges(d, texts);
-        foreach (var (name, text) in d.NativeModules) texts.TryAdd(name, text);
+        var changed = d.ChangedFiles();
+        var texts = d.Modules.ToDictionary(StringComparer.Ordinal);
         foreach (var f in d.Others) texts.TryAdd(Path.GetFileName(f.Path), f.Text);
         foreach (var (n, t) in d.FileTexts()) if (t is null) texts.Remove(n); else texts[n] = t;
-        var diags = new JsonArray([.. problems.Select(DiagJson)]);
-        var ok = problems.Count == 0;
-        JsonNode schemas = ok ? Schemas(Catalog) : new JsonObject();          // unchanged: the head catalog's
-        if (ok && changed.Count > 0)
+        var diags = new JsonArray();
+        var ok = true;
+        JsonNode schemas = Schemas(Catalog);          // unchanged: the head catalog's
+        if (changed.Count > 0)
         {
             var r = (JsonObject)CheckTexts(changed);
             foreach (var x in r["diagnostics"]!.AsArray()) diags.Add(x!.DeepClone());
@@ -249,15 +186,7 @@ public sealed partial class SpaceHost
         lock (Gate)
         {
             var d = GetDraft(id);
-            var problems = new List<Diagnostic>();
-            var texts = TextsOf(d.Graph, problems);
-            if (problems.Count > 0) throw new HostError("Invalid", "the draft cannot be printed", 422, new JsonObject { ["diagnostics"] = new JsonArray([.. problems.Select(DiagJson)]) });
-            var baseTexts = d.Base == catalogHistory.Count ? HeadTexts() : TextsOf(StateAt("catalog", d.Base));
-            var touched = texts.Where(kv => !baseTexts.TryGetValue(kv.Key, out var b) || b != kv.Value).ToDictionary(kv => kv.Key, kv => (string?)kv.Value);
-            var head = HeadTexts();
-            foreach (var m in touched.Keys)
-                if (d.Base != catalogHistory.Count && head.TryGetValue(m, out var h) && baseTexts.TryGetValue(m, out var b0) && h != b0)
-                    throw new HostError("StaleRevision", $"module {m} changed after the draft's base revision", 409, new JsonObject { ["actual"] = Rev(catalogHistory.Count), ["module"] = m });
+            var touched = new Dictionary<string, string?>(StringComparer.Ordinal);
             foreach (var (n, t) in d.ChangedFiles())
             {
                 if (HeadDraftFile(n) != d.Files[n].Base)
@@ -315,7 +244,7 @@ public sealed partial class SpaceHost
     Graph FactsAt(Release r) => ModuleFacts(StateAt("catalog", r.Revision), r.Module);
 
     public JsonNode ReleaseSnapshot(string digest) { lock (Gate) { var r = FindRelease(digest); return catalogExport.SnapshotOf(FactsAt(r), catalogExport.CatalogDescriptor(r.Revision)); } }
-    public string ReleaseText(string digest) { lock (Gate) { var r = FindRelease(digest); return NativeModule(r.Module) ? DocumentsAt(r.Module, r.Revision).GetValueOrDefault(r.Module) ?? throw new HostError("UnknownRelease", $"no text of release {digest}", 404) : Printer.Print(StateAt("catalog", r.Revision), r.Module); } }
+    public string ReleaseText(string digest) { lock (Gate) { var r = FindRelease(digest); return DocumentsAt(r.Module, r.Revision).GetValueOrDefault(r.Module) ?? throw new HostError("UnknownRelease", $"no text of release {digest}", 404); } }
     public JsonNode ReleaseDiff(string from, string to)
     {
         lock (Gate)
@@ -330,19 +259,11 @@ public sealed partial class SpaceHost
         lock (Gate)
         {
             var d = GetDraft(id); var r = FindRelease(digest);
-            if (NativeModule(r.Module))
-            {
-                // a module written as documents: the draft takes the texts the release was made from
-                JsonNode check = CheckDraftLocked(d);
-                foreach (var (doc, text) in DocumentsAt(r.Module, r.Revision))
-                    if (text != (d.Files.TryGetValue(doc, out var f) ? f.Text : DraftBaseText(d, doc))) check = SetDraftText(id, doc, text, d.Revision);
-                return check;
-            }
-            var edits = Graph.Diff(ModuleFacts(d.Graph, r.Module), FactsAt(r));
-            var patch = catalogExport.Patch(new Patch("catalog", d.Revision, d.Revision + 1, edits));
-            var res = (JsonObject)ApplyDraftPatch(id, patch, d.Revision);
-            res["patch"] = patch.DeepClone();
-            return res;
+            // the draft takes the texts the release was made from
+            JsonNode check = CheckDraftLocked(d);
+            foreach (var (doc, text) in DocumentsAt(r.Module, r.Revision))
+                if (text != (d.Files.TryGetValue(doc, out var f) ? f.Text : DraftBaseText(d, doc))) check = SetDraftText(id, doc, text, d.Revision);
+            return check;
         }
     }
 
@@ -352,12 +273,9 @@ public sealed partial class SpaceHost
         lock (Gate)
         {
             var d = GetDraft(id);
-            var problems = new List<Diagnostic>();
-            var texts = TextsOf(d.Graph, problems);
-            var changed = DraftChanges(d, texts);
-            var cand = Candidate(changed, out var res, out _);
-            var diags = problems.Select(DiagJson).Concat(res.Diagnostics.Select(DiagJson)).ToList();
-            if (problems.Count > 0 || res.HasErrors) throw new HostError("Invalid", "the draft does not check", 422, new JsonObject { ["diagnostics"] = new JsonArray([.. diags]) });
+            var cand = Candidate(d.ChangedFiles(), out var res, out _);
+            var diags = res.Diagnostics.Select(DiagJson).ToList();
+            if (res.HasErrors) throw new HostError("Invalid", "the draft does not check", 422, new JsonObject { ["diagnostics"] = new JsonArray([.. diags]) });
             var newSpace = cand.Spaces.Keys.FirstOrDefault(k => Ids.Name(k) == Space.Name) ?? throw new HostError("ActivationRejected", $"graph space {Space.Name} no longer activates", 422);
             var bad = AdapterRegistry.Verify(cand, cand.Spaces[newSpace], Adapters);
             if (bad.Count > 0) throw new HostError("ActivationRejected", string.Join("; ", bad.Select(b => b.Message)), 422);

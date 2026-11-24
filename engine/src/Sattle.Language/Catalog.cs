@@ -89,7 +89,7 @@ public sealed class Catalog
         Modules[Ids.KernelModule] = new ModuleInfo(Ids.KernelModule, Kernel.Version, Kernel.CompiledDigest, kernelRelease, "<kernel>", new ModuleAst(Ids.KernelModule, Kernel.Version, null, [], [], default));
     }
 
-    /// <summary>The definition files of a folder: every file in it except hidden ones. A file is a module text (`.sattle`) or a projection in a file of its own, which only a catalog with a projection source for its language reads; any other file is an error at load.</summary>
+    /// <summary>The definition files of a folder: every file in it except hidden ones. A file is a gkql module document or a projection in a file of its own, which only a catalog with the projection source reads; any other file is an error at load.</summary>
     public static List<SourceFile> ReadDirectory(string dir) =>
         [.. Directory.EnumerateFiles(dir).Where(f => !Path.GetFileName(f).StartsWith('.')).Order(StringComparer.Ordinal).Select(f => new SourceFile(f, File.ReadAllText(f)))];
 
@@ -141,7 +141,6 @@ public sealed class Catalog
             try
             {
                 if (projections?.IsModuleFile(f.Path) == true) parsed.Add((f, projections.ReadModule(f)));
-                else if (f.Path.EndsWith(".sattle", StringComparison.Ordinal)) parsed.Add((f, Parser.Parse(f.Text)));
                 else others.Add(f);
             }
             catch (SyntaxError e) { diags.Add(new Diagnostic("Syntax", "error", "", e.Message, f.Path, e.Pos.Line, e.Pos.Col)); }
@@ -183,7 +182,7 @@ public sealed class Catalog
     static IEnumerable<Diagnostic> Unread(IEnumerable<SourceFile> others, IReadOnlySet<string> read, bool hasSource) =>
         others.Where(f => !read.Contains(f.Path)).Select(f => new Diagnostic("UnreadFile", "error", "", hasSource
             ? $"no module read {Path.GetFileName(f.Path)}: its module is missing or did not load, or nothing reads files of its kind"
-            : $"{Path.GetFileName(f.Path)} is no module text and this catalog has no projection source to read it", f.Path, 1, 1));
+            : $"{Path.GetFileName(f.Path)}: this catalog has no projection source to read it", f.Path, 1, 1));
 
     void LoadModule(SourceFile file, ModuleAst ast, List<Diagnostic> diags, List<PinFix> fixes, bool updatePins, IReadOnlyList<SourceFile> others, HashSet<string> read)
     {

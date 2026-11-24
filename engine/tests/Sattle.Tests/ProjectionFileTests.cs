@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Sattle.Language;
 using Sattle.Runtime;
 
@@ -71,7 +72,7 @@ public class ProjectionFileTests
         var projectionFiles = files.Where(f => IsProjectionFile(f.Path)).ToList();
         Assert.NotEmpty(projectionFiles);
         foreach (var file in projectionFiles)
-            Assert.Contains($"{Path.GetFileName(file.Path)} is no module text and this catalog has no projection source to read it", message);
+            Assert.Contains($"{Path.GetFileName(file.Path)}: this catalog has no projection source to read it", message);
     }
 
     /// <summary>A store written with projection files, opened without a projection source, is refused, naming the files it holds.</summary>
@@ -104,5 +105,23 @@ public class ProjectionFileTests
             Assert.Equal(h.Snapshot("catalog", null)["extent"]!.ToJsonString(), again.Snapshot("catalog", null)["extent"]!.ToJsonString());
         }
         finally { Directory.Delete(dir, true); }
+    }
+
+    /// <summary>gkql is the only language: a module text or a projection in another language, given to a check, a commit or a draft, is refused with one typed error each (a draft knows no file of that name), and nothing changes.</summary>
+    [Theory]
+    [InlineData("acme.svc", "module acme.svc @ 1.0.0;", "ModuleText ModuleText ModuleText")]
+    [InlineData("acme.svc.sattle", "module acme.svc @ 1.0.0;", "ModuleText ModuleText BadRequest")]
+    [InlineData("acme.svc.serviceDeps.kql", "graph serviceDeps : sattle.infra with (rule = \"r\") = flows | project a = 1;", "ModuleText ModuleText BadRequest")]
+    public void A_definition_in_another_language_is_refused_with_one_typed_error(string name, string text, string expected)
+    {
+        var h = Fresh.Value;
+        var revision = h.CatalogRevision;
+        static string Codes(JsonNode r) => r["ok"]!.GetValue<bool>() ? "ok" : string.Join("+", r["diagnostics"]!.AsArray().Select(d => d!["code"]!.GetValue<string>()).Distinct().Order(StringComparer.Ordinal));
+        static string Outcome(Func<JsonNode> call) { try { return Codes(call()); } catch (HostError e) { return e.Code; } }
+        var draft = h.CreateDraft(null)["draft"]!.GetValue<string>();
+        var got = string.Join(" ", Outcome(() => h.Check(name, text)), Outcome(() => h.Commit(name, text, h.CatalogRevision)), Outcome(() => h.SetDraftText(draft, name, text, 0)));
+        h.DiscardDraft(draft);
+        Assert.Equal(expected, got);
+        Assert.Equal(revision, h.CatalogRevision);
     }
 }

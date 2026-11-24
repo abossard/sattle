@@ -160,7 +160,7 @@ public class BatchInvarianceTests
         var cat = new Sattle.Language.Catalog(Repo.Projections);
         Assert.Empty(cat.Load([new Sattle.Language.SourceFile("d.module.gkql.json", Wide), new Sattle.Language.SourceFile("d.ingest.gkql.json", WideIngest.Replace("WIDTH", width)), new Sattle.Language.SourceFile("ds.module.gkql.json", WideSpace)], updatePins: true).Diagnostics.Where(x => x.IsError).Select(x => x.ToString()));
         using var e = new Engine(cat, cat.Spaces.Keys.Single(), new EngineOptions { LateHorizonWindows = horizon });
-        var w = Sattle.Language.Lexer.DurationNs(width); var start = 1_794_300_000_000_000_000 / w * w;
+        var w = Norm.DurationNs(width); var start = 1_794_300_000_000_000_000 / w * w;
         e.Advance(start + 1);                                    // a replay advances before its first row
         var rw = new RowWriter(e.RowLayout("a"), e.Interner);
         rw.Begin(); rw.Text("k", "a"); rw.Instant("t", start + 2);

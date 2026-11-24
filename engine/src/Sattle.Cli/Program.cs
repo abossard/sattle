@@ -17,7 +17,7 @@ namespace Sattle.Cli;
 public static class Program
 {
     const string Usage = """
-        sattle check  [--defs DIR] [--update-pins] [--print MODULE] [--plan]
+        sattle check  [--defs DIR] [--update-pins] [--plan]
         sattle replay CAPTURE [--defs DIR] [--overlay FILE] [--space NAME] [--speed N] [--advance-every 60s] [--lateness 60s] [--late-horizon WINDOWS] [--chunk N]
                               [--store memory|sqlite=PATH|cosmos=ENDPOINT[,db=NAME][,drop]] [--until RFC3339] [--out DIR]
         sattle serve  CAPTURE [replay options] [--port 5080] [--write-definitions] [--store sqlite=PATH|cosmos=ENDPOINT[,db=NAME]] [--seal-every ENTRIES] [--no-seal] [--verify-journal] [--retain-patches N] [--retain-events N]
@@ -32,7 +32,7 @@ public static class Program
         """;
 
     /// <summary>The definition languages this build reads.</summary>
-    public static readonly IProjectionSource Projections = new ProjectionSources(new Sattle.Kql.KqlSource(), new Sattle.Gkql.GkqlSource());
+    public static readonly IProjectionSource Projections = new Sattle.Gkql.GkqlSource();
 
     public static int Main(string[] args) => Run(args, Console.Out);
 
@@ -82,7 +82,7 @@ public static class Program
         public long Duration(string k, long dflt)
         {
             if (!Named.TryGetValue(k, out var v)) return dflt;
-            try { return Lexer.DurationNs(v); } catch (Exception) { throw new ArgumentException($"--{k}: expected a duration like 60s, got '{v}'"); }
+            try { return Norm.DurationNs(v); } catch (Exception) { throw new ArgumentException($"--{k}: expected a duration like 60s, got '{v}'"); }
         }
     }
 
@@ -93,7 +93,7 @@ public static class Program
             for (var dir = new DirectoryInfo(start); dir is not null; dir = dir.Parent)
             {
                 var c = Path.Combine(dir.FullName, "definitions");
-                if (Directory.Exists(c) && Directory.EnumerateFiles(c).Any(f => f.EndsWith(".sattle", StringComparison.Ordinal) || Projections.IsModuleFile(f))) return c;
+                if (Directory.Exists(c) && Directory.EnumerateFiles(c).Any(Projections.IsModuleFile)) return c;
                 c = Path.Combine(dir.FullName, "engine", "definitions");
                 if (Directory.Exists(c)) return c;
             }
@@ -179,11 +179,6 @@ public static class Program
         var errors = res.Diagnostics.Count(d => d.IsError);
         output.WriteLine($"{files.Count} file(s), {cat.Modules.Count - 1} module(s), {cat.Projections.Count} projection(s), {cat.Spaces.Count} graph space(s), catalog revision {cat.Log.Head}, {errors} error(s), {res.Diagnostics.Count - errors} warning(s)");
         foreach (var m in cat.Modules.Values.Where(m => m.Name != Ids.KernelModule)) output.WriteLine($"  {m.Name} @ {m.Version} {m.Digest}");
-        if (o.Get("print") is { } mod)
-        {
-            if (!cat.Modules.ContainsKey(mod)) return Fail($"module {mod} is not loaded");
-            output.Write(Printer.Print(cat.Graph, mod));
-        }
         if (o.Flags.Contains("plan") && errors == 0)
             foreach (var sp in cat.Spaces.Keys)
             {

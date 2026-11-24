@@ -2,7 +2,6 @@
   <PropertyGroup><OutputType>Exe</OutputType><AssemblyName>sattle</AssemblyName></PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Sattle.Runtime/Sattle.Runtime.csproj" />
-    <ProjectReference Include="../Sattle.Kql/Sattle.Kql.csproj" />
     <ProjectReference Include="../Sattle.Gkql/Sattle.Gkql.csproj" />
     <PackageReference Include="Azure.Messaging.EventHubs" Version="5.12.2" />
     <PackageReference Include="Azure.Identity" Version="1.21.0" />

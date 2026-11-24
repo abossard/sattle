@@ -29,7 +29,7 @@ public sealed record Role(string? Temporality, long Period)
     public static readonly Role Data = new((string?)null, 0);
     public bool IsData => Temporality is null;
     public static Role Tele(string temporality, long period) => new(temporality, period);
-    public override string ToString() => IsData ? "data" : $"tele<{Temporality}, {Lexer.DurationText(Period)}>";
+    public override string ToString() => IsData ? "data" : $"tele<{Temporality}, {Norm.DurationText(Period)}>";
 }
 
 /// <summary>Field type φ = (κ, π, ρ) plus the combine provenance of roll-up outputs (section 3.2, EmitEntity).</summary>

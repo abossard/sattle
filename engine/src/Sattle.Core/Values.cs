@@ -61,9 +61,25 @@ public sealed record ListValue(ImmutableArray<Value> Items) : Value
     public override int GetHashCode() { var h = new HashCode(); foreach (var i in Items) h.Add(i); return h.ToHashCode(); }
 }
 
-/// <summary>Normal-form text of scalars (N1 to N3) and instants.</summary>
+/// <summary>Normal-form text of scalars (N1 to N3), instants and durations.</summary>
 public static class Norm
 {
+    /// <summary>A duration written as digits and a unit (ms, s, m or h) in nanoseconds.</summary>
+    public static long DurationNs(string text)
+    {
+        var n = text.TakeWhile(char.IsAsciiDigit).Count();
+        var v = long.Parse(text[..n], CultureInfo.InvariantCulture);
+        return text[n..] switch { "ms" => v * 1_000_000, "s" => v * 1_000_000_000, "m" => v * 60_000_000_000, _ => v * 3_600_000_000_000 };
+    }
+    /// <summary>A duration in nanoseconds as text in its largest whole unit.</summary>
+    public static string DurationText(long ns)
+    {
+        if (ns % 3_600_000_000_000 == 0) return ns / 3_600_000_000_000 + "h";
+        if (ns % 60_000_000_000 == 0) return ns / 60_000_000_000 + "m";
+        if (ns % 1_000_000_000 == 0) return ns / 1_000_000_000 + "s";
+        return ns / 1_000_000 + "ms";
+    }
+
     public static string Decimal(decimal q)
     {
         var s = q.ToString("G29", CultureInfo.InvariantCulture);

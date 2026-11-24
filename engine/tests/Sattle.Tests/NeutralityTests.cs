@@ -8,16 +8,12 @@ public partial class NeutralityTests
     [GeneratedRegex(@"Healthy|Degraded|Unhealthy|SignalRule|PolicyRow|CurationRow|RollupPolicy|[Hh]ealth|[Aa]zure|[Kk]ubernetes|\bk8s\b|kubectl|\b[Pp]ods?\b|[Hh]ubble|[Pp]rometheus|[Ee]vent ?[Hh]ubs?\b|eventhub|ResourceGraph|\bAKS\b|\baks\b|[Cc]luster")]
     private static partial Regex DomainWord();
 
-    /// <summary>Allowed until #132 removes the `.sattle` text: the legacy count labels of a tree role, its declaration and its one line of cases.</summary>
-    static readonly string[] Allowed = ["LegacyCount", "\"healthy\" => \"Healthy\", \"degraded\" => \"Degraded\""];
-
-    /// <summary>The domain words of a source text: (line, symbol, match). The symbol is the identifier or word the match is in. A line that names an allowed symbol is skipped.</summary>
+    /// <summary>The domain words of a source text: (line, symbol, match). The symbol is the identifier or word the match is in.</summary>
     public static IEnumerable<(int Line, string Symbol, string Match)> Scan(string text)
     {
         var lines = text.Split('\n');
         for (var i = 0; i < lines.Length; i++)
         {
-            if (Allowed.Any(a => lines[i].Contains(a, StringComparison.Ordinal))) continue;
             foreach (Match m in DomainWord().Matches(lines[i]))
             {
                 int from = m.Index, to = m.Index + m.Length;
@@ -59,7 +55,6 @@ public partial class NeutralityTests
     [InlineData("case \"hysteresis\" => Threshold(v, One()),")]
     [InlineData("sealed class RollupOp : AggregatingOp")]
     [InlineData("new Diagnostic(\"Aggregate\", \"error\", focus, message) { Severity = \"error\" }")]
-    [InlineData("public static readonly (string, string)[] LegacyCount = [(\"healthy\", \"Healthy\")];")]
     [InlineData("var spods = epods + 1; // podium, Podcast")]
     public void A_generic_symbol_passes(string line) => Assert.Empty(Scan(line));
 }

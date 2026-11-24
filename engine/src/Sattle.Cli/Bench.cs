@@ -47,7 +47,7 @@ static partial class Bench
         var res = cat.Load(files, updatePins: lookBack is not null);
         if (res.HasErrors) throw new InvalidOperationException(string.Join("\n", res.Diagnostics));
         // the shipped ratio: telemetry is retained for 48 h and read 24 h back, so a shortened look-back comes with twice its length of retention
-        var retention = lookBack is null ? new EngineOptions().TelemetryRetentionNs : 2 * Lexer.DurationNs(lookBack);
+        var retention = lookBack is null ? new EngineOptions().TelemetryRetentionNs : 2 * Norm.DurationNs(lookBack);
         return new Engine(cat, cat.Spaces.Keys.First(), new EngineOptions { StoreFactory = _ => store ?? new HeadOnlyGraphStore(), TelemetryRetentionNs = retention });
     }
 
@@ -72,7 +72,7 @@ static partial class Bench
         var windows = int.TryParse(o.Get("windows"), out var wn) ? wn : 4;
         var lookBack = o.Get("look-back");
         // the window from which nothing grows any more: telemetry is retained for twice the look-back, and nothing a window adds stays longer than that
-        var full = lookBack is null ? int.MaxValue : (int)(2 * Lexer.DurationNs(lookBack) / Min);
+        var full = lookBack is null ? int.MaxValue : (int)(2 * Norm.DurationNs(lookBack) / Min);
         Console.WriteLine($"# estate: {pods:N0} pods, {services:N0} services, {resources:N0} Azure resources, {pairs:N0} active pod pairs, {perWindow:N0} flow rows per 60 s window, {windows} windows{(lookBack is null ? "" : $", look-back and evidence retention {lookBack}, telemetry retention twice that (steady after {full} windows)")}");
         var proc = Process.GetCurrentProcess(); var wall = Stopwatch.StartNew();
         using var e = NewEngine(lookBack: lookBack);

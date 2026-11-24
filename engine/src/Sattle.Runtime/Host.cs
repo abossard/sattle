@@ -347,8 +347,8 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             return host;
         }
         if (options.Projections is null && ((Entry.Header)Entry.Parse(j.JournalRead().First(), _ => throw new InvalidDataException("the journal does not start with its header"), new Interner())).Files
-                .Select(f => Path.GetFileName(f.Path)).Where(n => !n.EndsWith(".sattle", StringComparison.Ordinal)).ToList() is { Count: > 0 } held)
-            throw new InvalidOperationException($"no module reads the store's projection files ({string.Join(", ", held)}) without a projection source: open it with the projection source it was written with");
+                .Select(f => Path.GetFileName(f.Path)).ToList() is { Count: > 0 } held)
+            throw new InvalidOperationException($"nothing reads the store's definition files ({string.Join(", ", held)}) without a projection source: open it with the projection source it was written with");
         string? refusal = null;
         if (options.UseSeal && !options.VerifyJournal && j.SealLatest() is { } seal)
         {
@@ -833,14 +833,13 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         }
     }
 
-    /// <summary>The text of a definition file: a module printed without its projections in files of their own, or such a file as it is.</summary>
+    /// <summary>The text of a definition file: a module document or a projection file, as it is.</summary>
     public string Definition(string name)
     {
         lock (Gate)
         {
             if (IsFileName(name)) return others.FirstOrDefault(f => Path.GetFileName(f.Path) == name)?.Text ?? throw new HostError("UnknownModule", $"no definition file {name}", 404);
-            if (sources.TryGetValue(name, out var source) && options.Projections?.IsModuleFile(source.Path) == true) return source.Text;
-            return Catalog.Modules.ContainsKey(name) && name != Ids.KernelModule ? Printer.Print(Catalog.Graph, name) : throw new HostError("UnknownModule", $"no module {name}", 404);
+            return sources.TryGetValue(name, out var source) ? source.Text : throw new HostError("UnknownModule", $"no module {name}", 404);
         }
     }
     /// <summary>The modules, each with its projections from files of their own: the projection (`module.name`), its file and the language the file is written in, so a client can pick the editor for it.</summary>
@@ -1013,12 +1012,14 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     /// <summary>The name of the definition file a path is: its module for a module text, its file name for another file.</summary>
     string? FileNameOf(string? path) => path is null ? null : sources.FirstOrDefault(kv => kv.Value.Path == path).Key ?? Path.GetFileName(path);
 
-    /// <summary>The module a text declares: a gkql module document sent under its own `module` name. A text that is no JSON document is left to the
-    /// loader, which reports where it breaks.</summary>
+    /// <summary>The module a text declares: a gkql module document sent under its own `module` name. A text that starts as a JSON object and breaks is left to the
+    /// loader, which reports where it breaks; any other text is no gkql module document (`ModuleText`).</summary>
     static string ParseModuleName(string module, string text)
     {
         JsonNode? doc;
-        try { doc = JsonNode.Parse(text); } catch (System.Text.Json.JsonException) { return module; }
+        try { doc = JsonNode.Parse(text); }
+        catch (System.Text.Json.JsonException) when (text.AsSpan().TrimStart().StartsWith("{")) { return module; }
+        catch (System.Text.Json.JsonException) { throw new HostError("ModuleText", $"module {module} is not a gkql module document", 422); }
         if (doc is not JsonObject o || o["module"] is not JsonValue v || !v.TryGetValue<string>(out var name))
             throw new HostError("ModuleText", $"module {module} is not a gkql module document", 422);
         if (name != module) throw new HostError("ModuleMismatch", $"text declares module {name}, not {module}", 422);
@@ -1073,13 +1074,13 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             ["kind"] = c.T.Ty.Tag switch { Tag.Ent => "Entity", Tag.Rel => "Relationship", var t => t.ToString() },
             ["type"] = c.T.Ty.TypeId, ["unit"] = c.T.Ty.IsNumeric && c.T.Ty.Unit != "1" ? c.T.Ty.Unit : null, ["item"] = c.T.Ty.Item?.ToString(),
             ["required"] = c.T.Req,
-            ["role"] = c.T.Role.IsData ? "data" : "telemetry", ["temporality"] = c.T.Role.Temporality, ["period"] = c.T.Role.IsData ? null : Lexer.DurationText(c.T.Role.Period),
+            ["role"] = c.T.Role.IsData ? "data" : "telemetry", ["temporality"] = c.T.Role.Temporality, ["period"] = c.T.Role.IsData ? null : Norm.DurationText(c.T.Role.Period),
         };
         var res = new JsonObject();
         foreach (var (pid, ops) in cand.OperatorTypes.OrderBy(kv => kv.Key, StringComparer.Ordinal))
             res[pid] = new JsonArray([.. ops.Select(op => (JsonNode)new JsonObject
             {
-                ["op"] = op.Id, ["name"] = op.Name, ["kind"] = op.Kind, ["window"] = op.Out.Window == 0 ? null : Lexer.DurationText(op.Out.Window),
+                ["op"] = op.Id, ["name"] = op.Name, ["kind"] = op.Kind, ["window"] = op.Out.Window == 0 ? null : Norm.DurationText(op.Out.Window),
                 ["columns"] = new JsonArray([.. op.Out.Cols.Select(Column)]),
             })]);
         return res;

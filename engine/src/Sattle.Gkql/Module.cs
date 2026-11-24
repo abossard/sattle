@@ -89,7 +89,7 @@ public sealed partial class GkqlSource
 
     static List<Member> Members(List<PropertyDocument>? properties) => (properties ?? []).Select(p =>
         new Member(p.Name, null, p.Optional, ValueType(p.Type), false, p.Unit,
-            p.Telemetry is { } t ? new TeleMod(t.Temporality, t.Combine, Lexer.DurationNs(t.Period)) : null, null, At,
+            p.Telemetry is { } t ? new TeleMod(t.Temporality, t.Combine, Norm.DurationNs(t.Period)) : null, null, At,
             p.Roles?.Select(kv => (Value.Text(kv.Key), kv.Value)).ToList(), PropertyTreeRole(p), p.Label)).ToList();
 
     static string? PropertyTreeRole(PropertyDocument p)

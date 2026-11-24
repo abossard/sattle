@@ -54,7 +54,7 @@ public class RetentionTests
         var age = AgeFor(dir, q);
         var all = Unbounded(dir);
         var kept = Run(Catalog(age), dir, 2000);
-        var ageNs = Lexer.DurationNs(age);
+        var ageNs = Norm.DurationNs(age);
         var universe = Evidence(all.Engine); var retained = Evidence(kept.Engine);
         var expected = universe.Where(x => x.Time + ageNs > kept.Frontier).Select(x => x.Id).Order().ToList();
         Assert.Equal(expected, retained.Select(x => x.Id).Order().ToList());

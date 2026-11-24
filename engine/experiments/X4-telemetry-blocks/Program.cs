@@ -20,7 +20,7 @@ var results = new List<(string Source, string Graph, string Prop, long Element, 
         var i = files.FindIndex(f => System.Text.RegularExpressions.Regex.Match(f.Text, @"^module\s+(\S+?)\s*(?:@|;)", System.Text.RegularExpressions.RegexOptions.Multiline) is { Success: true } m && m.Groups[1].Value == mod);
         files[i] = files[i] with { Text = text };
     }
-    var cat = new Catalog(new Sattle.Kql.KqlSource()); var load = cat.Load(files, updatePins: true);
+    var cat = new Catalog(new Sattle.Gkql.GkqlSource()); var load = cat.Load(files, updatePins: true);
     if (load.HasErrors) throw new InvalidOperationException(string.Join("\n", load.Diagnostics));
     var spaceId = cat.Spaces.Keys.First();
     var cluster = Sattle.Cli.Program.DetectCluster(capture);
@@ -33,7 +33,7 @@ var results = new List<(string Source, string Graph, string Prop, long Element, 
 }
 // ---- 2. an estate workload (100,000 master nodes, flows and meter readings, 3 windows)
 {
-    var cat = new Catalog(new Sattle.Kql.KqlSource()); var res = cat.Load(Catalog.ReadDirectory(defs), updatePins: true);
+    var cat = new Catalog(new Sattle.Gkql.GkqlSource()); var res = cat.Load(Catalog.ReadDirectory(defs), updatePins: true);
     if (res.HasErrors) throw new InvalidOperationException(string.Join("\n", res.Diagnostics));
     using var e = new Engine(cat, cat.Spaces.Keys.First(), new EngineOptions { StoreFactory = _ => new InMemoryGraphStore() });
     int pods = 31250, services = 6250, resources = 62500, pairs = 50000, perWindow = 208000, windows = 3; const long Min = 60_000_000_000;

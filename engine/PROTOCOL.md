@@ -36,7 +36,7 @@ The contract between `sattle serve` and the canvas. Everything is JSON over HTTP
 - `GET /graphs/catalog/ontology` returns the kernel ontology (`EntityType`, `RelationshipType`, `Constraint`, `Port`, operators, `contains`, `wire`, ...; names as in research 03 section 2).
 - `GET /graphs/catalog/snapshot` returns every definition node as an entity (type `Module`, `EntityType`, `Projection`, `Match`, ...) and every definition edge as a relationship (type `contains`, `ofType`, `wire`, ...). Relationship ids are `<source id>|<edge type>|<target id>`. `contains` carries `slot` and `ordinal`.
 - `GET /graphs/catalog/patches?after=r`: one patch per catalog revision. Loading a module and committing an edit are ordinary patches.
-- `GET /definitions/{module}` returns the canonical printed text. `GET /definitions` lists modules: `[{ "name", "version", "digest", "revision" }]`.
+- `GET /definitions/{module}` returns the module's gkql document as the space holds it. `GET /definitions` lists modules: `[{ "name", "version", "digest", "revision" }]`.
 
 ## Reads
 - `GET /graphs/{g}/snapshot[?revision=r]` returns `{ "descriptor", "extent": { "entities": [], "relationships": [] } }` at `r` (default head). Older than the retained patches (Version 3.8) answers `410 Gap`; clients must handle it. Revisions older than the retained history answer `410 { "error": { "code": "Gap", "lastAvailable": "5" } }`.
@@ -84,7 +84,7 @@ Definitions are text (`.sattle`), one module per call.
 
 `POST /check`
 ```json
-{ "module": "acme.svc", "text": "module acme.svc @ 1.0.0; ..." }
+{ "module": "acme.svc", "text": "{ \"module\": \"acme.svc\", \"version\": \"1.0.0\", ... }" }
 ```
 No state changes. Response `200`:
 ```json
@@ -210,10 +210,10 @@ Design stance: a **redux style** client. The server owns the committed state and
 A draft is an overlay on the catalog at a base revision. State lives on the server; the browser may keep a copy.
 - `POST /drafts { "base": "12" }` (base defaults to the head) returns `{ "draft": "<id>", "baseRevision": "12", "revision": "0" }`. Draft IDs are opaque. Drafts expire when the engine restarts. `GET /drafts` lists drafts, `GET /drafts/{id}` returns the draft state, `DELETE /drafts/{id}` discards it.
 - `GET /drafts/{id}/snapshot` and `GET /drafts/{id}/patches?after=r` serve the draft's catalog graph like `catalog` (same shapes; the draft's own revision counter, starting at `"0"` = the base).
-- `POST /drafts/{id}/patches { "patch": <GraphPatch on catalog>, "expectedRevision": "3" }` applies a structural edit. The patch is a normal `GraphPatch` (guards = before states) with `from` = the draft revision. It may be a user edit or the inverse of an earlier one: **undo and redo are inverse patches applied to the draft**, never a rewind of any log; the engine accepts any patch whose guards hold. Response: `{ "revision": "4", "ok": true, "diagnostics": [...], "modules": { "acme.svc": { "text": "...canonical text...", "changed": true } } }`. A guard failure answers `409 { "error": { "code": "GuardFailed", "element": "<id>" } }`; a stale `expectedRevision` answers `409 StaleRevision`; nothing changes.
-- `POST /drafts/{id}/check` re-checks without changing anything and returns the same `{ ok, diagnostics, modules }`. Diagnostics are by **definition element id** (`element`), with `module`, `code`, `severity`, `message`, and `line`/`column` in the canonical text of that module (`modules[m].text`). A patch that makes the graph unprintable (missing required slot or reference) yields code `Unprintable` with the element id.
-- `POST /drafts/{id}/commit { "expectedCatalogRevision": "12" }` prints every changed module canonically, checks them together, and activates exactly like `POST /definitions/{module}` (replay of retained inputs, one final-diff patch per graph). Response as there, plus `"modules": ["acme.svc"]`. Errors as there (`StaleRevision`, `Invalid` with diagnostics, `ActivationRejected`).
-- Text and graph stay two views of one definition graph: `GET /drafts/{id}/text/{module}` (removed in 3.46) returned the canonical text; `POST /check` and `POST /definitions/{module}` take text and are equivalent to a patch from the current graph to the parsed text.
+- `POST /drafts/{id}/patches { "patch": <GraphPatch on catalog>, "expectedRevision": "3" }` refuses every edit (since 3.57): a definition is a gkql document and changes by its text. A patch that touches a projection is `ProjectionText` with `file`, any other edit `ModuleText` (422). An empty patch is a draft revision.
+- `POST /drafts/{id}/check` re-checks without changing anything and returns the same `{ ok, diagnostics, modules }`. Diagnostics are by **definition element id** (`element`), with `module`, `code`, `severity`, `message`, and `line`/`column` in the document of that module (`modules[m].text`).
+- `POST /drafts/{id}/commit { "expectedCatalogRevision": "12" }` takes every document the draft changed, checks them together, and activates exactly like `POST /definitions/{module}` (replay of retained inputs, one final-diff patch per graph). Response as there, plus `"modules": ["acme.svc"]`. Errors as there (`StaleRevision`, `Invalid` with diagnostics, `ActivationRejected`).
+- The draft's graph holds the facts its documents lower to. `POST /check` and `POST /definitions/{module}` take a document and are equivalent to a patch from the current graph to the facts it lowers to.
 - Drafts survive until discarded or the server restarts. A draft whose base is not the head is still committable if its guards hold against the head (a rebased commit): the server computes the patch from the head to the draft's final graph for the modules the draft touched and answers `409 StaleRevision` when a touched module changed in between.
 
 ## v3: releases and versions
@@ -653,6 +653,13 @@ The text editor of a projection reads and checks its `.kql` text through these c
 - **Record envelope.** A payload without `key` carries no row: `{}` is a heartbeat, `{"lost": n, "time"?, "reason"?}` a loss mark (Def. 10.4). A record envelope is progress of the sources that bind its row type only.
 - **Options.** `--cluster` and `HostOptions.Cluster` are removed. The journal header, the seal and the stored options of a live input no longer carry `cluster`; an old store is rebuilt by replay.
 - **Live input.** An envelope read live is labelled `live:<source>` (was `eventhub:<source>`); capture files under `eventhub/` are read like any other file.
+
+## Version 3.57: gkql is the only language (#132)
+- **Definitions.** A module is a gkql module document (`*.module.gkql.json`), a projection a gkql document (`*.gkql.json`). A `.sattle` or `.kql` file is no definition: a load reports it as `UnreadFile`, a draft call names it `BadRequest` (no editable definition file).
+- **Removed routes.** `GET /kql/{module.projection}`, `GET /drafts/{id}/kql/{module.projection}`, `POST /kql/analyse`, `/kql/complete`, `/kql/hover` and `/kql/related` answer 404.
+- **Module text.** `GET /definitions/{module}`, a draft's `modules[m].text` and `GET /releases/{digest}/text` are the module's gkql document, never a printed text. The `Unprintable` diagnostic is gone.
+- **Draft patches.** `POST /drafts/{id}/patches` refuses every edit (`ModuleText`, or `ProjectionText` with `file`); restoring a release sets the draft's documents to the release's.
+- **CLI.** `sattle check --print` is removed.
 
 ## After 3.16 (no change of the wire format)
 - **Authoring record `signalRule`.** A rule whose `above` is not greater than its `below`, or whose `enterAfter` or `exitAfter` is below 1, is rejected and counted like a record with a missing field. A `Threshold` that reads its parameters from the row drops a row with such parameters and counts it (`replay` prints the count with the runtime faults); each window is read with the parameters of its own row.

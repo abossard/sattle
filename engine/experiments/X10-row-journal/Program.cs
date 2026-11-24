@@ -17,7 +17,7 @@ if (overlay is not null && File.Exists(overlay))
     var i = files.FindIndex(f => System.Text.RegularExpressions.Regex.Match(f.Text, @"^module\s+(\S+?)\s*(?:@|;)", System.Text.RegularExpressions.RegexOptions.Multiline) is { Success: true } m && m.Groups[1].Value == mod);
     files[i] = files[i] with { Text = text };
 }
-var cat = new Catalog(new Sattle.Kql.KqlSource()); var load = cat.Load(files, updatePins: true);
+var cat = new Catalog(new Sattle.Gkql.GkqlSource()); var load = cat.Load(files, updatePins: true);
 if (load.HasErrors) throw new InvalidOperationException(string.Join("\n", load.Diagnostics));
 var spaceId = cat.Spaces.Keys.First(); var cluster = Sattle.Cli.Program.DetectCluster(capture);
 Engine NewEngine() => new(cat, spaceId, new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 });

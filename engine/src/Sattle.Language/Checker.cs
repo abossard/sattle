@@ -666,7 +666,7 @@ public sealed class ProjectionChecker(Graph defs)
             var tele = pi.Role == "telemetry";
             if (tele)
             {
-                if (R.Window != pi.Period) { Err("Set", s, $"telemetry property {pi.Name} has period {Lexer.DurationText(pi.Period)}, the row window is {(R.Window == 0 ? "undefined" : Lexer.DurationText(R.Window))}"); continue; }
+                if (R.Window != pi.Period) { Err("Set", s, $"telemetry property {pi.Name} has period {Norm.DurationText(pi.Period)}, the row window is {(R.Window == 0 ? "undefined" : Norm.DurationText(R.Window))}"); continue; }
                 if (!e.Type.Role.IsData && (e.Type.Role.Temporality != pi.Temporality || e.Type.Role.Period != pi.Period)) { Err("Set", s, $"telemetry property {pi.Name} is {pi.Temporality}, the value is {e.Type.Role}"); continue; }
                 if (e.Type.Prov is { } f && pi.Combine is { } c && f != c) { Err("Set", s, $"property {pi.Name} combines with {c}, the value was rolled up with {f}"); continue; }
                 if (isRule) Err("Set", s, $"a step with an editable rule (accept or update) cannot set telemetry property {pi.Name}");

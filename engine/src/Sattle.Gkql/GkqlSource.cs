@@ -408,7 +408,7 @@ public static class Lowering
 
         static long Duration(string at, string duration)
         {
-            try { return Lexer.DurationNs(duration); }
+            try { return Norm.DurationNs(duration); }
             catch (Exception e) when (e is ArgumentException or FormatException or OverflowException) { throw new Refused(at, $"'{duration}' is not a duration"); }
         }
 

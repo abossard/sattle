@@ -215,7 +215,7 @@ public static class PlanCompiler
                 case TDistinct ds: op = new DistinctOp(ds, inL); strategies.Add($"{ds.Name}: Distinct, per-row multiplicity counts; emits +1 when a row first appears and -1 when its last copy goes"); break;
                 case TFilter f: op = new FilterOp(f, inL, cx); strategies.Add($"{f.Name}: Filter, linear, selection vector"); break;
                 case TMap m: op = new MapOp(m, inL, cx, carry); strategies.Add($"{m.Name}: Map, linear, shared columns"); break;
-                case TRetain rt: op = new RetainOp(rt, inL); strategies.Add($"{rt.Name}: Retain, buffers rows by {rt.TimeField}; withdraws a row when the frontier passes its time plus {Lexer.DurationText(rt.AgeNs)}"); break;
+                case TRetain rt: op = new RetainOp(rt, inL); strategies.Add($"{rt.Name}: Retain, buffers rows by {rt.TimeField}; withdraws a row when the frontier passes its time plus {Norm.DurationText(rt.AgeNs)}"); break;
                 case TWindow w: op = new WindowOp(w, inL, cx); strategies.Add($"{w.Name}: Window, linear, window assignment"); break;
                 case TGroup g when g.ClosesWindows:
                     {
@@ -390,7 +390,7 @@ public sealed class Engine : IDisposable, IEngineInput
             var outb = new OutputBuilder(Interner);
             var cx = new OpContext(Interner, Faults, Identities, this.options.Tenant, tp.OutputModule, key, outb) { LateHorizonFactor = this.options.LateHorizonWindows, RetentionNs = this.options.TelemetryRetentionNs };
             foreach (var series in tp.Ops.OfType<TSeries>().Where(x => x.WithinNs > this.options.TelemetryRetentionNs))
-                throw new InvalidOperationException($"graph {next.Name}: {series.Name} reads {Lexer.DurationText(series.WithinNs)} back, and telemetry is retained for {Lexer.DurationText(this.options.TelemetryRetentionNs)} (Def. 7.13)");
+                throw new InvalidOperationException($"graph {next.Name}: {series.Name} reads {Norm.DurationText(series.WithinNs)} back, and telemetry is retained for {Norm.DurationText(this.options.TelemetryRetentionNs)} (Def. 7.13)");
             var gr = new GraphRuntime { Name = next.Name, Key = key, Plan = PlanCompiler.Compile(tp, catalog, cx, next.Bindings.Where(kv => active.Any(x => x.Name == kv.Value)).ToDictionary(kv => kv.Key, kv => ProjectionOf(active.First(x => x.Name == kv.Value)).EntityTypes), this.options.TraceGraphs?.Contains(next.Name) == true), IsMaster = next.Master, Ingests = tp.Purpose == "ingestion", Cx = cx, Out = outb, State = new Graph(Interner) };
             foreach (var (port, from) in next.Bindings) gr.PortSources[port] = from;
             graphs.Add(gr); byName[next.Name] = gr;
