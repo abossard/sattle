@@ -363,6 +363,27 @@ Closed in the paper, checked against `paper/core/` Ch. 5 and 6:
 | Metric collector must keep Count and Total per minute, not the minute mean | part 2 "Metric aggregation" |
 | Resource Health: no feed and no documented mapping | ARM spec `AzureResourceHealthSignal`; DP spec |
 | Activity log is 5 to 10 minutes late against a 15-minute window | part 4 |
+| Storage namespace: the declared pair is not a valid metrics read; the collector must read the blob service child | "Storage namespace" below |
+
+### Storage namespace (probed 2026-11-24, read only)
+
+The four blob signals (33 to 36) are bound to the storage account resource but declare the namespace `Microsoft.Storage/storageAccounts/blobServices`. Azure reads the blob service child `…/blobServices/default`, not the account.
+
+| Step | Result | Evidence |
+|---|---|---|
+| Declared binding | Resource kind `StorageAccount`, resource id ends at the account (no `/blobServices/default`), namespace `…/blobServices` on all four | `entities.json`: `.value[].properties.signalGroups.azureResource \| {azureResourceKind, ns: .signals[].metricNamespace}` |
+| Namespaces on the account | Only `Microsoft.Storage/storageAccounts` | `az monitor metrics list-namespaces` on the account |
+| Metrics REST, account + `…/blobServices` | `400 BadRequest`: "the value must be: Microsoft.Storage/storageAccounts" | `GET {account}/providers/Microsoft.Insights/metrics?metricnamespace=…/blobServices`, api-version 2023-10-01 |
+| Metrics REST, child + `…/storageAccounts` | `400 BadRequest`, mirror image | same, on `{account}/blobServices/default` |
+| `az monitor metrics list --namespace` | Drops the namespace and returns the resource's own; it hides the error | response `.namespace` |
+| Minutes with traffic, 2026-11-23 20:00 to 2026-11-24 12:48 | Account: 21:34 (1 transaction) and 07:26 (19). Blob child: 07:26 only. The 21:34 transaction was the file service. | PT1M reads of `Transactions` on account, blob, file, queue, table |
+| Azure at 21:35 and 21:36 (covers minute 21:34) | Unknown on all four signals | `getSignalHistory`, api-version 2026-11-01 |
+| Azure at 07:27 (covers minute 07:26) | Healthy on all four: Availability 100, latency 10 | same |
+| Values at 07:26 | Blob child: Availability 100 (count 19), SuccessE2ELatency 10 (count 16). Account the same. | PT1M reads |
+
+- Observed, not documented: the account read would have given Availability 100 and latency 727 at 21:34. Azure stayed Unknown, so it reads the blob service. One distinguishing minute; the rebuild checks it again with more traffic (#122, decision of 2026-11-24).
+- The lab's fallback (`collect-observations.py:42-57`) resolves to the same child and so agrees with Azure. A rebuild collector reads the child directly and needs no fallback.
+- No error shows in the live model: signal `status` carries only `healthState`; the Unknown states come from minutes without blob transactions.
 
 ### Differences to the earlier notes
 
@@ -387,5 +408,5 @@ Where this analysis differs:
 | Depth | `rollup-levels.json` authors 3 levels and adds more | This model is a tree of depth 3 edges (4 levels) | part 1 |
 | Health objective, alerts | Not covered | Part of the model: 99 % on five entities, an alert on the root | part 1 |
 | Same data, several entities | Not named | 47 signals are 28 computations; share them | part 1 |
-| Storage namespace | Lab expects an invalid namespace on storage and resolves it to the blob service (`collect-observations.py:42-57`) | Azure shows no error on the blob signals; they are Unknown for lack of transactions. One Healthy value (100) in 1000. Not settled here. | live `status`, `getSignalHistory` |
+| Storage namespace | Lab expects an invalid namespace on storage and resolves it to the blob service (`collect-observations.py:42-57`) | Agrees. The declared pair is rejected by the metrics API; Azure reads the blob service child. Unknown means no blob transactions in that minute. | "Storage namespace" above |
 | Gaps in gkql | #67 (2026-11-24) names fixpoint and percentile | Also: hop or slide, ingestion clock, division and round, `in` and `=~`, outer join, time in state | gaps table above |
