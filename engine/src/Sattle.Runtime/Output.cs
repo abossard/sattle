@@ -141,7 +141,7 @@ sealed class SeriesOp : PhysOp
     /// <summary>The windows with a loss mark, by their start, while they are in the look-back: such a window is not covered and holds no fill (Def. 7.14).</summary>
     readonly SortedSet<long> lost = [];
     bool Lost(long start, long lag) => lost.Count > 0 && lost.GetViewBetween(start, start + period + lag - 1).Count > 0;
-    /// <summary>Since which clock an element has had a row here (the clock its rows entered at, long.MinValue before the first advance), and the window of the no-data record an element has.</summary>
+    /// <summary>Since which advance an element has had a row here (presence is sampled at advances), and the window of the no-data record an element has.</summary>
     readonly Dictionary<int, long> since = []; readonly Dictionary<int, long> marker = [];
     /// <summary>Per read, the time up to which its windows are covered and closed, as applied to the output so far: min(frontier, coveredUntil).</summary>
     long[] hi;
@@ -309,11 +309,8 @@ sealed class SeriesOp : PhysOp
                 var c = (int)rows.Cols[elemCol].L[i];
                 var row = ReadRow(rows, i); var w = row.Weight;
                 Arrange(c, row);
-                var present = arrangement.TryGetValue(c, out var held) && held.Count > 0;
-                if (present && Fills) since.TryAdd(c, frontier);      // #159 G3: an element is present since its rows arrived, at the clock they entered (Ch. 7, R1)
                 foreach (var a in Starts(c, edge, long.MaxValue, hi)) if (Record(c, a, hi, frontier) is { } vals) WriteRow(bb, row, a, vals, w);
                 if (marker.TryGetValue(c, out var m)) WriteRow(bb, row, m, [], w, true);
-                if (!present) since.Remove(c);       // after the records it retracts, which were written with it
                 LeaveIfEmpty(c);
                 touched.Add(c);
             }
@@ -326,6 +323,9 @@ sealed class SeriesOp : PhysOp
                 foreach (var (elem, list) in arrangement)
                     foreach (var a in Starts(elem, edge, edgeAfter, hi))
                         if (Record(elem, a, hi, frontier) is { } vals) foreach (var r in list) WriteRow(bb, r, a, vals, -r.Weight);
+            // presence is sampled at the advance (Def. 7.14)
+            foreach (var elem in since.Keys.Where(e => !arrangement.TryGetValue(e, out var l) || l.Count == 0).ToList()) since.Remove(elem);
+            foreach (var (elem, list) in arrangement) if (list.Count > 0) since.TryAdd(elem, ep.Lambda);
             frontier = ep.Lambda;
             lost.RemoveWhere(m => m + period + (Lag.Length == 0 ? 0 : Lag.Max()) <= edgeAfter);
         }
