@@ -65,27 +65,33 @@ export const wirePort = (wire: GkqlWire) => wire.port ?? "in";
 const starters: Readonly<Partial<Record<string, Omit<GkqlVerb, "id">>>> = {
   "graph-match": { verb: "graph-match", pattern: { nodes: [] } },
   rows: { verb: "rows", source: "" },
+  values: { verb: "values", values: { columns: { name: "Text" }, rows: [] } },
   where: { verb: "where", condition: { lit: true } },
   project: { verb: "project", columns: {} },
   extend: { verb: "extend", columns: {} },
   union: { verb: "union" },
+  distinct: { verb: "distinct" },
+  retain: { verb: "retain", retain: { time: "time", age: "24h" } },
+  traverse: { verb: "traverse", graph: "", traverse: { edge: "", from: "", to: "", direction: "out", min: 1, max: 1 } },
   summarize: { verb: "summarize", aggregates: { count: { fn: "count", args: [] } } },
   join: { verb: "join", kind: "inner", on: [] },
   window: { verb: "window", window: { time: "time", period: "60s" } },
   series: { verb: "series", graph: "", series: { element: "", property: "", lookback: "1h" } },
+  fixpoint: { verb: "fixpoint", fixpoint: { key: "", value: "", order: [], edges: { from: "from", to: "to" } } },
   hysteresis: { verb: "hysteresis", hysteresis: { by: [], value: "value", above: 2, enterAfter: 2, below: 0, exitAfter: 2, high: "on", low: "off", initial: "off" } },
   nodes: { verb: "nodes", target: { nodes: [] } },
   edges: { verb: "edges", target: { nodes: [], edges: [] } },
+  link: { verb: "link", link: { policy: "", left: { identity: "", args: [] }, right: { identity: "", args: [] }, confidence: 1 } },
 };
 
 export const authorableVerbs = Object.keys(starters);
 const sourceVerbs = new Set(["graph-match", "rows", "values"]);
-const outputVerbs = new Set(["nodes", "edges"]);
+const outputVerbs = new Set(["nodes", "edges", "link"]);
 
 export function verbStyle(verb: string): "input" | "transform" | "aggregate" | "output" {
   if (sourceVerbs.has(verb)) return "input";
   if (outputVerbs.has(verb)) return "output";
-  if (["summarize", "join", "union", "hysteresis", "window", "series"].includes(verb)) return "aggregate";
+  if (["summarize", "join", "union", "fixpoint", "hysteresis", "window", "series"].includes(verb)) return "aggregate";
   return "transform";
 }
 
@@ -96,7 +102,7 @@ export function appendVerb(program: GkqlProgram, verb: string): GkqlProgram {
   const used = new Set(program.verbs.map((node) => node.id));
   let id = prefix;
   for (let index = 2; used.has(id); ++index) id = `${prefix}${index}`;
-  const source = verb === "graph-match" || verb === "series"
+  const source = verb === "graph-match" || verb === "series" || verb === "traverse"
     ? { graph: program.inputs.find((input) => input.ontology)?.name ?? "" }
     : verb === "rows" ? { source: program.inputs.find((input) => input.rows)?.name ?? "" } : {};
   return { ...program, verbs: [...program.verbs, { ...starter, ...source, id } as GkqlVerb] };
@@ -126,7 +132,7 @@ export function sourcesFor(program: GkqlProgram, to: string): GkqlVerb[] {
   return program.verbs.filter((node) => !downstream.has(node.id) && !outputVerbs.has(node.verb));
 }
 
-export const portsFor = (verb: string) => sourceVerbs.has(verb) ? [] : verb === "join" ? ["left", "right"] : ["in"];
+export const portsFor = (verb: string) => sourceVerbs.has(verb) ? [] : verb === "join" ? ["left", "right"] : verb === "fixpoint" ? ["in", "edges"] : ["in"];
 
 /**
  * An element of a program as the engine's diagnostics name it below the projection id: `verb:ID`, `wire:FROM>TO.PORT` or `port:NAME`.
@@ -144,6 +150,16 @@ export function focusOf(program: GkqlProgram, projectionId: string, focus: strin
   if (verb !== null) return program.verbs.some((v) => v.id === verb) ? verbFocus(verb) : null;
   if (local.startsWith("port:") || program.wires.some((wire) => wireFocus(wire) === local)) return local;
   return null;
+}
+
+/** The rows after each verb, from a draft preview's operators (in plan order): a verb's last operator is its output. */
+export function rowsByVerb(program: GkqlProgram, projectionId: string, operators: readonly { op: string; rows: string }[]): Map<string, string> {
+  const rows = new Map<string, string>();
+  for (const o of operators) {
+    const focus = focusOf(program, projectionId, o.op);
+    if (focus?.startsWith("verb:")) rows.set(focus, o.rows);
+  }
+  return rows;
 }
 
 export interface GkqlProblem { focus: string; message: string }

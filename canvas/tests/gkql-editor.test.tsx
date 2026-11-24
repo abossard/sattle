@@ -91,6 +91,57 @@ it.each([["Node type", "Resource", "Res"], ["Node variable", "n", "node"]])("the
   expect(field().value).toBe(before);
 });
 
+it("builds a projection from an empty program: palette, connect, fields, Check & store", async () => {
+  const { save, user } = editor({ ...base, verbs: [], wires: [] });
+  const add = async (verb: string) => {
+    await user.click(screen.getByRole("button", { name: "Add operation" }));
+    await user.click(await screen.findByRole("menuitem", { name: verb }));
+  };
+  const node = async (label: string) => {
+    await user.click(screen.getByRole("button", { name: "Add node" }));
+    await user.type(screen.getByRole("textbox", { name: "Node type" }), label);
+  };
+  await add("graph-match");
+  await node("Pod");
+  // a match reads no operation: the second one starts unwired, the join after it reads it on its left
+  await add("graph-match");
+  await node("Resource");
+  await add("join");
+  screen.getByRole("button", { name: "Connect from graph_match" }).focus();
+  await user.keyboard("{Enter}");
+  screen.getByRole("button", { name: "join join" }).focus();
+  await user.keyboard("{Enter}");
+  await user.click(screen.getByRole("button", { name: "join join" }));
+  await add("nodes");
+  await node("Workload");
+  await user.click(screen.getByRole("button", { name: "Check & store" }));
+  await waitFor(() => expect(save).toHaveBeenCalledOnce());
+  const stored = save.mock.calls[0][0];
+  expect(stored.verbs.map((v: { id: string; verb: string }) => `${v.verb} ${v.id}`)).toEqual(["graph-match graph_match", "graph-match graph_match2", "join join", "nodes nodes"]);
+  expect(stored.verbs[0].pattern.nodes).toEqual([{ var: "n1", label: "Pod" }]);
+  expect(stored.verbs[3].target.nodes).toEqual([{ var: "n1", label: "Workload" }]);
+  expect(stored.wires).toEqual([
+    { from: "graph_match2", to: "join", port: "left" },
+    { from: "graph_match", to: "join", port: "right" },
+    { from: "join", to: "nodes" },
+  ]);
+});
+
+it("shows the rows after each operation of the previewed draft until the text changes", async () => {
+  const user = userEvent.setup();
+  const op = (id: string) => `d:tutorial/projection:health/op:${id}`;
+  const rows = vi.fn().mockResolvedValue([{ op: op("all_1"), rows: "40" }, { op: op("all_2"), rows: "30" }, { op: op("choose_1"), rows: "12" }]);
+  render(<GkqlEditor file={metadata} source={JSON.stringify(base)} port={new EditorService("http://localhost/engine")} store={async () => null} rows={rows} />);
+  await user.click(screen.getByRole("button", { name: /^Show rows/ }));
+  expect((await screen.findByRole("button", { name: "where 12 rows choose" })).getAttribute("data-verb")).toBe("choose");
+  expect(screen.getByRole("button", { name: "graph-match 30 rows all" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "graph-match live" })).toBeTruthy();
+  await user.click(screen.getByRole("tab", { name: "GKQL" }));
+  await user.type(screen.getByRole("textbox", { name: "GKQL source" }), " ");
+  expect(screen.getByRole("button", { name: "where choose" })).toBeTruthy();
+  expect((screen.getByRole("button", { name: /^Show rows/ }) as HTMLButtonElement).disabled).toBe(true);
+});
+
 it("edits the two hysteresis recovery settings through the Canvas fields", async () => {
   const { save, user } = editor();
   await user.click(screen.getByRole("button", { name: "hysteresis cpuState" }));
@@ -171,6 +222,33 @@ describe("every action works from the keyboard and every view follows", () => {
     expect(card("where choose")).toBeTruthy();
     await user.keyboard("{Control>}{Shift>}z{/Shift}{/Control}");
     expect(screen.queryByRole("button", { name: "where choose" })).toBeNull();
+  });
+
+  it.each(["{Delete}", "{Backspace}"])("Enter selects a wire on the graph and %s removes it", async (press) => {
+    const { save, user } = editor();
+    const wire = card("Wire: choose feeds cpuState");
+    wire.focus();
+    await user.keyboard("{Enter}");
+    expect(wire.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("heading", { name: "Wire" })).toBeTruthy();
+    await user.keyboard(press);
+    expect(screen.queryByRole("button", { name: "Wire: choose feeds cpuState" })).toBeNull();
+    expect(card("where choose")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "cpuState: the input of cpuState is not connected" })).toBeTruthy();
+    await user.click(card("Check & store"));
+    await waitFor(() => expect(save).toHaveBeenCalledOnce());
+    expect(save.mock.calls[0][0].wires).toEqual([{ from: "all", to: "choose" }]);
+  });
+
+  it.each([["{ArrowRight}", "left", 16], ["{ArrowDown}", "top", 16], ["{ArrowLeft}", "left", -16]] as const)("Alt+%s moves the focused card, layout only", async (arrow, side, by) => {
+    const { user } = editor();
+    const choose = card("where choose");
+    choose.focus();
+    const before = parseFloat(choose.style[side]);
+    await user.keyboard(`{Alt>}${arrow}{/Alt}`);
+    expect(parseFloat(card("where choose").style[side])).toBe(before + by);
+    expect((card("Undo edit") as HTMLButtonElement).disabled).toBe(true);
+    expect((card("Check & store") as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("Delete acts on the focused card, not on the one selected before", async () => {

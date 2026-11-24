@@ -3,7 +3,7 @@
 // model: it sends events and keeps only the pointer of a gesture in progress.
 import { Badge, Text, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import { useId, useMemo, useRef, useState, type PointerEvent } from "react";
-import { layoutGkql, verbFocus, verbStyle, VERB_HEIGHT, VERB_WIDTH, wireFocus } from "../../editor/gkql";
+import { layoutGkql, verbFocus, verbStyle, VERB_HEIGHT, VERB_WIDTH, wireFocus, wirePort } from "../../editor/gkql";
 import type { GkqlEvent, GkqlModel } from "../../editor/gkql-editing";
 
 const useStyles = makeStyles({
@@ -14,7 +14,7 @@ const useStyles = makeStyles({
   wire: { fill: "none", stroke: tokens.colorNeutralForeground3, strokeWidth: 1 },
   wireSelected: { stroke: tokens.colorBrandStroke1, strokeWidth: 2 },
   wireError: { stroke: tokens.colorPaletteRedBorder2, strokeDasharray: "4 3" },
-  hit: { fill: "none", stroke: "transparent", strokeWidth: 10, pointerEvents: "stroke", cursor: "pointer" },
+  hit: { fill: "none", stroke: "transparent", strokeWidth: 10, pointerEvents: "stroke", cursor: "pointer", outline: "none", "&:focus-visible": { stroke: tokens.colorStrokeFocus2, strokeOpacity: 0.5 } },
   ghost: { fill: "none", stroke: tokens.colorBrandStroke1, strokeWidth: 2, strokeDasharray: "4 3" },
   cards: { listStyle: "none", margin: 0, padding: 0 },
   card: {
@@ -27,6 +27,7 @@ const useStyles = makeStyles({
   selected: { backgroundColor: tokens.colorBrandBackground2, border: `2px solid ${tokens.colorBrandStroke1}` },
   error: { border: `2px dashed ${tokens.colorPaletteRedBorder2}` },
   target: { outline: `2px dashed ${tokens.colorBrandStroke1}`, outlineOffset: "2px" },
+  head: { display: "flex", alignItems: "center", gap: "6px" },
   clip: { maxWidth: "100%", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" },
   handle: {
     position: "absolute", width: "16px", height: "16px", padding: 0, borderRadius: 0, cursor: "crosshair", touchAction: "none",
@@ -39,8 +40,8 @@ const useStyles = makeStyles({
 
 type Drag = { id: string; pointer: number; x0: number; y0: number; from: { x: number; y: number }; moved: boolean };
 
-export function GkqlGraph({ model, problems, readOnly, dispatch }: {
-  model: GkqlModel; problems: ReadonlyMap<string, string[]>; readOnly: boolean; dispatch: (e: GkqlEvent) => void;
+export function GkqlGraph({ model, problems, rows, readOnly, dispatch }: {
+  model: GkqlModel; problems: ReadonlyMap<string, string[]>; rows?: ReadonlyMap<string, string>; readOnly: boolean; dispatch: (e: GkqlEvent) => void;
 }) {
   const s = useStyles();
   const ids = useId();
@@ -107,18 +108,21 @@ export function GkqlGraph({ model, problems, readOnly, dispatch }: {
   const from = connecting ? layout.cards.find((c) => c.verb.id === connecting) : null;
   return (
     <div className={s.stage} role="region" aria-label="GKQL operations and wires" aria-describedby={`${ids}help`} tabIndex={0}>
-      <span id={`${ids}help`} className={s.hidden}>Drag a card to move it. Drag a card's handle onto the operation it feeds, or press Enter on the handle and then on that operation. Alt and an arrow key move the focused card. Delete removes the focused card.</span>
+      <span id={`${ids}help`} className={s.hidden}>Drag a card to move it. Enter on a wire selects it. Drag a card's handle onto the operation it feeds, or press Enter on the handle and then on that operation. Alt and an arrow key move the focused card. Delete removes the focused card or wire.</span>
       <div ref={contents} className={s.contents} style={{ width: layout.width + 24, height: layout.height }} onPointerMove={(e) => { cardMove(e); handleMove(e); }}>
-        <svg className={s.svg} width={layout.width + 24} height={layout.height} aria-hidden="true">
-          <defs>
+        <svg className={s.svg} width={layout.width + 24} height={layout.height} role="group" aria-label="Wires">
+          <defs aria-hidden="true">
             <marker id={`${ids}arrow`} orient="auto" markerWidth="6" markerHeight="6" refX="5" refY="3"><path d="M0 0 6 3 0 6Z" fill={tokens.colorNeutralForeground3} /></marker>
           </defs>
           {layout.wires.map(({ wire, d }, index) => {
             const focus = wireFocus(wire);
             return (
               <g key={index}>
-                <path d={d} markerEnd={`url(#${ids}arrow)`} className={mergeClasses(s.wire, model.selected === focus && s.wireSelected, problems.has(focus) && s.wireError)} />
-                <path d={d} className={s.hit} onClick={() => dispatch({ t: "select", focus })} />
+                <path d={d} aria-hidden="true" markerEnd={`url(#${ids}arrow)`} className={mergeClasses(s.wire, model.selected === focus && s.wireSelected, problems.has(focus) && s.wireError)} />
+                <path d={d} className={s.hit} data-wire={focus} role="button" tabIndex={0} aria-pressed={model.selected === focus}
+                  aria-label={`Wire: ${wire.from} feeds ${wirePort(wire) === "in" ? wire.to : `the ${wirePort(wire)} input of ${wire.to}`}`}
+                  aria-description={problems.get(focus)?.join(". ")}
+                  onClick={() => dispatch({ t: "select", focus })} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); dispatch({ t: "select", focus }); } }} />
               </g>
             );
           })}
@@ -135,7 +139,7 @@ export function GkqlGraph({ model, problems, readOnly, dispatch }: {
                   className={mergeClasses(s.card, verbStyle(verb.verb) === "input" && s.input, model.selected === focus && s.selected, errors.length > 0 && s.error, connecting !== null && connecting !== verb.id && s.target)}
                   style={{ left: x, top: y, width: VERB_WIDTH }}
                   onPointerDown={(e) => cardDown(e, verb.id, { x, y })} onPointerUp={cardUp} onPointerCancel={() => { drag.current = null; }} onClick={() => cardClick(verb.id)}>
-                  <Badge size="small" appearance="outline" color="informative">{verb.verb}</Badge>
+                  <span className={s.head}><Badge size="small" appearance="outline" color="informative">{verb.verb}</Badge>{rows?.has(focus) && <Text size={100}>{rows.get(focus)} rows</Text>}</span>
                   <Text weight="semibold" className={s.clip} title={verb.id}>{verb.id}</Text>
                 </button>
                 {describe && <span id={describe} className={s.hidden}>{errors.join(". ")}</span>}

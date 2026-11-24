@@ -2,7 +2,7 @@ import { Badge, Button, Field, Input, Menu, MenuGroup, MenuGroupHeader, MenuItem
 import { Add20Regular, ArrowRedo20Regular, ArrowUndo20Regular } from "@fluentui/react-icons";
 import { useEffect, useMemo, useReducer, useRef, useState, type KeyboardEvent } from "react";
 import {
-  appendVerb, authorableVerbs, canEditGkqlStructure, checkGkql, connect, focusOf, layoutGkql, portsFor, readGkqlJson, rewire, sourcesFor, spanOf, verbAt, verbFocus, verbStyle, wirePort,
+  appendVerb, authorableVerbs, canEditGkqlStructure, checkGkql, connect, focusOf, layoutGkql, portsFor, readGkqlJson, rewire, rowsByVerb, sourcesFor, spanOf, verbAt, verbFocus, verbStyle, wirePort,
   type GkqlDrawing, type GkqlProgram, type GkqlVerb, type GkqlWire,
 } from "../../editor/gkql";
 import { openModel, step } from "../../editor/gkql-editing";
@@ -215,7 +215,7 @@ function WirePanel({ focus, readOnly, remove }: { focus: string; readOnly: boole
  * The editor of a GKQL projection: the outline (steps), the graph and a side panel with the selected element and the program text, all
  * showing one model (`gkql-editing.ts`). Problems from the editor's own check and from the engine's last check sit on the element they name.
  */
-export default function GkqlEditor({ file, source, initialTab = "wires", starter, recoveredText, diagnostics, store, onEdit }: EditorProps) {
+export default function GkqlEditor({ file, source, initialTab = "wires", starter, recoveredText, diagnostics, store, onEdit, rows }: EditorProps) {
   const s = useStyles();
   const [model, dispatch] = useReducer(step, recoveredText ?? source ?? "", openModel);
   const [side, setSide] = useState<string>(initialTab === "source" ? "source" : "operation");
@@ -227,6 +227,8 @@ export default function GkqlEditor({ file, source, initialTab = "wires", starter
   const seen = useRef(source);
   const root = useRef<HTMLDivElement>(null);
   const caretAt = useRef<number | null>(null);
+  // the rows after each verb in the last preview, shown while the text is the one previewed
+  const [counted, setCounted] = useState<{ text: string; rows: ReadonlyMap<string, string> } | null>(null);
   // a removal unmounts the control that had focus: focus moves to the graph
   const removeAndFocus = (focus: string) => { dispatch({ t: "remove", focus }); root.current?.querySelector<HTMLElement>("[aria-label='GKQL operations and wires']")?.focus(); };
   const { text, program } = model;
@@ -286,6 +288,12 @@ export default function GkqlEditor({ file, source, initialTab = "wires", starter
       setStatus(error ? { phase: "error", message: error } : { phase: "checked" });
     } catch (error) { setStatus({ phase: "error", message: (error as Error).message }); }
   }
+  async function showRows() {
+    if (!rows || !program) return;
+    const previewed = text;
+    try { setCounted({ text: previewed, rows: rowsByVerb(program, projectionId, await rows()) }); }
+    catch (error) { setStatus({ phase: "error", message: (error as Error).message }); }
+  }
   const add = (verb: string) => {
     if (!program) return;
     let next = appendVerb(program, verb);
@@ -314,11 +322,11 @@ export default function GkqlEditor({ file, source, initialTab = "wires", starter
       dispatch({ t: redo ? "redo" : "undo" });
       return;
     }
-    // Delete and Alt+arrows act on the focused card or step (or the selection when the graph itself has focus), never from other controls
+    // Delete and Alt+arrows act on the focused card, wire or step (or the selection when the graph itself has focus), never from other controls
     const view = target.closest("[aria-label='GKQL operations and wires'], [role=listbox]");
     if (field || mod || !view) return;
-    const owner = target.closest<HTMLElement>("[data-verb], [data-step]");
-    const focused = owner ? verbFocus(owner.dataset.verb ?? owner.dataset.step!) : model.selected;
+    const owner = target.closest<HTMLElement>("[data-verb], [data-step], [data-wire]");
+    const focused = owner ? owner.dataset.wire ?? verbFocus(owner.dataset.verb ?? owner.dataset.step!) : model.selected;
     if (e.key === "Escape" && model.gesture.t === "connecting") { e.preventDefault(); dispatch({ t: "connect-cancel" }); }
     else if ((e.key === "Delete" || e.key === "Backspace") && focused && !frozen) {
       e.preventDefault();
@@ -360,6 +368,7 @@ export default function GkqlEditor({ file, source, initialTab = "wires", starter
         <span className={s.grow} />
         {changed && <Text size={200}>Local changes</Text>}
         {status.phase === "checked" && !problems.length && <Badge color="success" appearance="tint">Projection checked</Badge>}
+        {rows && <Button size="small" disabled={!program || changed || checking} title="Preview the stored draft and show the rows after each operation" onClick={() => void showRows()}>Show rows</Button>}
         {store && <Button size="small" appearance="primary" disabled={!program || !changed || checking || model.error !== null} onClick={() => void checkAndStore()}>{checking ? "Checking…" : "Check & store"}</Button>}
       </div>
       <div aria-live="polite" className={s.messages}>
@@ -372,7 +381,7 @@ export default function GkqlEditor({ file, source, initialTab = "wires", starter
       {!program ? sourceView : (
         <div className={s.workspace}>
           <GkqlOutline model={model} problems={byFocus} dispatch={dispatch} />
-          <GkqlGraph model={model} problems={byFocus} readOnly={frozen} dispatch={dispatch} />
+          <GkqlGraph model={model} problems={byFocus} rows={counted?.text === text ? counted.rows : undefined} readOnly={frozen} dispatch={dispatch} />
           <section className={s.sidebar} aria-label="Selection and text">
             {problems.length > 0 && (
               <div className={s.problems}>

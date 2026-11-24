@@ -1,6 +1,6 @@
 // The GKQL editor's calculations and its state machine: every action as a pure step, checked on one small program.
 import { describe, expect, it } from "vitest";
-import { checkGkql, connect, focusOf, printGkql, spanOf, verbAt, type GkqlProgram } from "../src/editor/gkql";
+import { appendVerb, authorableVerbs, checkGkql, connect, focusOf, portsFor, printGkql, readGkql, rowsByVerb, spanOf, verbAt, verbStyle, type GkqlProgram } from "../src/editor/gkql";
 import { openModel, step, type GkqlEvent, type GkqlModel } from "../src/editor/gkql-editing";
 
 const program: GkqlProgram = {
@@ -57,6 +57,35 @@ describe("connecting two operations", () => {
     ["from downstream", "out", "keep", "out cannot feed keep: it is an output or reads from keep"],
     ["into a full port", "match", "out", "every input of out is connected; change one in the Operation panel"],
   ])("refuses %s", (_, from, to, reason) => expect(connect(program, from, to)).toBe(reason));
+});
+
+describe("the rows after each verb in a preview", () => {
+  it.each<[string, { op: string; rows: string }[], Record<string, string>]>([
+    ["one operator per verb", [{ op: `${P}/op:match_1`, rows: "40" }, { op: `${P}/op:keep_1`, rows: "12" }], { "verb:match": "40", "verb:keep": "12" }],
+    ["a verb's last operator is its output", [{ op: `${P}/op:match_1`, rows: "40" }, { op: `${P}/op:match_2`, rows: "30" }], { "verb:match": "30" }],
+    ["operators of another projection are left out", [{ op: "d:m/projection:q/op:keep_1", rows: "9" }], {}],
+    ["an operator of no verb of the program is left out", [{ op: `${P}/op:gone_1`, rows: "9" }], {}],
+  ])("%s", (_, operators, rows) => expect(Object.fromEntries(rowsByVerb(program, P, operators))).toEqual(rows));
+});
+
+describe("the palette", () => {
+  // the verbs the engine lowers (GkqlSource.Lower), each with its group in the Add operation menu and its input ports
+  it.each([
+    ["graph-match", "input", []], ["rows", "input", []], ["values", "input", []],
+    ["where", "transform", ["in"]], ["project", "transform", ["in"]], ["extend", "transform", ["in"]], ["distinct", "transform", ["in"]],
+    ["retain", "transform", ["in"]], ["traverse", "transform", ["in"]],
+    ["union", "aggregate", ["in"]], ["join", "aggregate", ["left", "right"]], ["summarize", "aggregate", ["in"]], ["window", "aggregate", ["in"]],
+    ["series", "aggregate", ["in"]], ["hysteresis", "aggregate", ["in"]], ["fixpoint", "aggregate", ["in", "edges"]],
+    ["nodes", "output", ["in"]], ["edges", "output", ["in"]], ["link", "output", ["in"]],
+  ] as const)("%s is authorable, in %s, with inputs %j", (verb, style, ports) => {
+    expect(authorableVerbs).toContain(verb);
+    expect(verbStyle(verb)).toBe(style);
+    expect(portsFor(verb)).toEqual(ports);
+    const added = appendVerb(program, verb);
+    expect(added.verbs.at(-1)!.verb).toBe(verb);
+    expect(readGkql(printGkql(added))).toEqual(added);
+  });
+  it("offers no other verb", () => expect(authorableVerbs).toHaveLength(19));
 });
 
 describe("a verb's place in the text", () => {
