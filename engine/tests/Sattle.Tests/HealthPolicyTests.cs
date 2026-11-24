@@ -6,7 +6,7 @@ namespace Sattle.Tests;
 
 public class HealthPolicyTests
 {
-    static readonly string Example = Path.Combine(Repo.Root, "engine", "standard", "health");
+    static readonly string Example = Path.Combine(Repo.Root, "engine", "examples", "kiln");
 
     static SpaceHost Open(int enterAfter, int? lateHorizonWindows = 3)
     {

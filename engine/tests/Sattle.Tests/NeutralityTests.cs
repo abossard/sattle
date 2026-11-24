@@ -5,7 +5,7 @@ namespace Sattle.Tests;
 /// <summary>The core assemblies name no domain: no health states, no authored health rows, no Azure, Kubernetes or other source system (#144). Domains come in through definitions and record envelopes only.</summary>
 public partial class NeutralityTests
 {
-    [GeneratedRegex(@"Healthy|Degraded|Unhealthy|SignalRule|PolicyRow|CurationRow|RollupPolicy|[Hh]ealth|[Aa]zure|[Kk]ubernetes|\bk8s\b|kubectl|\b[Pp]ods?\b|[Hh]ubble|[Pp]rometheus|[Ee]vent ?[Hh]ubs?\b|eventhub|ResourceGraph|\bAKS\b|\baks\b")]
+    [GeneratedRegex(@"Healthy|Degraded|Unhealthy|SignalRule|PolicyRow|CurationRow|RollupPolicy|[Hh]ealth|[Aa]zure|[Kk]ubernetes|\bk8s\b|kubectl|\b[Pp]ods?\b|[Hh]ubble|[Pp]rometheus|[Ee]vent ?[Hh]ubs?\b|eventhub|ResourceGraph|\bAKS\b|\baks\b|[Cc]luster")]
     private static partial Regex DomainWord();
 
     /// <summary>Allowed until #132 removes the `.sattle` text: the legacy count labels of a tree role, its declaration and its one line of cases.</summary>
@@ -45,11 +45,12 @@ public partial class NeutralityTests
     [Theory]
     [InlineData("var s = \"Unhealthy\";", "Unhealthy")]
     [InlineData("sealed class SignalRuleRow { }", "SignalRule")]
-    [InlineData("// read the pods of the cluster", "pods")]
-    [InlineData("new KubernetesAdapter(cluster)", "Kubernetes")]
+    [InlineData("// read the pods of the node", "pods")]
+    [InlineData("new KubernetesAdapter(node)", "Kubernetes")]
     [InlineData("source = \"eventhub:\" + name;", "eventhub")]
     [InlineData("const string Id = \"azure.metrics\";", "azure")]
     [InlineData("rows MetricRow from prometheus", "prometheus")]
+    [InlineData("var d = row.cluster;", "cluster")]
     public void A_planted_domain_literal_is_found(string line, string match) =>
         Assert.Equal(match, Assert.Single(Scan(line)).Match);
 

@@ -119,7 +119,7 @@ Canvas `evaluate(definition)` = `POST /check` for the diagnostics and diff, then
       "key": { "domain": "capability", "components": { "id": "payments" } } },
     { "kind": "relationship", "id": "r:cc", "before": null, "after": { "...RelationshipState..." } } ] }
 ```
-- Edits target the internal graph only. A chain ends at the master graph's authored partition (rows from the `sattle.authoring` source); no edit reaches Azure or Kubernetes. Elements and properties owned by `readonly` rules and all telemetry reject.
+- Edits target the internal graph only. A chain ends at the master graph's authored partition (the rows of an authored source); no edit reaches a system that a collector observes. Elements and properties owned by `readonly` rules and all telemetry reject.
 - `baseRevisions` names the base revision of every graph on the edit path (the edited graph, each intermediate graph, the master). Any stale base rejects.
 - A created entity names its key (`key`); the server derives its id the way ingestion does and rejects a different id.
 - The server computes the backward proposal, applies it to a staged copy, evaluates forward, and accepts only if the staged view equals the edited view (PutGet). Accepted edits become recorded input rows; normal forward ingestion commits them and the patches arrive on the feed like any other.
@@ -401,7 +401,7 @@ Additive for a client: no endpoint changed. New in the definition language, the 
 - **Journal.** New entry `{ "k": "g", "s": source, "u": until, "q": seq }`. A journal of the live input holds envelopes and needs none.
 - **Kernel.** `Series.ttl` (Integer, optional), `FieldRef.fill` (Decimal, optional, on a read of a `Series`), `Rollup.nodata` (Text, `any`), `Threshold.nodata` (Text) and `Threshold.nodataIgnore` (Boolean).
 - **No data, exactly.** An element is in no data when the later of two times lies more than the time to live before the frontier: the advance since which it has had a row, and the end of its newest record. An element that went and returns is not in no data because of an old record.
-- **Loss marks.** A window in which a source lost events (`RecordLoss`, the forwarder's markers, Hubble's lost events) is not covered and holds no fill; a mark that arrives after the window was filled takes the fill back. Activation also refuses a fill of a property that an authored source (`sattle.authoring`) feeds: authored data records no progress.
+- **Loss marks.** A window in which a source lost events (`RecordLoss`, the forwarder's markers, Hubble's lost events) is not covered and holds no fill; a mark that arrives after the window was filled takes the fill back. Activation also refuses a fill of a property that an authored source feeds: authored data records no progress.
 - **Not built:** the shipped definitions do not use fill or a time to live yet; the forwarder sends no heartbeats, so a source that reports only events is covered only up to its last record.
 
 ## Version 3.19: a skeleton names its placeholders (removed in 3.46)
@@ -662,7 +662,7 @@ The text editor of a projection reads and checks its `.kql` text through these c
 
 ## Health policy evidence windows (#151)
 
-A GKQL `series` can set `freshness` to a duration from one measurement period through `lookback` minus one period, inclusive. Its downstream `hysteresis` then supplies a `noData` label distinct from `high` and `low`. For example, the kiln policy uses one-minute windows, a 15-minute lookback and two-minute freshness. [Kiln rating policy](standard/health/workshop.rating.gkql.json)
+A GKQL `series` can set `freshness` to a duration from one measurement period through `lookback` minus one period, inclusive. Its downstream `hysteresis` then supplies a `noData` label distinct from `high` and `low`. For example, the kiln policy uses one-minute windows, a 15-minute lookback and two-minute freshness. [Kiln rating policy](examples/kiln/workshop.rating.gkql.json)
 
 With `hysteresis.evidenceWindow` set to `true`, the threshold also emits `windowStart` as an Instant. The kiln projection writes it to the instrument’s `changedIn` property. A crossing cites the window that completed the entry or recovery streak. Silence after readings cites the grid window containing the last supported window’s end plus `freshness`. A subject that has never reported cites its first reported silent window. On resumption, the first supported window after the gap establishes the state.
 

@@ -95,7 +95,7 @@ static partial class Bench
             {
                 rig.Input.IngestCommitted = false; var adv0 = rig.Input.AdvTicks; var t0 = Stopwatch.GetTimestamp();
                 if (!rig.Replay.Process(env, false)) break;
-                rig.Replay.FlushPending();
+                rig.Replay.FlushPending(); rig.Replay.RequireRead();
                 var dt = Ms(Stopwatch.GetTimestamp() - t0 - (rig.Input.AdvTicks - adv0));
                 all.Add(dt); if (rig.Input.IngestCommitted) committing.Add(dt);
             }
@@ -296,7 +296,7 @@ static partial class Bench
                     replay.TimeShiftNs = offset;
                     replay.Process(env with { CapturedNs = env.CapturedNs + offset, Seq = env.Seq + pass * 1_000_000_000L }, false);
                 }
-                replay.FlushPending();
+                replay.FlushPending(); replay.RequireRead();
                 if (pass == 0) { first = pf; last = pl; span = last - first; }
                 var logical = (pl + offset - first) / 1e9;
                 Console.WriteLine($"pass {pass + 1}: logical span {logical / 3600:F2} h, {host.InputRows:N0} rows, journal {store.JournalCount:N0} entries, late rows dropped {host.Engine.Graphs.Sum(g => g.Cx.LateDropped):N0} (rows older than the late horizon inside their own pass are dropped in every pass alike), master {host.Engine.Master.State.EntityCount:N0} entities and {host.Engine.Master.State.RelCount:N0} relationships, of them evidence kept by `retain` ({string.Join(", ", host.Engine.Master.State.Entities.Where(x => Sattle.Core.Ids.Name(x.Type) is "ActivityEvent" or "WarningEvent" or "AuditEvent").GroupBy(x => Sattle.Core.Ids.Name(x.Type)).OrderBy(g => g.Key).Select(g => $"{g.Key} {g.Count():N0}"))}; they age out as the passes move the frontier), wall {wall.Elapsed.TotalSeconds:F0} s");

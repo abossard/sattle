@@ -275,11 +275,19 @@ public sealed class Replay : IRowSink
     /// <summary>Drops the pending chunk without sending it (a re-derivation that ends where the live run had not flushed).</summary>
     public void DropPending() { current?.W.Dispose(); current = null; }
 
+    /// <summary>Refuses a capture of which every envelope was skipped: its sources are of a format no adapter reads, which would replay to an empty graph without a word.</summary>
+    public void RequireRead()
+    {
+        if (Stats.Skipped > 0 && Stats.Skipped == Stats.Records.Values.Sum())
+            throw new InvalidOperationException($"no envelope of the capture was read ({Stats.Skipped} skipped): its sources {string.Join(", ", Stats.Records.Keys.Order(StringComparer.Ordinal))} are no record envelopes");
+    }
+
     public ReplayStats Run(string captureDir)
     {
         var sw = Stopwatch.StartNew();
         foreach (var e in CaptureReader.Read(captureDir)) if (!Process(e)) break;
         FlushPending();
+        RequireRead();
         if (opt.FlushAtEnd && last != 0)
         {
             RecordProgress();

@@ -1,6 +1,6 @@
 // C3 of #144: the canvas colors, counts, sorts and explains state values from presentation metadata only.
 // Renaming the workshop's state words in the fixture changes the displayed text and nothing else.
-import workshopText from "../../engine/standard/health/workshop.module.gkql.json?raw";
+import workshopText from "../../engine/examples/kiln/workshop.module.gkql.json?raw";
 import { describe, expect, it } from "vitest";
 import { legendOf, tally } from "../src/app/color-by";
 import { roleColors } from "../src/app/roles";

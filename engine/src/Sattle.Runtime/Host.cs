@@ -987,9 +987,11 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         {
             if (!IsFileName(n)) { documents.Add((revision, n, n, sources[n].Text)); continue; }
             var text = others.FirstOrDefault(f => Path.GetFileName(f.Path) == n)?.Text;
-            var module = text is null ? documents.LastOrDefault(x => x.Document == n).Module
-                : Catalog.FileOf.Where(kv => Path.GetFileName(kv.Value) == n).Select(kv => Ids.ModuleOf(kv.Key)).FirstOrDefault();
-            if (module is not null) documents.Add((revision, module, n, text));
+            // a file the catalog holds was read by a module (else it fails to load as unread); a removed one was recorded before
+            var module = (text is null ? documents.LastOrDefault(x => x.Document == n).Module
+                : Catalog.FileOf.Where(kv => Path.GetFileName(kv.Value) == n).Select(kv => Ids.ModuleOf(kv.Key)).FirstOrDefault())
+                ?? throw new InvalidOperationException($"definition document {n} belongs to no module");
+            documents.Add((revision, module, n, text));
         }
     }
 

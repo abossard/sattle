@@ -52,14 +52,17 @@ public static class AdapterRegistry
     /// <summary>The adapters of a space: the record adapter, the one way rows enter the engine (lab/CAPTURE-FORMAT.md, keyed records).</summary>
     public static IReadOnlyList<ISourceAdapter> Create(TypedSpace? space = null, Catalog? catalog = null) => [new RecordAdapter(catalog, space)];
 
-    /// <summary>Every Source.adapter must be registered and the row contract it declares must equal the contract in the catalog (the digest check of section 3.4, as a shape check so a definition change needs no rebuild).</summary>
+    /// <summary>Every Source.adapter must be registered, no two sources may read one row type through it, and the row contract it declares must equal the contract in the catalog (the digest check of section 3.4, as a shape check so a definition change needs no rebuild).</summary>
     public static List<Diagnostic> Verify(Catalog catalog, TypedSpace space, IEnumerable<ISourceAdapter> adapters)
     {
         var res = new List<Diagnostic>();
         var d = new DefView(catalog.Graph);
         var byId = adapters.ToDictionary(a => a.Id);
+        var bound = new Dictionary<(string Adapter, string RowType), string>();
         foreach (var s in space.Sources)
         {
+            // a record names its row type, not its source: a second source of the same row type would never get a row
+            if (!bound.TryAdd((s.Adapter, s.RowTypeId), s.Name)) { res.Add(new Diagnostic("AdapterContract", "error", s.RowTypeId, $"sources {bound[(s.Adapter, s.RowTypeId)]} and {s.Name} both read rows of type {Ids.Name(s.RowTypeId)} through adapter '{s.Adapter}': give each its own row type")); continue; }
             if (!byId.TryGetValue(s.Adapter, out var ad)) { res.Add(new Diagnostic("AdapterUnknown", "error", s.RowTypeId, $"source {s.Name}: adapter '{s.Adapter}' is not registered")); continue; }
             var name = Ids.Name(s.RowTypeId);
             var c = ad.Contracts.FirstOrDefault(x => x.RowType == name);

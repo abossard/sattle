@@ -33,9 +33,9 @@ public sealed class RecordAdapter : ISourceAdapter, IRedelivery
 
     public bool Handles(string source) => source.StartsWith(Prefix, StringComparison.Ordinal);
 
+    /// <summary>A keyed record delivered again counts when it is not older than the record held for its key; a heartbeat or a loss mark has no record key, so its second delivery is a duplicate.</summary>
     public bool Counts(Envelope envelope) =>
-        envelope.Payload.S("key") is not { } key || !current.TryGetValue((envelope.Source, key), out var old) ||
-        envelope.CapturedNs >= old.At;
+        envelope.Payload.S("key") is { } key && (!current.TryGetValue((envelope.Source, key), out var old) || envelope.CapturedNs >= old.At);
 
     public void Consume(Envelope envelope, IRowSink sink)
     {
@@ -45,6 +45,7 @@ public sealed class RecordAdapter : ISourceAdapter, IRedelivery
             // without a key: `{}` is a heartbeat, progress of the source and no row; `{"lost": n}` is a loss mark (Def. 10.4) at `time`, else at the capture time
             if (envelope.Payload.P("lost") is { } lost)
             {
+                if (!rows.ContainsKey(type)) { sink.Rejected(Id, $"Expected a declared row type for the loss of {type}"); return; }
                 if (lost.ValueKind != JsonValueKind.Number || !lost.TryGetInt64(out var count) || count < 0) { sink.Rejected(Id, $"Expected a count of lost records for {type}"); return; }
                 var at = envelope.Payload.S("time") is { } time ? Norm.TryParseInstant(time, out var ns) ? ns : (long?)null : envelope.CapturedNs;
                 if (at is null) { sink.Rejected(Id, $"Expected an instant as the time of a loss for {type}"); return; }

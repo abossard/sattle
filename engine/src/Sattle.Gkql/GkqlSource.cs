@@ -39,10 +39,11 @@ sealed record Param(string Name) : Expr;
 sealed record Fn(string Name, Expr[] Args) : Expr;
 sealed record Identity(string Domain, Expr[] Args) : Expr;
 
-/// <summary>Why a program cannot be lowered, and the authored element that makes it so (`verb:ID`, `wire:FROM>TO`, `port:NAME`; none for the whole program).</summary>
+/// <summary>Why a program cannot be lowered, and the authored element that makes it so, below the projection id: `verb:ID` (the verb whose operators are `op:ID_1`, `op:ID_2`, ... once it lowers), `wire:FROM>TO.PORT`, `port:NAME` (the input port, a catalog element), or none for the whole program. A refused program lowers to no facts, so the focus names the authored element, not a catalog element.</summary>
 sealed class Refused(string at, string message, string? element) : Exception($"{at}: {message}")
 {
-    public Refused(string at, string message) : this(at, message, "verb:" + at) { }
+    /// <summary>Refused at the verb whose id is `verb`.</summary>
+    public Refused(string verb, string message) : this(verb, message, "verb:" + verb) { }
     public string? Element => element;
 }
 
@@ -136,7 +137,7 @@ public static class Lowering
         {
             var ids = p.Verbs.Select(v => v.Id).ToList();
             if (ids.GroupBy(i => i, StringComparer.Ordinal).FirstOrDefault(g => g.Count() > 1) is { } twice) throw new Refused(twice.Key, "every verb has its own id");
-            foreach (var x in p.Wires.Where(x => !ids.Contains(x.From) || !ids.Contains(x.To))) throw new Refused($"{x.From} -> {x.To}", "a wire joins two verbs of the program", $"wire:{x.From}>{x.To}");
+            foreach (var x in p.Wires.Where(x => !ids.Contains(x.From) || !ids.Contains(x.To))) throw new Refused($"{x.From} -> {x.To}", "a wire joins two verbs of the program", $"wire:{x.From}>{x.To}.{x.Port}");
             var order = new List<VerbNode>(); var done = new HashSet<string>(StringComparer.Ordinal);
             while (order.Count < p.Verbs.Count)
             {

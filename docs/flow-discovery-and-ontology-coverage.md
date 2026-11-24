@@ -57,7 +57,7 @@ In the Inspector, open **Review rule** on a finding. The owner can leave it unre
 
 ## 4. Configure how evidence affects health
 
-The kiln policy binds a metric series, entry and recovery thresholds, consecutive-window counts and a freshness limit. Its impact projection applies each dependency role to its consumer. Its progress projection checks terminal evidence against the batch identity. [Health policies #151](https://github.com/abossard/sattle/issues/151) · [Kiln policies](../engine/standard/health)
+The kiln policy binds a metric series, entry and recovery thresholds, consecutive-window counts and a freshness limit. Its impact projection applies each dependency role to its consumer. Its progress projection checks terminal evidence against the batch identity. [Health policies #151](https://github.com/abossard/sattle/issues/151) · [Kiln policies](../engine/examples/kiln)
 
 **Acceptance**
 

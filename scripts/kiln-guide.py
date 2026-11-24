@@ -8,7 +8,7 @@ import tempfile
 
 
 ENGINE = Path(__file__).resolve().parents[1] / "engine"
-EXAMPLE = ENGINE / "standard/health"
+EXAMPLE = ENGINE / "examples/kiln"
 
 
 def run(command, definitions, *arguments, quiet=False):

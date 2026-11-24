@@ -49,7 +49,7 @@ const sources: Readonly<Record<string, string>> = {
   ...Object.fromEntries(Object.entries(import.meta.glob<string>([
     "../../../engine/standard/flows/definitions/sattle.flow.discover.gkql.json",
     "../../../engine/standard/coverage/sattle.coverage.coverage.gkql.json",
-    "../../../engine/standard/health/workshop.{rating,impact,progress}.gkql.json",
+    "../../../engine/examples/kiln/workshop.{rating,impact,progress}.gkql.json",
   ], { eager: true, query: "?raw", import: "default" })).map(([path, code]) => [path.split("/").at(-1), code])),
 };
 

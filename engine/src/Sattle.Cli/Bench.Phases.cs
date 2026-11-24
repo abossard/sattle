@@ -173,7 +173,7 @@ static partial class Bench
             }
         }
         var t1 = Stopwatch.GetTimestamp(); var cf = ThreadCpuNs(); var af = GC.GetAllocatedBytesForCurrentThread();
-        replay.FlushPending(); input.Advance(replay.LogicalTime + 2 * Min, 999_999_999, endOfCapture: true);
+        replay.FlushPending(); replay.RequireRead(); input.Advance(replay.LogicalTime + 2 * Min, 999_999_999, endOfCapture: true);
         procTicks += Stopwatch.GetTimestamp() - t1; procCpu += ThreadCpuNs() - cf; procAlloc += GC.GetAllocatedBytesForCurrentThread() - af;
         var total = wall.Elapsed; var allocTotal = GC.GetTotalAllocatedBytes(precise: true) - allocStart; var pause = GC.GetTotalPauseDuration() - pauseStart;
         var writerCpu = ThreadCpuNs() - threadStart;

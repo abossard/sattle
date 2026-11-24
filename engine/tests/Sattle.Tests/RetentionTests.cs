@@ -67,6 +67,11 @@ public class RetentionTests
         Assert.DoesNotContain(kept.Engine.Master.State.Rels, r => gone.Contains(r.Source));
     }
 
+    /// <summary>With an age that expires the older half of the evidence: the retained state does not depend on the chunk size. On generated logs every cut is compared with the reference by the Differential.</summary>
+    [Theory]
+    [InlineData(1)] [InlineData(7)] [InlineData(50)] [InlineData(100000)]
+    public void Retained_state_and_digests_do_not_depend_on_the_chunk_size_on_the_estate(int chunk) => Retained_state_and_digests_do_not_depend_on_the_chunk_size(Repo.Estate, chunk);
+
     static void Retained_state_and_digests_do_not_depend_on_the_chunk_size(string dir, int chunk)
     {
         var cat = Catalog(AgeFor(dir, 0.5));

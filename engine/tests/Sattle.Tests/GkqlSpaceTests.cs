@@ -112,10 +112,44 @@ public class GkqlSpaceTests
         Assert.Equal(["create", "delete"], touches);
     }
 
+    static string Digest(SpaceHost host) => host.Definitions().AsArray().Single(m => m!["name"]!.GetValue<string>() == "pairs")!["digest"]!.GetValue<string>();
+
+    /// <summary>Documents to catalog to documents and back: the texts come out as they went in, the second catalog has the same digest, and the authored verb and rule ids name its operators (`op:ID_n`) and rules.</summary>
+    [Fact]
+    public void A_round_trip_keeps_the_authored_ids_and_the_meaning()
+    {
+        using var host = Open(Space());
+        using var again = Open([.. host.DefinitionFiles()]);
+        foreach (var name in new[] { "pairs", "pairs.ingest.gkql.json", "pairs.links.gkql.json" }) Assert.Equal(host.Definition(name), again.Definition(name));
+        Assert.Equal(Digest(host), Digest(again));
+        var ids = again.Catalog.Graph.Entities.Select(e => e.Id).Where(id => id.StartsWith("d:pairs/projection:links/", StringComparison.Ordinal)).ToHashSet();
+        Assert.All(new[] { "starts", "ends", "links" }, verb => Assert.Contains($"d:pairs/projection:links/op:{verb}_1", ids));
+        Assert.All(new[] { "starts", "ends", "links" }, rule => Assert.Contains($"d:pairs/projection:links/rule:{rule}", ids));
+    }
+
+    /// <summary>A release is `d:{module}@{version}` with the digest of its facts. A text change with the same facts (here: the module written on one line) makes no revision and no release; a change of the facts makes a release that supersedes the first.</summary>
+    [Fact]
+    public void A_text_change_with_the_same_facts_makes_no_release()
+    {
+        using var host = Open(Space());
+        var (revision, digest) = (host.CatalogRevision, Digest(host));
+        var release = host.Catalog.Graph.Entity("d:pairs@1.0.0")!;
+        Assert.Equal(digest, release.Props.Text(Sattle.Core.Ids.KProp("digest")));
+        host.Commit("pairs", JsonNode.Parse(Module)!.ToJsonString(), revision);
+        Assert.Equal(revision, host.CatalogRevision);
+        Assert.Equal(digest, Assert.Single(host.Releases("pairs").AsArray())!["digest"]!.GetValue<string>());
+        host.Commit("pairs", Module.Replace("\"label\": true", "\"label\": false"), revision);
+        var releases = host.Releases("pairs").AsArray();
+        Assert.Equal(2, releases.Count);
+        Assert.Equal(digest, releases[1]!["supersedes"]!.GetValue<string>());
+        Assert.NotEqual(digest, Digest(host));
+    }
+
     public static TheoryData<string, string, string, string> Broken() => new()
     {
         { "duplicate verb id", Module, View.Replace("\"id\": \"links\"", "\"id\": \"ends\""), "d:pairs/projection:links/verb:ends" },
-        { "dangling wire", Module, View.Replace("{\"from\": \"mentioned\", \"to\": \"links\"}", "{\"from\": \"mentioned\", \"to\": \"nowhere\"}"), "d:pairs/projection:links/wire:mentioned>nowhere" },
+        { "dangling wire", Module, View.Replace("{\"from\": \"mentioned\", \"to\": \"links\"}", "{\"from\": \"mentioned\", \"to\": \"nowhere\"}"), "d:pairs/projection:links/wire:mentioned>nowhere.in" },
+        { "layout key", Module, View.Replace("\"id\": \"starts\",", "\"id\": \"starts\", \"position\": {\"x\": 120, \"y\": 40},"), "d:pairs/projection:links" },
         { "import cycle", Module.Replace("\"imports\": []", "\"imports\": [{\"module\": \"cycle\", \"version\": \"1.0.0\", \"alias\": \"c\"}]"), View, "d:cycle" },
     };
 
@@ -143,18 +177,18 @@ public class GkqlSpaceTests
         var view = host.Definition("pairs.links.gkql.json");
         var draft = host.CreateDraft(null)["draft"]!.GetValue<string>();
         Assert.True(host.SetDraftText(draft, "pairs", module.Replace("\"label\": true", "\"label\": false"), 0)["ok"]!.GetValue<bool>());
-        host.SetDraftText(draft, "pairs.links.gkql.json", View.Replace("\"to\": \"links\"", "\"to\": \"nowhere\""), 1);
-        Assert.ThrowsAny<Exception>(() => host.CommitDraft(draft, revision));
+        Assert.False(host.SetDraftText(draft, "pairs.links.gkql.json", View.Replace("\"to\": \"links\"", "\"to\": \"nowhere\""), 1)["ok"]!.GetValue<bool>());
+        Assert.Equal("Invalid", Assert.Throws<HostError>(() => host.CommitDraft(draft, revision)).Code);
         Assert.Equal(revision, host.CatalogRevision);
         Assert.Equal(module, host.Definition("pairs"));
         Assert.Equal(view, host.Definition("pairs.links.gkql.json"));
     }
 
-    /// <summary>The kiln space of the standard library, end to end from graph documents (#128): readings make the instrument hot, a threshold edit makes it ready, both survive a restart, and restoring the previous release makes it hot again.</summary>
+    /// <summary>The kiln example space, end to end from graph documents (#128): readings make the instrument hot, a threshold edit makes it ready, both survive a restart, and restoring the previous release makes it hot again.</summary>
     [Fact]
     public void A_space_of_graph_documents_runs_through_an_edit_a_restart_and_a_restore()
     {
-        var kiln = Path.Combine(Repo.Root, "engine", "standard", "health");
+        var kiln = Path.Combine(Repo.Root, "engine", "examples", "kiln");
         var options = new HostOptions { SpaceName = "kiln", Projections = Repo.Projections };
         const string rating = "workshop.rating.gkql.json";
         static string State(SpaceHost h) => Assert.Single(h.Entities("rating", "Instrument")).Prop("state")!;
@@ -164,8 +198,14 @@ public class GkqlSpaceTests
             program["verbs"]!.AsArray().Single(v => (string?)v!["verb"] == "hysteresis")!["hysteresis"]!["enterAfter"] = enterAfter;
             return program.ToJsonString();
         }
+        static string Described(string module)
+        {
+            var m = JsonNode.Parse(module)!;
+            m["entities"]!.AsArray().Single(e => (string?)e!["name"] == "Batch")!["properties"]!.AsArray().Single(p => (string?)p!["name"] == "completion")!["optional"] = true;
+            return m.ToJsonString();
+        }
         var store = new InMemoryGraphStore();
-        string original;
+        string original, originalModule;
         using (var host = SpaceHost.OpenDurable(store, Catalog.ReadDirectory(kiln), options))
         {
             host.StartLive(new ReplayOptions { LatenessNs = 0 });
@@ -178,13 +218,18 @@ public class GkqlSpaceTests
             }
             Assert.Equal("Hot", State(host));
             original = host.Definition(rating);
-            host.Commit(rating, Threshold(original, 4), host.CatalogRevision);
+            originalModule = host.Definition("workshop");
+            var edit = host.CreateDraft(null)["draft"]!.GetValue<string>();
+            host.SetDraftText(edit, "workshop", Described(originalModule), 0);
+            host.SetDraftText(edit, rating, Threshold(original, 4), 1);
+            host.CommitDraft(edit, host.CatalogRevision);
             Assert.Equal("Ready", State(host));
             host.Seal();
         }
         using var restarted = RestartTests.Reopen(store, options);
         Assert.Equal("Ready", State(restarted));
         Assert.Equal(Threshold(original, 4), restarted.Definition(rating));
+        Assert.Equal(Described(originalModule), restarted.Definition("workshop"));
         var releases = restarted.Releases("workshop").AsArray();
         var previous = releases.First(r => r!["supersedes"] is null)!["digest"]!.GetValue<string>();
         var draft = restarted.CreateDraft(null)["draft"]!.GetValue<string>();
@@ -192,6 +237,7 @@ public class GkqlSpaceTests
         restarted.CommitDraft(draft, restarted.CatalogRevision);
         Assert.Equal("Hot", State(restarted));
         Assert.Equal(original, restarted.Definition(rating));
-        Assert.Equal(restarted.Definition("workshop"), restarted.ReleaseText(previous));
+        Assert.Equal(originalModule, restarted.Definition("workshop"));
+        Assert.Equal(originalModule, restarted.ReleaseText(previous));
     }
 }

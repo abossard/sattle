@@ -315,7 +315,7 @@ public sealed partial class SpaceHost
     Graph FactsAt(Release r) => ModuleFacts(StateAt("catalog", r.Revision), r.Module);
 
     public JsonNode ReleaseSnapshot(string digest) { lock (Gate) { var r = FindRelease(digest); return catalogExport.SnapshotOf(FactsAt(r), catalogExport.CatalogDescriptor(r.Revision)); } }
-    public string ReleaseText(string digest) { lock (Gate) { var r = FindRelease(digest); return NativeModule(r.Module) ? DocumentsAt(r.Module, r.Revision)[r.Module]! : Printer.Print(StateAt("catalog", r.Revision), r.Module); } }
+    public string ReleaseText(string digest) { lock (Gate) { var r = FindRelease(digest); return NativeModule(r.Module) ? DocumentsAt(r.Module, r.Revision).GetValueOrDefault(r.Module) ?? throw new HostError("UnknownRelease", $"no text of release {digest}", 404) : Printer.Print(StateAt("catalog", r.Revision), r.Module); } }
     public JsonNode ReleaseDiff(string from, string to)
     {
         lock (Gate)
