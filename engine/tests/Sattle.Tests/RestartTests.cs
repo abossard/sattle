@@ -237,9 +237,12 @@ public class RestartTests
         using (var h = SpaceHost.OpenDurable(d.Open(), Files, Options))
         {
             Feed(h);
+            h.Progress(h.Space.Sources[0].Name, 2 * Min, 1);                  // the space has no filled series, so its replay reports no progress: a source's progress written directly
             h.Commit(SpaceModule, BoundTo(h, 1), h.CatalogRevision);
             h.StartLive(new ReplayOptions { ChunkRows = 40, AdvanceEveryNs = Min, LatenessNs = Min, FlushAtEnd = false });
-            var envelope = File.ReadLines(Directory.EnumerateFiles(Fixture, "*.ndjson", SearchOption.AllDirectories).Order(StringComparer.Ordinal).First()).First();
+            var first = System.Text.Json.Nodes.JsonNode.Parse(File.ReadLines(Directory.EnumerateFiles(Fixture, "*.ndjson", SearchOption.AllDirectories).Order(StringComparer.Ordinal).First()).First())!;
+            first["payload"]!["key"] = "live";                                 // a record the replay did not have: a row pending until the flush
+            var envelope = first.ToJsonString();
             h.LiveEnvelope("hub", envelope, "{\"n\":0}");
             h.LiveEnvelope("hub", envelope, "{\"n\":1}");                 // the same key again: skipped
             h.LiveFlush();

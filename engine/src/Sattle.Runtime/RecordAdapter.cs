@@ -33,9 +33,9 @@ public sealed class RecordAdapter : ISourceAdapter, IRedelivery
 
     public bool Handles(string source) => source.StartsWith(Prefix, StringComparison.Ordinal);
 
-    /// <summary>A keyed record delivered again counts when it is not older than the record held for its key; a heartbeat or a loss mark has no record key, so its second delivery is a duplicate.</summary>
+    /// <summary>A keyed record delivered again counts when it is newer than the record held for its key; the same record again (same capture time) is a duplicate, and so is the second delivery of a heartbeat or a loss mark, which have no record key.</summary>
     public bool Counts(Envelope envelope) =>
-        envelope.Payload.S("key") is { } key && (!current.TryGetValue((envelope.Source, key), out var old) || envelope.CapturedNs >= old.At);
+        envelope.Payload.S("key") is { } key && (!current.TryGetValue((envelope.Source, key), out var old) || envelope.CapturedNs > old.At);
 
     public void Consume(Envelope envelope, IRowSink sink)
     {
