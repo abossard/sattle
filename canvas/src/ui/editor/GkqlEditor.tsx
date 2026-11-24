@@ -106,7 +106,7 @@ function Drawing({ value, target, disabled, update }: { value: GkqlDrawing; targ
         const setEdge = (patch: Partial<typeof edge>) => update({ ...value, edges: edges.map((item, i) => i === index ? { ...item, ...patch } : item) });
         return (
           <div className={s.row} key={index}>
-            <Badge appearance="outline">{edge.var}</Badge>
+            <Badge appearance="outline" color="informative">{edge.var}</Badge>
             <Field label="From" size="small"><Select disabled={disabled} value={edge.from} onChange={(_, data) => setEdge({ from: data.value })}>{nodes.map((node, i) => <option key={i}>{node.var}</option>)}</Select></Field>
             <Field label="Relationship type" size="small"><Input disabled={disabled} value={edge.label} onChange={(_, data) => setEdge({ label: data.value })} /></Field>
             <Field label="To" size="small"><Select disabled={disabled} value={edge.to} onChange={(_, data) => setEdge({ to: data.value })}>{nodes.map((node, i) => <option key={i}>{node.var}</option>)}</Select></Field>

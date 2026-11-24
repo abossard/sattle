@@ -688,7 +688,7 @@ function CapturedNetworkLinks() {
     <Text weight="semibold">Captured network links</Text>
     <ul className={s.networkLinks}>
       {links.map(({ edge, label, count, type }) => <li key={type}>
-        <Button size="small" title={type} onClick={() => inspectEdge("master", edge.id)}>{label}<Badge size="small" appearance="outline">{count.toLocaleString()}</Badge></Button>
+        <Button size="small" title={type} onClick={() => inspectEdge("master", edge.id)}>{label}<Badge size="small" appearance="outline" color="informative">{count.toLocaleString()}</Badge></Button>
       </li>)}
     </ul>
   </section>;

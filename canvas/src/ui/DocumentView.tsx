@@ -63,8 +63,8 @@ export function DocumentView({ graph, compact = false }: { graph: string; compac
   return (
     <section className={s.root} aria-label={`Document ${graph}`} aria-busy={!shown && !error}>
       {!compact && <div className={s.meta}>
-        <Badge appearance="outline">revision {revision}</Badge>
-        {doc && <Badge appearance="outline" title={doc.digest}>{doc.digest.slice(0, 19)}…</Badge>}
+        <Badge appearance="outline" color="informative">revision {revision}</Badge>
+        {doc && <Badge appearance="outline" color="informative" title={doc.digest}>{doc.digest.slice(0, 19)}…</Badge>}
         {!shown && !error && <Spinner size="tiny" label="Rendering" />}
       </div>}
       {compact && !shown && !error && <Spinner size="tiny" label="Rendering" />}

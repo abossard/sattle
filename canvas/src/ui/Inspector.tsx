@@ -13,7 +13,7 @@ import { formatValue } from "../app/telemetry-hub";
 import type { Workspace } from "../app/workspace";
 import { dispatch, useStore } from "../state/store";
 import type { Selection } from "../state/types";
-import { roleColor, TypeGlyph, useWorkspace } from "./common";
+import { TypeGlyph, useWorkspace } from "./common";
 import { WhyState } from "./WhyState";
 
 const useStyles = makeStyles({ col: { display: "flex", flexDirection: "column", rowGap: tokens.spacingVerticalS, padding: tokens.spacingHorizontalM, overflow: "auto" }, mono: { fontFamily: tokens.fontFamilyMonospace, wordBreak: "break-all" } });
@@ -83,7 +83,7 @@ export function Inspector() {
   return (
     <div className={s.col}>
       <Subtitle2 as="h2">{subject ? <><TypeGlyph {...ws.styleOf(sel.graph, subject.type)} /> {g.label(subject)}</> : sel.id}</Subtitle2>
-      <div><Badge color={roleColor(role)} appearance="outline">{sel.graph}</Badge> <code className={s.mono}>{sel.id}</code></div>
+      <div><Badge color="informative" appearance="outline">{sel.graph}</Badge> <code className={s.mono}>{sel.id}</code></div>
       {!el && change?.kind === "removed" && <Text>Removed in this revision. Showing the state before the change.</Text>}
       {el && isRel(el) && <Text><ElementLink ws={ws} graph={sel.graph} id={el.source} /> → <ElementLink ws={ws} graph={sel.graph} id={el.target} /></Text>}
       {change && (
@@ -127,7 +127,7 @@ export function Inspector() {
       {sel.kind === "entity" && ws.graphInfo(sel.graph)?.tree && <WhyState graph={sel.graph} id={sel.id} />}
       <Subtitle2 as="h3">Shared identity and lineage</Subtitle2>
       {lineagePending && <Text role="status" size={200}>Loading lineage…</Text>}
-      {[...rel.identity].map(([graph, keys]) => <Text key={graph}><Badge appearance="outline" color={roleColor(ws.graphInfo(graph)?.role ?? "")}>{graph}</Badge> {[...keys].slice(0, 6).map((k) => <ElementLink key={k} ws={ws} graph={graph} id={k.slice(2)} edge={k.startsWith("e:")} />)}</Text>)}
+      {[...rel.identity].map(([graph, keys]) => <Text key={graph}><Badge appearance="outline" color="informative">{graph}</Badge> {[...keys].slice(0, 6).map((k) => <ElementLink key={k} ws={ws} graph={graph} id={k.slice(2)} edge={k.startsWith("e:")} />)}</Text>)}
       {(partial.below.length > 0 || partial.aboveIn.length > 0 || partial.cutOff) && (
         <MessageBar intent="warning"><MessageBarBody>
           The highlight is partial.{" "}
@@ -136,7 +136,7 @@ export function Inspector() {
           {partial.cutOff && "The lookups stopped at the limit for one selection. "}
         </MessageBarBody></MessageBar>
       )}
-      {rel.sourceList.length > 0 && <><Text>Derived from:</Text>{rel.sourceList.slice(0, 20).map((x) => <Text key={x.graph + x.key}><Badge appearance="outline" color={roleColor(ws.graphInfo(x.graph)?.role ?? "")}>{x.graph}</Badge> <ElementLink ws={ws} graph={x.graph} id={x.key.slice(2)} edge={x.key.startsWith("e:")} /></Text>)}</>}
+      {rel.sourceList.length > 0 && <><Text>Derived from:</Text>{rel.sourceList.slice(0, 20).map((x) => <Text key={x.graph + x.key}><Badge appearance="outline" color="informative">{x.graph}</Badge> <ElementLink ws={ws} graph={x.graph} id={x.key.slice(2)} edge={x.key.startsWith("e:")} /></Text>)}</>}
       {li && (
         <KV rows={[["projection", li.projection ?? ""], ["emitted by", li.sink ?? ""], ...(li.rule ? [["rule", `${li.rule}${li.direction ? ` (${li.direction})` : ""}`] as [string, string]] : []), ["operators", li.operators.join(" → ")], ["sources", `${li.sources.length} of ${li.sourceCount}${li.complete ? "" : " (not complete)"}`], ...(li.groupKey ? [["group key", JSON.stringify(li.groupKey)] as [string, string]] : [])]} />
       )}

@@ -10,3 +10,5 @@
 .fui-FluentProvider a { text-underline-offset: 0.2em; }
 /* A badge is a label, never a bar: a flex column stretches it to the column width otherwise. */
 .fui-FluentProvider .fui-Badge { max-width: max-content; }
+/* Badges are square like every other mark on the sheet (Fluent draws them as pills by default). */
+.fui-FluentProvider .fui-Badge { border-radius: var(--borderRadiusMedium); }

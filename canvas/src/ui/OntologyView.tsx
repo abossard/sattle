@@ -92,7 +92,7 @@ export function OntologyView({ initialModule = "" }: { initialModule?: string } 
         </Tree>
         <Subtitle2 as="h2">Relationship types</Subtitle2>
         <Tree aria-label="Relationship types">
-          {content.rels.map((r) => <TreeItem key={r.id} itemType="leaf" value={r.id}><TreeItemLayout>{r.label} <Badge appearance="outline">{r.detail}</Badge></TreeItemLayout></TreeItem>)}
+          {content.rels.map((r) => <TreeItem key={r.id} itemType="leaf" value={r.id}><TreeItemLayout>{r.label} <Badge appearance="outline" color="informative">{r.detail}</Badge></TreeItemLayout></TreeItem>)}
         </Tree>
       </div>
       <div className={s.main}>

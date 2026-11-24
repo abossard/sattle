@@ -46,4 +46,3 @@ export const DirectionBadge = ({ direction }: { direction: string }) => {
   return <Tooltip content={d.help} relationship="description"><Badge appearance="outline" shape="square" color="informative">{d.glyph} {d.label}</Badge></Tooltip>;
 };
 
-export const roleColor = (role: string) => (role === "master" || role === "input" ? "success" : role === "catalog" ? "important" : "informative") as "success" | "important" | "informative";

@@ -10,7 +10,7 @@ import { hasHierarchyEdges, hasTreeRows, tileRows, treeOf, treeRowCount } from "
 import { ROLE_GLYPH } from "../app/color-by";
 import { defaultHiddenKinds, edgelessNotice } from "../app/graph-view-model";
 import { countsByType, describeGraph, isolatedNodes, purposesOf, tileKind, tileThinsIsolated, typesHeld } from "../app/tile";
-import { DirectionBadge, TypeGlyph, roleColor, useGraphSummary, useRevision, useWorkspace } from "./common";
+import { DirectionBadge, TypeGlyph, useGraphSummary, useRevision, useWorkspace } from "./common";
 import { ElementsPanel } from "./Elements";
 import { FiltersPanel } from "./Filters";
 import { Inspector } from "./Inspector";
@@ -93,9 +93,9 @@ export function DataView() {
       <section className={s.center} aria-label="Graph">
         <div className={s.bar}>
           <Field label="Graph" orientation="horizontal" className={s.graphPicker}><Select value={active} onChange={(_, d) => dispatch({ type: "ui/activeGraph", graph: d.value })}>{graphs.map((g) => <option key={g.id} value={g.id}>{g.id} ({g.role})</option>)}</Select></Field>
-          <Badge color={roleColor(info.role)} appearance="outline">{info.role}</Badge>
+          <Badge color="informative" appearance="outline">{info.role}</Badge>
           {info.direction && <DirectionBadge direction={info.direction} />}
-          <Badge appearance="outline">ontology {info.ontology.reference.id}@{info.ontology.reference.version}</Badge>
+          <Badge appearance="outline" color="informative">ontology {info.ontology.reference.id}@{info.ontology.reference.version}</Badge>
           {sum && <Text size={200}>{sum.nodes.toLocaleString()} nodes{references > 0 && ` + ${references.toLocaleString()} ${references === 1 ? "reference" : "references"}`} · {visibleEdges !== undefined && visibleEdges !== sum.edges
             ? `${visibleEdges.toLocaleString()} of ${sum.edges.toLocaleString()} edges shown` : `${sum.edges.toLocaleString()} edges`}</Text>}
           <span className={s.grow} />
@@ -214,7 +214,7 @@ export function SpaceView() {
       <aside className={s.side} aria-label="Search, filters and element list of the active graph"><SidePanel graph={active} /></aside>
       <section className={s.center} aria-label="Graph space">
         <div className={s.bar}>
-          <Text weight="semibold">Graph space {ws.info.id}</Text><Badge appearance="outline">{graphs.length} graphs</Badge><span className={s.grow} />
+          <Text weight="semibold">Graph space {ws.info.id}</Text><Badge appearance="outline" color="informative">{graphs.length} graphs</Badge><span className={s.grow} />
           <Button size="small" onClick={() => setRows(!rows)}>{rows ? "Side by side" : "Stack vertically"}</Button>
           <Button size="small" onClick={() => graphs.forEach((g) => dispatch({ type: "pane/command", graph: g.id, command: "fit" }))}>Fit all</Button><Legend graph={active} />
         </div>
@@ -223,7 +223,7 @@ export function SpaceView() {
             <div key={g.id} role="group" aria-label={`Graph ${g.id}`} className={`${s.pane} ${g.id === active ? s.activePane : ""}`} onPointerDownCapture={() => g.id !== active && dispatch({ type: "ui/activeGraph", graph: g.id })}>
               <div className={s.head}>
                 <div className={s.headRow}>
-                  <Text weight="semibold">{g.id}</Text><Badge color={roleColor(g.role)} appearance="outline">{g.role}</Badge>{g.direction && <DirectionBadge direction={g.direction} />}
+                  <Text weight="semibold">{g.id}</Text><Badge color="informative" appearance="outline">{g.role}</Badge>{g.direction && <DirectionBadge direction={g.direction} />}
                   <Text size={200}>{g.nodes.toLocaleString()} nodes · {g.edges.toLocaleString()} edges</Text><span className={s.grow} />
                   <Button size="small" aria-pressed={g.id === active} onClick={() => dispatch({ type: "ui/activeGraph", graph: g.id })}>Use for filters</Button>
                   <Button size="small" onClick={() => { dispatch({ type: "ui/activeGraph", graph: g.id }); dispatch({ type: "ui/view", view: "data" }); }}>Open</Button>

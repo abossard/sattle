@@ -245,7 +245,7 @@ function GuidedPreview({ graphId, inScope }: { graphId: string; inScope: (diagno
         <DialogTitle>Draft graph <code>{graphId}</code></DialogTitle>
         <DialogContent>
           <div className={s.typeCounts} role="group" aria-label="Relationships by type">
-            {types.map(([type, count]) => <Badge key={type} appearance="outline">{type} · {count}</Badge>)}
+            {types.map(([type, count]) => <Badge key={type} appearance="outline" color="informative">{type} · {count}</Badge>)}
           </div>
           {result?.truncated && <Text size={200}>The diagram shows a snapshot sample.</Text>}
           {relationship && <div className={s.draftRelationship}>
@@ -412,7 +412,7 @@ export function EditorView() {
           <Field label="Projection" orientation="horizontal" className={s.pick}><Select value={ed.projection} onChange={(_, d) => { const q = projections.find((x) => x.id === d.value)!; dispatch({ type: "editor/projection", module: q.module, projection: q.id }); dispatch({ type: "editor/releases", module: q.module }); }}>
             {projections.map((q) => <option key={q.id} value={q.id}>{q.module}: {q.name}</option>)}</Select></Field>
           {exerciseGraph && <Badge appearance="tint" color="informative">Exercise draft</Badge>}
-          {reference && <Badge appearance="outline">Reference projection</Badge>}
+          {reference && <Badge appearance="outline" color="informative">Reference projection</Badge>}
           {p && <DirectionBadge direction={p.direction} />}
           <Badge appearance="outline" shape="square" color="informative">draft {ed.draft} · rev {ed.revision} · base {ed.base}</Badge>
           {ed.phase.work && <Spinner size="tiny" label={WORK_LABEL[ed.phase.work]} labelPosition="after" />}
