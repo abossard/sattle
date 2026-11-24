@@ -33,7 +33,7 @@ const useStyles = makeStyles({
   divider: { border: "none", borderTop: `1px solid ${tokens.colorNeutralStroke2}`, width: "100%", margin: 0 },
 });
 
-function Drawing({ value, target, disabled, update }: { value: GkqlDrawing; target: boolean; disabled: boolean; update: (value: GkqlDrawing) => void }) {
+function Drawing({ value, target, disabled, update }: { value: GkqlDrawing; target: boolean; disabled: boolean; update: (value: GkqlDrawing, burst?: string) => void }) {
   const s = useStyles();
   const nodes = value.nodes ?? [];
   const edges = value.edges ?? [];
@@ -52,8 +52,8 @@ function Drawing({ value, target, disabled, update }: { value: GkqlDrawing; targ
             ...value,
             nodes: nodes.map((n, i) => i === index ? { ...n, var: variable } : n),
             ...(value.edges ? { edges: edges.map((edge) => ({ ...edge, from: edge.from === node.var ? variable : edge.from, to: edge.to === node.var ? variable : edge.to })) } : {}),
-          })} /></Field>
-          <Field label="Node type" size="small"><Input disabled={disabled} value={node.label} onChange={(_, { value: label }) => update({ ...value, nodes: nodes.map((n, i) => i === index ? { ...n, label } : n) })} /></Field>
+          }, `node${index}.var`)} /></Field>
+          <Field label="Node type" size="small"><Input disabled={disabled} value={node.label} onChange={(_, { value: label }) => update({ ...value, nodes: nodes.map((n, i) => i === index ? { ...n, label } : n) }, `node${index}.label`)} /></Field>
           <Button size="small" appearance="subtle" disabled={disabled} aria-label={`Remove node ${node.var}`} onClick={() => update({
             ...value, nodes: nodes.filter((_, i) => i !== index),
             ...(value.edges ? { edges: edges.filter((edge) => edge.from !== node.var && edge.to !== node.var) } : {}),
@@ -62,17 +62,17 @@ function Drawing({ value, target, disabled, update }: { value: GkqlDrawing; targ
           {target && (node.id == null || typeof (node.id as { ref?: unknown })?.ref === "string") && (
             <Field label="Identity reference" size="small"><Input disabled={disabled} value={(node.id as { ref?: string } | undefined)?.ref ?? ""} onChange={(_, d) => update({
               ...value, nodes: nodes.map((n, i) => i === index ? { ...n, id: d.value ? { ref: d.value } : undefined } : n),
-            })} /></Field>
+            }, `node${index}.id`)} /></Field>
           )}
         </div>
       ))}
       {edges.map((edge, index) => {
-        const setEdge = (patch: Partial<typeof edge>) => update({ ...value, edges: edges.map((item, i) => i === index ? { ...item, ...patch } : item) });
+        const setEdge = (patch: Partial<typeof edge>, burst?: string) => update({ ...value, edges: edges.map((item, i) => i === index ? { ...item, ...patch } : item) }, burst);
         return (
           <div className={s.row} key={index}>
             <Badge appearance="outline" color="informative">{edge.var}</Badge>
             <Field label="From" size="small"><Select disabled={disabled} value={edge.from} onChange={(_, data) => setEdge({ from: data.value })}>{nodes.map((node, i) => <option key={i}>{node.var}</option>)}</Select></Field>
-            <Field label="Relationship type" size="small"><Input disabled={disabled} value={edge.label} onChange={(_, data) => setEdge({ label: data.value })} /></Field>
+            <Field label="Relationship type" size="small"><Input disabled={disabled} value={edge.label} onChange={(_, data) => setEdge({ label: data.value }, `edge${index}.label`)} /></Field>
             <Field label="To" size="small"><Select disabled={disabled} value={edge.to} onChange={(_, data) => setEdge({ to: data.value })}>{nodes.map((node, i) => <option key={i}>{node.var}</option>)}</Select></Field>
             <Button size="small" appearance="subtle" disabled={disabled} aria-label={`Remove relationship ${edge.var}`} onClick={() => update({ ...value, edges: edges.filter((_, i) => i !== index) })}>Remove</Button>
           </div>
@@ -136,9 +136,10 @@ function ThresholdControls({ node, readOnly, update }: { node: GkqlVerb; readOnl
   );
 }
 
-function Operation({ program, node, readOnly, change, remove }: { program: GkqlProgram; node: GkqlVerb; readOnly: boolean; change: (program: GkqlProgram) => void; remove: () => void }) {
+function Operation({ program, node, readOnly, change, remove }: { program: GkqlProgram; node: GkqlVerb; readOnly: boolean; change: (program: GkqlProgram, burst?: string) => void; remove: () => void }) {
   const s = useStyles();
-  const update = (next: GkqlVerb) => change({ ...program, verbs: program.verbs.map((verb) => verb.id === node.id ? next : verb) });
+  // a field typed in passes its name: its keystrokes are one undo step
+  const update = (next: GkqlVerb, burst?: string) => change({ ...program, verbs: program.verbs.map((verb) => verb.id === node.id ? next : verb) }, burst && `${node.id}/${burst}`);
   const available = sourcesFor(program, node.id);
   const incoming = program.wires.filter((wire) => wire.to === node.id);
   const connect = (port: string, previous?: GkqlWire, index = 0) => (
@@ -176,13 +177,13 @@ function Operation({ program, node, readOnly, change, remove }: { program: GkqlP
       {typeof reference?.ref === "string" && typeof value?.lit === "string" && (
         <Field label="Filter value" hint={`${reference.ref} ${condition?.fn ?? ""}`} size="small"><Input disabled={readOnly} value={value.lit} onChange={(_, d) => update({
           ...node, condition: { ...condition, args: [reference, { ...value, lit: d.value }] },
-        })} /></Field>
+        }, "filter")} /></Field>
       )}
       {kind && (
         <>
           <hr className={s.divider} />
           <Text weight="semibold">{kind === "pattern" ? "Match pattern" : "Build output"}</Text>
-          <Drawing value={node[kind]!} target={kind === "target"} disabled={readOnly} update={(next) => update({ ...node, [kind]: next })} />
+          <Drawing value={node[kind]!} target={kind === "target"} disabled={readOnly} update={(next, burst) => update({ ...node, [kind]: next }, burst && `${kind}.${burst}`)} />
         </>
       )}
       {node.verb === "hysteresis" && <ThresholdControls key={JSON.stringify(node.hysteresis)} node={node} readOnly={readOnly} update={update} />}
@@ -387,7 +388,7 @@ export default function GkqlEditor({ file, source, initialTab = "wires", starter
             )}
             <TabList size="small" aria-label="GKQL views" selectedValue={side} onTabSelect={(_, { value }) => setSide(String(value))}><Tab value="operation">Operation</Tab><Tab value="source">GKQL</Tab></TabList>
             {side === "source" ? sourceView : selectedVerb ? (
-              <Operation key={selectedVerb.id} program={program} node={selectedVerb} readOnly={frozen} change={(next) => dispatch({ t: "change", program: next })} remove={() => removeAndFocus(verbFocus(selectedVerb.id))} />
+              <Operation key={selectedVerb.id} program={program} node={selectedVerb} readOnly={frozen} change={(next, burst) => dispatch({ t: "change", program: next, burst })} remove={() => removeAndFocus(verbFocus(selectedVerb.id))} />
             ) : model.selected?.startsWith("wire:") ? (
               <WirePanel focus={model.selected} readOnly={frozen} remove={() => removeAndFocus(model.selected!)} />
             ) : (

@@ -80,6 +80,17 @@ it("starts a match with a typed pattern node", async () => {
   });
 });
 
+it.each([["Node type", "Resource", "Res"], ["Node variable", "n", "node"]])("the keystrokes in %s are one undo step", async (label, before, typed) => {
+  const { user } = editor();
+  await user.click(screen.getByRole("button", { name: "graph-match all" }));
+  const field = () => screen.getByRole("textbox", { name: label }) as HTMLInputElement;
+  await user.clear(field());
+  await user.type(field(), typed);
+  expect(field().value).toBe(typed);
+  await user.click(screen.getByRole("button", { name: "Undo edit" }));
+  expect(field().value).toBe(before);
+});
+
 it("edits the two hysteresis recovery settings through the Canvas fields", async () => {
   const { save, user } = editor();
   await user.click(screen.getByRole("button", { name: "hysteresis cpuState" }));

@@ -69,6 +69,7 @@ describe("a verb's place in the text", () => {
 });
 
 describe("each action of the editor", () => {
+  const withVerb = (id: string): GkqlProgram => ({ ...program, verbs: [...program.verbs, { id, verb: "where" }] });
   it.each<[string, GkqlEvent[], (m: GkqlModel) => unknown, unknown]>([
     ["remove a verb takes its wires along", [{ t: "remove", focus: "verb:keep" }], (m) => [verbs(m), m.program?.wires], [["match", "out"], []]],
     ["remove a wire", [{ t: "remove", focus: "wire:keep>out.in" }], (m) => m.program?.wires, [{ from: "match", to: "keep" }]],
@@ -77,6 +78,9 @@ describe("each action of the editor", () => {
     ["a new edit clears redo", [{ t: "remove", focus: "verb:keep" }, { t: "undo" }, { t: "remove", focus: "verb:out" }], (m) => m.future, []],
     ["a typing burst is one undo step", [{ t: "type", text: text + " " }, { t: "type", text: text + "  " }, { t: "undo" }], (m) => m.text, text],
     ["selecting ends a typing burst", [{ t: "type", text: text + " " }, { t: "select", focus: null }, { t: "type", text: text + "  " }, { t: "undo" }], (m) => m.text, text + " "],
+    ["keystrokes in one side panel field are one undo step", [{ t: "change", program: withVerb("a"), burst: "f" }, { t: "change", program: withVerb("ab"), burst: "f" }, { t: "undo" }], (m) => m.text, text],
+    ["a keystroke in another field starts an undo step", [{ t: "change", program: withVerb("a"), burst: "f" }, { t: "change", program: withVerb("ab"), burst: "g" }, { t: "undo" }], (m) => verbs(m), ["match", "keep", "out", "a"]],
+    ["a field and the text are separate bursts", [{ t: "change", program: withVerb("a"), burst: "f" }, { t: "type", text: text + " " }, { t: "undo" }], (m) => verbs(m), ["match", "keep", "out", "a"]],
     ["an invalid text keeps the last good program", [{ t: "type", text: "{" }], (m) => [m.error !== null, verbs(m)], [true, ["match", "keep", "out"]]],
     ["a valid text replaces the program", [{ t: "type", text: printGkql({ ...program, verbs: program.verbs.slice(0, 1), wires: [] }) }], (m) => [m.error, verbs(m)], [null, ["match"]]],
     ["moving a card changes layout only", [{ t: "move", id: "keep", to: { x: 40.4, y: 7 } }], (m) => [m.text === text, m.past.length, m.moved], [true, 0, { keep: { x: 40, y: 7 } }]],

@@ -13,8 +13,8 @@ export interface GkqlModel {
   error: string | null;
   past: readonly string[];
   future: readonly string[];
-  /** the last step was typing: the next keystroke joins its undo step */
-  typing: boolean;
+  /** where the last edit was typed ("text", or a field of the side panel): the next keystroke there joins its undo step */
+  burst: string | null;
   selected: string | null;
   /** cards placed by the author: layout only, never in the program text */
   moved: Readonly<Record<string, Position>>;
@@ -27,7 +27,7 @@ export type GkqlEvent =
   | { t: "load"; text: string }
   | { t: "type"; text: string }
   | { t: "replace"; text: string }
-  | { t: "change"; program: GkqlProgram; select?: string }
+  | { t: "change"; program: GkqlProgram; select?: string; burst?: string }
   | { t: "remove"; focus: string }
   | { t: "undo" } | { t: "redo" }
   | { t: "select"; focus: string | null }
@@ -43,7 +43,7 @@ const read = (text: string): { program: GkqlProgram } | { error: string } => {
 /** A model of `text` with empty history. */
 export function openModel(text: string): GkqlModel {
   const r = read(text);
-  return { text, program: "program" in r ? r.program : null, error: "error" in r ? r.error : null, past: [], future: [], typing: false, selected: null, moved: {}, gesture: { t: "idle" }, notice: null };
+  return { text, program: "program" in r ? r.program : null, error: "error" in r ? r.error : null, past: [], future: [], burst: null, selected: null, moved: {}, gesture: { t: "idle" }, notice: null };
 }
 
 /** The selection, if it still names an element of `program`. */
@@ -58,15 +58,21 @@ function withText(m: GkqlModel, text: string): GkqlModel {
 }
 
 /** A new undo step: the current text goes on the past, the future is cleared. */
-const edit = (m: GkqlModel, text: string): GkqlModel => text === m.text ? m : { ...withText(m, text), past: [...m.past, m.text], future: [], typing: false };
+const edit = (m: GkqlModel, text: string): GkqlModel => text === m.text ? m : { ...withText(m, text), past: [...m.past, m.text], future: [], burst: null };
+
+/** A keystroke in `burst`: it joins the undo step of the keystroke before it there, or starts one. */
+function typed(m: GkqlModel, text: string, burst: string): GkqlModel {
+  if (text === m.text) return m;
+  const next = { ...withText(m, text), future: [], burst };
+  return m.burst === burst ? next : { ...next, past: [...m.past, m.text] };
+}
 
 export function step(m: GkqlModel, e: GkqlEvent): GkqlModel {
   switch (e.t) {
     case "load": return { ...openModel(e.text), moved: m.moved };
     case "type": {
       if (e.text === m.text) return m;
-      const next = withText(m, e.text);
-      return m.typing ? { ...next, future: [], typing: true } : { ...next, past: [...m.past, m.text], future: [], typing: true };
+      return typed(m, e.text, "text");
     }
     case "replace": return edit(m, e.text);
     case "change": case "remove": case "connect-end":
@@ -75,13 +81,13 @@ export function step(m: GkqlModel, e: GkqlEvent): GkqlModel {
       return structural(m, e);
     case "undo": {
       const text = m.past.at(-1);
-      return text === undefined ? m : { ...withText(m, text), past: m.past.slice(0, -1), future: [m.text, ...m.future], typing: false };
+      return text === undefined ? m : { ...withText(m, text), past: m.past.slice(0, -1), future: [m.text, ...m.future], burst: null };
     }
     case "redo": {
       const text = m.future[0];
-      return text === undefined ? m : { ...withText(m, text), past: [...m.past, m.text], future: m.future.slice(1), typing: false };
+      return text === undefined ? m : { ...withText(m, text), past: [...m.past, m.text], future: m.future.slice(1), burst: null };
     }
-    case "select": return { ...m, selected: keep(m.program, e.focus), typing: false, notice: null };
+    case "select": return { ...m, selected: keep(m.program, e.focus), burst: null, notice: null };
     case "move": return { ...m, moved: { ...m.moved, [e.id]: { x: Math.max(0, Math.round(e.to.x)), y: Math.max(0, Math.round(e.to.y)) } } };
     case "connect-start": return m.program?.verbs.some((v) => v.id === e.from) ? { ...m, gesture: { t: "connecting", from: e.from }, notice: null } : m;
     case "connect-cancel": return { ...m, gesture: { t: "idle" } };
@@ -92,7 +98,8 @@ export function step(m: GkqlModel, e: GkqlEvent): GkqlModel {
 function structural(m: GkqlModel, e: Extract<GkqlEvent, { t: "change" | "remove" | "connect-end" }>): GkqlModel {
   switch (e.t) {
     case "change": {
-      const next = edit(m, printGkql(e.program));
+      const text = printGkql(e.program);
+      const next = e.burst ? typed(m, text, e.burst) : edit(m, text);
       return e.select === undefined ? next : { ...next, selected: keep(next.program, e.select) };
     }
     case "remove": return m.program ? { ...edit(m, printGkql(removeFocus(m.program, e.focus))), gesture: { t: "idle" } } : m;
