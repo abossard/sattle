@@ -346,6 +346,28 @@ public class DifferentialTests
         }
     }
 
+    /// <summary>#159 G3 (R1): an element is in a Series since its row arrived, at the clock it entered, not since an advance after it. Two runs with the same rows
+    /// and the same clock, one with an advance between, give the same states, under every cut, and the reference agrees.</summary>
+    [Theory]
+    [InlineData("no data without a fill")]
+    [InlineData("fill and no data")]
+    public void An_element_is_in_a_series_since_its_row_arrived(string world)
+    {
+        var w = Worlds.All.Single(x => x.Name == world);
+        static Sattle.Reference.Input At(long seconds) => new Sattle.Reference.AdvanceInput(Logs.Origin + seconds * Logs.Second);
+        Sattle.Reference.Input[] between = [At(60), PlainRow("a", 1, "k0", "g0", 1, 0), At(120), At(600)], direct = [At(60), PlainRow("a", 1, "k0", "g0", 1, 0), At(600)];
+        static string States(Sattle.Reference.SpaceFacts f) => string.Join(" ", f.Graphs["view"].Entities.Values.SelectMany(e => e.Props).Where(kv => kv.Key.EndsWith("prop:state", StringComparison.Ordinal)).Select(kv => kv.Value is TextValue t ? t.S : "-").Order(StringComparer.Ordinal));
+        const string expected = "silent";       // k0 has no record, and it arrived at 60 s, more than the time to live before 600 s
+        Assert.Equal(expected, States(Sattle.Reference.ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), direct)));
+        Assert.Equal(expected, States(Sattle.Reference.ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), between)));
+        foreach (var log in new[] { between, direct })
+            foreach (var chunking in new[] { Chunking.OneByOne, Chunking.Largest, Chunking.Reversed })
+            {
+                var engine = States(EngineRun.Final(w.Catalog, log, chunking));
+                Assert.True(engine == expected, $"{log.Length} inputs, {chunking.Name}: engine {engine}, reference {expected}");
+            }
+    }
+
     /// <summary>A node row of `ranked` (item `k`, rank `n`, none for null) or an edge row `from>to` with its impact after a colon, signed.</summary>
     static Sattle.Reference.RowInput FixpointRow(string change)
     {

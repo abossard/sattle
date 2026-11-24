@@ -31,7 +31,7 @@ public sealed record SpaceFacts(ImmutableSortedDictionary<string, GraphFacts> Gr
 /// the identity links ever asserted (bindings are timeless, Theorem 1.5),
 /// the state of a Threshold key after the windows that left its look-back (Def. 7.10, D33),
 /// and, to find what an input added to or took from such an operator, its integrated input after the previous input.
-/// Two more are recorded facts (Def. 7.14): how far each source has reported, and since which advance an element has had a row in the structural input of a Series that fills or has a time to live.
+/// Two more are recorded facts (Def. 7.14): how far each source has reported, and since which clock (the arrival of its row) an element has had a row in the structural input of a Series that fills or has a time to live.
 /// </summary>
 public static class ReferenceEvaluator
 {
@@ -183,9 +183,9 @@ public static class ReferenceEvaluator
                     {
                         var rows = In("in");
                         var since = p.Since.GetValueOrDefault(slot, ImmutableSortedDictionary.Create<string, long>(StringComparer.Ordinal));
-                        if (frontier is { } now && frontier != frontierBefore)      // presence is sampled at an advance: an element with a row keeps its `since` or gets this frontier, one without loses it
-                            since = rows.Rows.Where(r => r.Weight > 0).Select(r => rows.Reader(r.Row)(series.TargetVar)).OfType<EntityValue>().Select(e => e.Id).Distinct(StringComparer.Ordinal)
-                                .ToImmutableSortedDictionary(id => id, id => since.TryGetValue(id, out var kept) ? kept : now, StringComparer.Ordinal);
+                        // #159 G3: an element with a row keeps its `since` or gets the clock its row arrived at (long.MinValue before the first advance), one without loses it
+                        since = rows.Rows.Where(r => r.Weight > 0).Select(r => rows.Reader(r.Row)(series.TargetVar)).OfType<EntityValue>().Select(e => e.Id).Distinct(StringComparer.Ordinal)
+                            .ToImmutableSortedDictionary(id => id, id => since.TryGetValue(id, out var kept) ? kept : frontierBefore ?? long.MinValue, StringComparer.Ordinal);
                         p = p with { Since = p.Since.SetItem(slot, since) };
                         var fed = series.Reads.Select(read => Feeding(catalog, space, graph.Bindings[series.GraphPort], read.PropId)).ToArray();
                         long? Covered(int i) => fed[i].Sources is { Count: > 0 } feeding && feeding.All(p.Covered.ContainsKey) ? feeding.Min(s => p.Covered[s]) : null;
