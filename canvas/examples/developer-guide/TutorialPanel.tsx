@@ -1,6 +1,6 @@
 import { Badge, Button, Field, Link, Select, Text, makeStyles, tokens } from "@fluentui/react-components";
 import { ArrowLeft16Regular, ArrowRight16Regular, Copy16Regular, Dismiss16Regular } from "@fluentui/react-icons";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { labelOf, valueText, type Entity } from "../../src/core/model";
 import { field } from "../../src/editor/coverage-review";
 import { printGkql, readGkql } from "../../src/editor/gkql";
@@ -64,14 +64,14 @@ const useStyles = makeStyles({
   flowPair: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: tokens.spacingHorizontalXS },
   level: { display: "grid", justifyItems: "center", gap: tokens.spacingVerticalXXS, width: "100%" },
   nodes: { display: "flex", flexWrap: "wrap", justifyContent: "center", gap: tokens.spacingHorizontalXS, width: "100%" },
-  node: { border: `1px solid ${tokens.colorNeutralStroke1}`, borderInlineStartWidth: "4px", padding: `${tokens.spacingVerticalXXS} ${tokens.spacingHorizontalS}`, backgroundColor: tokens.colorNeutralBackground2, fontWeight: tokens.fontWeightSemibold },
+  node: { display: "inline-flex", alignItems: "center", gap: tokens.spacingHorizontalXS, "::before": { content: '""', width: "8px", height: "8px", flexShrink: 0, backgroundColor: `var(--role, ${tokens.colorNeutralForeground1})` }, border: `1px solid ${tokens.colorNeutralStroke1}`, padding: `${tokens.spacingVerticalXXS} ${tokens.spacingHorizontalS}`, backgroundColor: tokens.colorNeutralBackground2, fontWeight: tokens.fontWeightSemibold },
   arrow: { color: tokens.colorNeutralForeground2, lineHeight: tokens.lineHeightBase300 },
   buttons: { display: "flex", flexWrap: "wrap", gap: tokens.spacingHorizontalXS, margin: `${tokens.spacingVerticalS} 0` },
   networkLinks: { listStyle: "none", margin: `${tokens.spacingVerticalXS} 0`, padding: 0, display: "grid", gap: tokens.spacingVerticalXXS, "& button": { width: "100%", justifyContent: "space-between", textAlign: "start" } },
   details: { marginTop: tokens.spacingVerticalM, "& > summary": { cursor: "pointer", fontWeight: tokens.fontWeightSemibold, overflowWrap: "anywhere" } },
   exercise: { marginBlock: tokens.spacingVerticalM, padding: tokens.spacingHorizontalS, border: `1px solid ${tokens.colorNeutralStroke2}`, backgroundColor: tokens.colorNeutralBackground1 },
   model: { listStyle: "none", display: "grid", gap: tokens.spacingVerticalXS, margin: `${tokens.spacingVerticalXS} 0`, padding: 0 },
-  modelPart: { borderInlineStartWidth: "4px", borderInlineStartStyle: "solid", padding: `${tokens.spacingVerticalXXS} ${tokens.spacingHorizontalS}`, backgroundColor: tokens.colorNeutralBackground1 },
+  modelPart: { display: "grid", gridTemplateColumns: "8px minmax(0, 1fr)", columnGap: tokens.spacingHorizontalS, alignItems: "center", "::before": { content: '""', width: "8px", height: "8px", flexShrink: 0, backgroundColor: `var(--role, ${tokens.colorNeutralForeground1})`, gridRow: "1" }, "& > *": { gridColumn: "2" } },
   recipe: { display: "grid", gap: tokens.spacingVerticalXS, paddingInlineStart: tokens.spacingHorizontalL, marginTop: tokens.spacingVerticalXS },
   codeGroup: { marginTop: tokens.spacingVerticalS },
   code: { margin: `${tokens.spacingVerticalXS} 0`, padding: tokens.spacingHorizontalS, overflow: "auto", maxHeight: "240px", backgroundColor: tokens.colorNeutralBackground1, border: `1px solid ${tokens.colorNeutralStroke2}`, fontFamily: tokens.fontFamilyMonospace, fontSize: tokens.fontSizeBase200 },
@@ -177,7 +177,7 @@ function Flow({ levels, label }: { levels: Step[][]; label: string }) {
   return <ol className={s.flow} aria-label={label}>
     {levels.map((level, i) => <li key={i} className={s.level}>
       {i > 0 && <span className={s.arrow} aria-hidden="true">↓</span>}
-      <div className={s.nodes}>{level.map(([label, role]) => <Text key={label} size={200} className={s.node} style={theme === "contrast" ? undefined : { borderInlineStartColor: palette[role] }}>{label}</Text>)}</div>
+      <div className={s.nodes}>{level.map(([label, role]) => <Text key={label} size={200} className={s.node} style={theme === "contrast" ? undefined : { "--role": palette[role] } as CSSProperties}>{label}</Text>)}</div>
     </li>)}
   </ol>;
 }
@@ -196,7 +196,7 @@ function ModelParts() {
   return <section aria-label="Parts of the model">
     <Text weight="semibold">What makes the model</Text>
     <ul className={s.model}>
-      {modelParts.map(({ lesson, title, example, role }) => <li key={lesson} className={s.modelPart} style={{ borderInlineStartColor: theme === "contrast" ? tokens.colorNeutralStroke1 : palette[role] }}>
+      {modelParts.map(({ lesson, title, example, role }) => <li key={lesson} className={s.modelPart} style={theme === "contrast" ? undefined : { "--role": palette[role] } as CSSProperties}>
         <Link href={href(lessonOf(lesson)!)}>{title}</Link>
         <Text block size={200}>{example}</Text>
       </li>)}
