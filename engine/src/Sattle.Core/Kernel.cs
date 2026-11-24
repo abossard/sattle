@@ -80,7 +80,7 @@ public static class KernelTable
         T("ValueKind | name:T"),
         T("IdentityDomain : Declaration | canonicalizationVersion:T"), T("KeyComponent | name:T"),
         T("EquivalencePolicy : Declaration | mode:T threshold:D"), T("RowType : Declaration |"), T("Field | name:T optional:B unit:T?"),
-        T("Projection : Declaration | purpose:T retain:I forward:B"), T("Port | name:T direction:T kind:T default:Any?"),
+        T("Projection : Declaration | purpose:T retain:I forward:B"), T("Port | name:T direction:T kind:T default:Any? time:T? lateness:I?"),
         T("Rule | name:T class:T putput:B reason:T? accept:L? onDelete:T? sourceVar:T? targetVar:T?"),
         T("Match : Operator |"), T("Filter : Operator |"), T("Map : Operator |"), T("Join : Operator |"),
         T("Union : Operator |"), T("Distinct : Operator |"), T("Group : Operator |"),
@@ -347,5 +347,5 @@ public static class Kernel
 
     /// <summary>Digest of the kernel graph. The compiled constant is checked by a test (section 2.8, step 2).</summary>
     public static string ComputeDigest() => Graph.Digest();
-    public const string CompiledDigest = "sha256:0923a0d6bcc9927b244da6d2efd6b0f03ed52fb9424e9e4c5428ebfe36e76b03";
+    public const string CompiledDigest = "sha256:0a6bae1e59b3a94b86b9f96c67c25ccb143dca4f5d270af3c026bcbefbff7dc6";
 }

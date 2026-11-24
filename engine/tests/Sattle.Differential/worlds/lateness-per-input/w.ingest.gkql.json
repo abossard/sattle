@@ -1,0 +1,26 @@
+{
+  "graph": "ingest",
+  "ontology": "w",
+  "history": 0,
+  "inputs": [{"name": "a", "rows": "w.R", "time": "t", "lateness": "1m"}, {"name": "b", "rows": "w.R", "time": "t", "lateness": "4m"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "a", "verb": "rows", "source": "a"},
+    {"id": "x_1", "verb": "project", "columns": {"k": {"ref": "k"}, "t": {"ref": "t"}, "n": {"ref": "n"}}},
+    {"id": "b", "verb": "rows", "source": "b"},
+    {"id": "x_2", "verb": "project", "columns": {"rk": {"ref": "k"}, "rn": {"ref": "n"}}},
+    {"id": "x_3", "verb": "join", "kind": "inner", "on": [{"left": "k", "right": "rk"}]},
+    {"id": "meter_1", "verb": "window", "window": {"time": "t", "period": "1m"}},
+    {"id": "meter_2", "verb": "summarize", "by": {"k": {"ref": "k"}, "windowStart": {"ref": "windowStart"}}, "aggregates": {"pairs": {"fn": "count"}, "total": {"fn": "sum", "args": [{"fn": "+", "args": [{"ref": "n"}, {"ref": "rn"}]}]}}},
+    {"id": "observed_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Meter", "id": {"identity": "meter", "args": [{"ref": "k"}]}, "props": {"k": {"ref": "k"}, "pairs": {"ref": "pairs"}, "total": {"ref": "total"}}}]}, "rule": "observed"}
+  ],
+  "wires": [
+    {"from": "a", "to": "x_1"},
+    {"from": "b", "to": "x_2"},
+    {"from": "x_1", "to": "x_3", "port": "left"},
+    {"from": "x_2", "to": "x_3", "port": "right"},
+    {"from": "x_3", "to": "meter_1"},
+    {"from": "meter_1", "to": "meter_2"},
+    {"from": "meter_2", "to": "observed_1"}
+  ]
+}

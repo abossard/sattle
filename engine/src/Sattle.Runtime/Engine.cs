@@ -221,7 +221,7 @@ public static class PlanCompiler
                 case TGroup g when g.ClosesWindows:
                     {
                         var win = WindowOf(tp, g);
-                        op = new WindowedGroupOp(g, win.WidthNs, inL, cx, withCompanions);
+                        op = new WindowedGroupOp(g, win.WidthNs, inL, cx, withCompanions, win.LatenessNs);
                         strategies.Add($"{g.Name}: Group over windows, per-window hash accumulators, windows close on the logical frontier, a late row revises its window");
                         break;
                     }
@@ -445,10 +445,26 @@ public sealed class Engine : IDisposable, IEngineInput
     {
         var (gname, port) = sourcePort[source];
         var ep = new Epoch { Id = ++epochId };
-        ep.Rows[port] = rows;
+        if (OnTime(byName[gname], port, rows) is { } kept) ep.Rows[port] = kept;
         InputRows += rows.Rows;
         Interner.Release(rows);
         Run(ep, seq, source, gname);
+    }
+
+    /// <summary>Ch. 6, Def. 6.1: the rows of a port that declares a lateness, less the late ones, counted. A row arrives at the clock when it enters, a withdrawal
+    /// too: a withdrawal that comes later than its time plus the lateness is late itself and is left out.</summary>
+    Batch? OnTime(GraphRuntime g, string port, Batch rows)
+    {
+        if (g.Typed.Port(port) is not { TimeField: { } time, LatenessNs: { } lateness } || lambda == long.MinValue) return rows;
+        var at = rows.Cols[g.Plan.PortLayout(port).Index(time)].L;
+        var sel = new int[rows.Rows]; var n = 0;
+        for (var k = 0; k < rows.Rows; k++)
+        {
+            var i = rows.RowAt(k);
+            if ((Int128)at[i] + lateness >= lambda) sel[n++] = i;
+            else g.Cx.LateDropped++;
+        }
+        return n == rows.Rows ? rows : n == 0 ? null : rows.WithSelection(sel, n);
     }
 
     /// <summary>Def. 7.14: the sources that feed a telemetry property of a graph. From every sink that sets it, everything upstream: a rows port gives the source bound to it, a Series gives the sources that feed what it reads, a graph that is only matched gives none.</summary>

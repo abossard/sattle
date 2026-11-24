@@ -368,6 +368,45 @@ public class DifferentialTests
         }
     }
 
+    /// <summary>`!m` moves the clock to minute m; `+a:k@m` or `-b:k@m` adds or withdraws a row of source a or b with key k and time minute m.</summary>
+    static Sattle.Reference.Input LatenessInput(string change)
+    {
+        if (change[0] == '!') return new Sattle.Reference.AdvanceInput(long.Parse(change[1..], System.Globalization.CultureInfo.InvariantCulture) * Logs.Minute);
+        var (source, rest) = change[1..].Split(':') is [var s, var r] ? (s, r) : throw new ArgumentException(change);
+        var (k, minute) = rest.Split('@') is [var key, var m] ? (key, long.Parse(m, System.Globalization.CultureInfo.InvariantCulture)) : throw new ArgumentException(change);
+        return new Sattle.Reference.RowInput(source, Logs.Row(("k", Value.Text(k)), ("g", Value.Text("g0")), ("n", Value.Integer(1)), ("d", Value.Null), ("t", Value.Instant(minute * Logs.Minute))), change[0] == '+' ? 1 : -1);
+    }
+
+    /// <summary>#159 A7 (Ch. 6, Def. 6.1, Thm. 6.3, Cor. 6.5): a join of `a` (lateness 1 minute) and `b` (lateness 4 minutes). Each row is late or on time by
+    /// its own input's lateness, and a window of the joined rows stays revisable for the larger lateness after its end, not for the host's 3 widths. The pairs
+    /// per window as `minute=count`, equal in the reference and in the engine under every cut, and the late rows the engine counted.</summary>
+    [Theory]
+    [InlineData("both on time", "!10 +a:k0@9 +b:k0@9", "9=1", 0)]
+    [InlineData("a row of a 2 minutes late is left out", "!10 +a:k0@8 +b:k0@8", "", 1)]
+    [InlineData("a row of b 4 minutes late is on time", "!10 +a:k0@9 +b:k0@6", "9=1", 0)]
+    [InlineData("a row of b 5 minutes late is left out", "!10 +a:k0@9 +b:k0@5", "", 1)]
+    [InlineData("a row is judged by the clock when it arrives", "+a:k0@8 !10 +b:k0@8", "8=1", 0)]
+    [InlineData("a window revises within the larger lateness", "+a:k0@8 !12 +b:k0@9", "8=1", 0)]
+    [InlineData("a window is final at its end plus the larger lateness", "+a:k0@8 !13 +b:k0@9", "", 1)]
+    [InlineData("a late withdrawal of a is left out", "+a:k0@9 +b:k0@9 !11 -a:k0@9", "9=1", 1)]
+    [InlineData("an on-time withdrawal of b removes the pair", "+a:k0@9 +b:k0@9 !11 -b:k0@9", "", 0)]
+    public void Each_input_is_late_by_its_own_lateness(string name, string changes, string expected, long late)
+    {
+        Assert.NotEmpty(name);
+        var w = Worlds.LatenessPerInput;
+        Sattle.Reference.Input[] log = [.. changes.Split(' ').Select(LatenessInput)];
+        static string Pairs(Sattle.Reference.SpaceFacts f) => string.Join(" ", f.Graphs["master"].Telemetry
+            .Where(t => t.Key.Property.EndsWith("pairs", StringComparison.Ordinal) && t.Value != 0).Select(t => $"{t.Key.Start / Logs.Minute}={Norm.Decimal(t.Value)}"));
+        Assert.Equal(expected, Pairs(Sattle.Reference.ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), log)));
+        foreach (var chunking in new[] { Chunking.OneByOne, Chunking.Largest, Chunking.Reversed })
+            Assert.True(Pairs(EngineRun.Final(w.Catalog, log, chunking)) is var engine && engine == expected, $"{chunking.Name}: engine {engine}, expected {expected}");
+        using var e = new Engine(w.Catalog, w.Catalog.Spaces.Keys.Single());
+        var seq = 0L;
+        foreach (var input in log)
+            if (input is Sattle.Reference.AdvanceInput a) e.Advance(a.Frontier, ++seq); else EngineRun.Ingest(e, [(Sattle.Reference.RowInput)input], ++seq);
+        Assert.Equal(late, e.Counters().LateRows);
+    }
+
     /// <summary>Review: Identity.cs:165 with Exprs.cs:107. An identity is allocated for the rows a sink emits (Def. 5.9), not for rows a Filter rejected.</summary>
     [Fact]
     public void A_row_that_a_filter_rejected_mints_no_identity()

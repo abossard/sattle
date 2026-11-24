@@ -16,7 +16,8 @@ public sealed record ProgramGraph([property: JsonPropertyName("graph")] string G
 public sealed record RuleSpec(string Name, string? Description = null, List<string>? Accept = null, List<string>? Update = null, RuleCreate? Create = null, RuleDelete? Delete = null);
 public sealed record RuleCreate(string Key, Dictionary<string, JsonElement>? Set = null);
 public sealed record RuleDelete(Dictionary<string, JsonElement> Set);
-public sealed record Input(string Name, string? Ontology, string? Rows = null);
+/// <summary>`Time` and `Lateness`, both or neither: a row of a rows input is late if the clock when it enters is beyond its `Time` plus `Lateness` (Ch. 6, Def. 6.1).</summary>
+public sealed record Input(string Name, string? Ontology, string? Rows = null, string? Time = null, string? Lateness = null);
 public sealed record Parameter(string Name, string Kind, JsonElement? Default);
 /// <summary>A wire from a verb's output to a named input port of another verb: `in`, or `left` and `right` of a join.</summary>
 public sealed record Wire(string From, string To, string Port = "in");
@@ -140,6 +141,8 @@ public static class Lowering
                 Rule(specs.GetValueOrDefault(rule) ?? new RuleSpec(rule), ingestion);
             foreach (var g in p.Inputs)
             {
+                if ((g.Time is null) != (g.Lateness is null) || (g.Time is not null && g.Rows is null))
+                    throw new Refused(g.Name, "a rows input names its time column and its lateness together", "port:" + g.Name);
                 if (g.Ontology is { } ontology && g.Rows is null)
                 {
                     var id = InputPort(g.Name, "graph");
@@ -150,7 +153,7 @@ public static class Lowering
                 {
                     var type = Ids.Child(Ids.Module(rows[..dot]), "rows", rows[(dot + 1)..]);
                     if (catalog.Entity(type) is null) throw new Refused(g.Name, $"'{rows}' is not a row type", "port:" + g.Name);
-                    var id = InputPort(g.Name, "rows");
+                    var id = InputPort(g.Name, "rows", g.Time is { } time ? [("time", T(time)), ("lateness", Value.Integer(Lateness(g)))] : []);
                     B.Edge(id, "rowType", type);
                     if (!rowPorts.TryAdd(g.Name, (id, type))) throw new Refused(g.Name, "duplicate row input", "port:" + g.Name);
                 }
@@ -230,8 +233,14 @@ public static class Lowering
             if (spec.Delete is { } delete) Defaults(delete.Set, "deleteSet", []);
         }
 
-        string InputPort(string name, string kind) =>
-            B.Contain(Pid, "port", name, "Port", null, ("name", T(name)), ("direction", T("in")), ("kind", T(kind)));
+        string InputPort(string name, string kind, (string, Value)[]? props = null) =>
+            B.Contain(Pid, "port", name, "Port", null, [("name", T(name)), ("direction", T("in")), ("kind", T(kind)), .. props ?? []]);
+
+        static long Lateness(Input g)
+        {
+            try { return Norm.DurationNs(g.Lateness!); }
+            catch (Exception e) when (e is ArgumentException or FormatException or OverflowException) { throw new Refused(g.Name, $"'{g.Lateness}' is not a duration", "port:" + g.Name); }
+        }
 
         /// <summary>The verbs in an order in which every verb comes after the verbs wired into it; a program graph has no loops.</summary>
         List<VerbNode> Order()

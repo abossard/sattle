@@ -74,7 +74,7 @@ public static class ReferenceEvaluator
         var sources = input is RowInput row ? before.Sources.SetItem(row.Source, before.Sources.GetValueOrDefault(row.Source, ZSet.Empty).Add(RowOf(catalog, space, row), row.Weight)) : before.Sources;
         var frontier = input is AdvanceInput a && (before.Facts.Frontier is null || a.Frontier > before.Facts.Frontier) ? a.Frontier : before.Facts.Frontier;
         var covered = input is ProgressInput progress && progress.Until > before.Covered.GetValueOrDefault(progress.Source, long.MinValue) ? before.Covered.SetItem(progress.Source, progress.Until) : before.Covered;
-        var at = before with { Sources = sources, Covered = covered, Lost = input is LossInput loss ? before.Lost.Add(loss.Time) : before.Lost, Facts = new SpaceFacts(before.Facts.Graphs.Clear(), frontier) };
+        var at = before with { Sources = sources, Covered = covered, Accepted = input is RowInput arrived ? OnTimeAtPorts(catalog, space, before, arrived) : before.Accepted, Lost = input is LossInput loss ? before.Lost.Add(loss.Time) : before.Lost, Facts = new SpaceFacts(before.Facts.Graphs.Clear(), frontier) };
         return InDependencyOrder(space).Aggregate(at, (p, g) => Graph(catalog, space, settings, g, before.Facts.Frontier, p));
     }
 
@@ -129,7 +129,7 @@ public static class ReferenceEvaluator
         var plan = PlanOf(catalog, graph);
         var frontier = p.Facts.Frontier;
         var rowPorts = plan.Ports.Where(x => x.Kind == "rows").ToDictionary(x => x.Name,
-            x => new Relation([.. x.Rows!.Cols.Select(c => c.Name)], p.Sources.GetValueOrDefault(graph.Bindings[x.Name], ZSet.Empty)), StringComparer.Ordinal);
+            x => new Relation([.. x.Rows!.Cols.Select(c => c.Name)], x.LatenessNs is null ? p.Sources.GetValueOrDefault(graph.Bindings[x.Name], ZSet.Empty) : p.Accepted.GetValueOrDefault(PortSlot(graph, x.Name), ZSet.Empty)), StringComparer.Ordinal);
         var graphPorts = plan.Ports.Where(x => x.Kind == "graph").ToDictionary(x => x.Name, x => p.Facts.Graphs[graph.Bindings[x.Name]], StringComparer.Ordinal);
         var views = plan.Ports.Where(x => x.Kind == "graph").ToDictionary(x => x.Name, x => catalog.OntologyOf(x.ExpectsModule!), StringComparer.Ordinal);
         // as in the engine: an aggregate read only by sinks carries the pair of a mean or a last
@@ -202,6 +202,20 @@ public static class ReferenceEvaluator
         return p with { Facts = p.Facts with { Graphs = p.Facts.Graphs.SetItem(graph.Name, facts) } };
     }
 
+    /// <summary>Ch. 6, Def. 6.1: a row enters every rows port bound to its source that declares a lateness, unless the clock when it arrives is beyond its time plus
+    /// the lateness. A withdrawal is judged the same way, by the clock when it arrives.</summary>
+    static ImmutableSortedDictionary<string, ZSet> OnTimeAtPorts(Catalog catalog, TypedSpace space, Position before, RowInput row)
+    {
+        var accepted = before.Accepted;
+        foreach (var graph in space.Graphs)
+            foreach (var (port, from) in graph.Bindings)
+                if (from == row.Source && PlanOf(catalog, graph).Ports.FirstOrDefault(x => x.Name == port) is { TimeField: { } time, LatenessNs: { } lateness }
+                    && (before.Facts.Frontier is not { } clock || (System.Int128)((InstantValue)row.Fields[time]).Ns + lateness >= clock))
+                    accepted = accepted.SetItem(PortSlot(graph, port), accepted.GetValueOrDefault(PortSlot(graph, port), ZSet.Empty).Add(RowOf(catalog, space, row), row.Weight));
+        return accepted;
+    }
+    static string PortSlot(TGraph graph, string port) => graph.Name + "/port:" + port;
+
     /// <summary>The nearest operator of a kind upstream of an operator along its `in` inputs: the Window whose windows a Group closes, the Series whose look-back a Threshold reads through.</summary>
     static T? Upstream<T>(TypedProjection plan, TOp op) where T : TOp
     {
@@ -218,7 +232,7 @@ public static class ReferenceEvaluator
     {
         if (frontierAtPosition is not { } frontier) return true;
         var end = windowStart + w.WidthNs;
-        var beyondHorizon = end + System.Int128.Min(s.Horizon(w.WidthNs), s.TelemetryRetentionNs) <= frontier;      // revisable for the smaller of the late horizon and the retention (Def. 7.13)
+        var beyondHorizon = end + System.Int128.Min(w.LatenessNs ?? s.Horizon(w.WidthNs), s.TelemetryRetentionNs) <= frontier;      // revisable for the smaller of the inputs' lateness (Cor. 6.5), else the late horizon, and the retention (Def. 7.13)
         return !beyondHorizon;
     }
 }

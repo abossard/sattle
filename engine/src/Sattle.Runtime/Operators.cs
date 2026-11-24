@@ -70,10 +70,10 @@ public sealed class OpContext(Interner it, RuntimeFaults faults, IdentityCatalog
     public long RetentionNs = long.MaxValue;
     /// <summary>The late horizon of a window of this width as a time; the greatest time when there is none or the product is beyond it.</summary>
     public long HorizonOf(long width) => LateHorizonFactor is { } n ? Clamp((Int128)width * n) : long.MaxValue;
-    /// <summary>How long after its end a window of this width stays revisable.</summary>
-    public long RevisableFor(long width) => Math.Min(HorizonOf(width), RetentionNs);
+    /// <summary>How long after its end a window of this width stays revisable: the lateness of its inputs when they declare one (Ch. 6, Cor. 6.5), else the late horizon.</summary>
+    public long RevisableFor(long width, long? lateness = null) => Math.Min(lateness ?? HorizonOf(width), RetentionNs);
     /// <summary>Whether a window of this width that ended at `end` can no longer be revised at this frontier.</summary>
-    public bool PastRevision(long end, long width, long frontier) => (Int128)end + RevisableFor(width) <= frontier;
+    public bool PastRevision(long end, long width, long frontier, long? lateness = null) => (Int128)end + RevisableFor(width, lateness) <= frontier;
     public static long Clamp(Int128 time) => time > long.MaxValue ? long.MaxValue : (long)time;
 }
 
@@ -813,17 +813,17 @@ sealed class WindowedGroupOp : AggregatingOp
 {
     sealed class W(KeyTable t, long end) { public KeyTable Table = t; public long End = end; public bool Closed; }
     readonly SortedDictionary<long, W> windows = [];
-    readonly long width; readonly int wsKey, outWs;
+    readonly long width; readonly long? lateness; readonly int wsKey, outWs;
     readonly int[] keyOutNoWs;
     long frontier = long.MinValue;
     readonly int nKeys;
     readonly List<(W Win, long Ws)> revised = [];
     readonly string name;
 
-    public WindowedGroupOp(TGroup t, long width, Layout inLayout, OpContext cx, bool withCompanions = false)
+    public WindowedGroupOp(TGroup t, long width, Layout inLayout, OpContext cx, bool withCompanions = false, long? lateness = null)
         : base(t, t.Keys.Where(k => !(k.Name == "windowStart")).ToList(), t.Aggs, inLayout, cx, [.. t.Keys.Where(k => k.Name != "windowStart").Select(k => k.Name)], false, withCompanions)
     {
-        this.width = width; name = t.Name;
+        this.width = width; this.lateness = lateness; name = t.Name;
         nKeys = keyExprs.Length;
         wsKey = inLayout.Index("windowStart");
         outWs = OutLayout.Index("windowStart");
@@ -852,7 +852,7 @@ sealed class WindowedGroupOp : AggregatingOp
                     if (!windows.TryGetValue(ws, out cur))
                     {
                         // beyond the allowed lateness the window's state is gone: a row for it is dropped, never a new window that would replace what was emitted
-                        if (cx.PastRevision(ws + width, width, frontier)) { cx.LateDropped++; cur = null; curWs = long.MinValue; continue; }
+                        if (cx.PastRevision(ws + width, width, frontier, lateness)) { cx.LateDropped++; cur = null; curWs = long.MinValue; continue; }
                         cur = new W(NewTable(), ws + width); windows[ws] = cur; if (cur.End <= frontier) cur.Closed = true;
                     }
                     curWs = ws;
@@ -890,7 +890,7 @@ sealed class WindowedGroupOp : AggregatingOp
                 foreach (var slot in t.Slots())
                     if (t.Cnt(slot) > 0) WriteRow(bb, t, slot, 1, ws, ws + width, outWs, -1);
             }
-            foreach (var ws in windows.Where(w => cx.PastRevision(w.Value.End, width, frontier)).Select(w => w.Key).ToList())
+            foreach (var ws in windows.Where(w => cx.PastRevision(w.Value.End, width, frontier, lateness)).Select(w => w.Key).ToList())
             {
                 windows.Remove(ws);
             }

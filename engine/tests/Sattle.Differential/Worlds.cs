@@ -78,6 +78,9 @@ public static class Worlds
         new("deps", (r, _) => { var l = r.Next(3); return Row(("parentKey", Pick(r, Levels[l])), ("childKey", Pick(r, Levels[l + 1])), ("impact", Pick(r, Value.Text("Limited"), Value.Text("Full")))); }),
     ]) with { Witnesses = ["Unrolled", "Fixed"] };
 
+    /// <summary>#159 A7 (Ch. 6, Def. 6.1, Cor. 6.5): rows of `a` (lateness 1 minute) joined on `k` with rows of `b` (lateness 4 minutes), counted and summed in
+    /// windows of a minute of the time of `a`. A row late for its own input is left out; a window stays revisable for 4 minutes after its end.</summary>
+    public static readonly World LatenessPerInput = Rows("lateness per input", "Join, Window, Group over windows, lateness per input", 0.25) with { Witnesses = ["window "] };
     /// <summary>Rows in windows of their own time. A late row revises its window.</summary>
     static readonly World Windowed = Rows("window late revise", "Window, Group over windows", 0.25);
     /// <summary>D3 (#101): sliding windows of 3 minutes that move by 60 s; a row counts in the three windows that hold it.</summary>
@@ -246,6 +249,7 @@ public static class Worlds
         Aggregate("extremes with countDistinct") with { Witnesses = ["lo=n:", "hi=n:"] },
         Aggregate("countif"),
         Windowed with { Witnesses = ["window "] },
+        LatenessPerInput,
         Windowed with { Name = "window late revise, retention 2 minutes", Kind = "Window, telemetry retention", RetentionNs = 2 * Minute, Witnesses = ["window "] },
         Hopped with { Witnesses = ["window "] },
         HopOverWindows with { Witnesses = ["window "] },

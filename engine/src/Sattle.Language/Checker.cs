@@ -112,7 +112,11 @@ public sealed class ProjectionChecker(Graph defs)
                 if (rt is null) { Err("W3", p, $"rows port {name} has no row type"); continue; }
                 var sch = RowSchema(rt);
                 portSchemas[p] = sch;
-                ports.Add(new TPort(name, p, "rows", sch, rt, null));
+                string? time = d.Text(p, "time"); long? lateness = d.Prop(p, "lateness") is IntegerValue ? d.Int(p, "lateness") : null;
+                if ((time is null) != (lateness is null)) { Err("W3", p, $"rows port {name} names its time column and its lateness together"); continue; }
+                if (lateness < 0) { Err("W3", p, $"the lateness of rows port {name} must not be negative"); continue; }
+                if (time is not null && sch.Find(time) is not { T.Ty.Tag: Tag.Instant, T.Req: true }) { Err("W3", p, $"the time of rows port {name}, '{time}', must be a required Instant column"); continue; }
+                ports.Add(new TPort(name, p, "rows", sch, rt, null, time, lateness));
             }
             else
             {
@@ -172,6 +176,7 @@ public sealed class ProjectionChecker(Graph defs)
             try { t = TypeOp(op, kind, name, inputs, In, ruleOf.GetValueOrDefault(op), ports); }
             catch (DuplicateColumnException e) { Err("DuplicateColumn", op, $"{name}: {e.Message}"); t = null; }
             if (t is null) continue;
+            if (t is TWindow window) t = window with { LatenessNs = UpstreamLateness(window, ports, opsByName) };
             typed.Add(t); opsByName[name] = t;
             schemas[Ids.Child(op, "port", "out")] = t.Out;
         }
@@ -212,6 +217,20 @@ public sealed class ProjectionChecker(Graph defs)
     }
 
     // ---- operators -------------------------------------------------------------------------------------
+
+    /// <summary>Ch. 6, Cor. 6.5: the largest lateness of the rows ports upstream of an operator, null when one of them declares none or none is upstream.</summary>
+    static long? UpstreamLateness(TOp op, List<TPort> ports, Dictionary<string, TOp> ops)
+    {
+        var rows = new List<TPort>();
+        void Walk(TOp o)
+        {
+            foreach (var s in o.Inputs.Values)
+                if (!s.IsPort) { if (ops.TryGetValue(s.Name, out var up)) Walk(up); }
+                else if (ports.Find(x => x.Name == s.Name) is { Kind: "rows" } port) rows.Add(port);
+        }
+        Walk(op);
+        return rows.Count > 0 && rows.All(x => x.LatenessNs is not null) ? rows.Max(x => x.LatenessNs) : null;
+    }
 
     TOp? TypeOp(string op, string kind, string name, Dictionary<string, Src> inputs, Func<string, Schema?> input, string? rule, List<TPort> ports)
     {

@@ -130,6 +130,13 @@ public class CheckerTests
         wires ?? string.Join(", ", FromItems, Wire("fields", "e"), Wire("fields", "f"), Wire("e", "f", "edges"), Wire("f", "out")));
     const string ByG = "\"edges\": {\"from\": \"src\", \"to\": \"dst\"}, \"through\": {\"by\": \"by\", \"maps\": {\"x\": ";
 
+    /// <summary>The base alone, its rows input `a` with the further fields `fields` (a time column and a lateness).</summary>
+    static SourceFile[] Late(string fields) =>
+    [
+        new("t.module.gkql.json", Base), new("t.ingest.gkql.json", Ingest.Replace("\"rows\": \"t.R\"}", "\"rows\": \"t.R\", " + fields + "}", StringComparison.Ordinal)),
+        new("s.module.gkql.json", Space("", "t").Replace(", ]", "]", StringComparison.Ordinal)),
+    ];
+
     static (Catalog Catalog, List<Diagnostic> Errors) Load(SourceFile[] files)
     {
         var catalog = new Catalog(Repo.Projections);
@@ -247,6 +254,11 @@ public class CheckerTests
         { "a fixpoint whose order is empty", Fixpoint("\"value\": \"g\", \"order\": [], \"edges\": {\"from\": \"src\", \"to\": \"dst\"}"), "Program", "the order lists the values, least first" },
         { "a fixpoint without its edge rows", Fixpoint("\"value\": \"g\", \"order\": [\"a\"], \"edges\": {\"from\": \"src\", \"to\": \"dst\"}", string.Join(", ", FromItems, Wire("fields", "e"), Wire("fields", "f"), Wire("f", "out"))),
             "Program", "a fixpoint has one wire to in, the node rows, and one to edges, the edge rows" },
+        { "a rows input with a lateness and no time column", Late("\"lateness\": \"1m\""), "Program", "a rows input names its time column and its lateness together" },
+        { "a rows input with a time column and no lateness", Late("\"time\": \"t\""), "Program", "a rows input names its time column and its lateness together" },
+        { "a lateness that is no duration", Late("\"time\": \"t\", \"lateness\": \"soon\""), "Program", "'soon' is not a duration" },
+        { "a time column that is no instant (R8)", Late("\"time\": \"k\", \"lateness\": \"1m\""), "W3", "the time of rows port a, 'k', must be a required Instant column" },
+        { "a time column the row type does not have", Late("\"time\": \"u\", \"lateness\": \"1m\""), "W3", "the time of rows port a, 'u', must be a required Instant column" },
         { "a percentile with p above 100", Percentile("""{"lit": 3}, {"lit": 101}"""), "Program", "the p of a percentile is a literal number from 0 to 100" },
         { "a percentile with p below 0", Percentile("""{"lit": 3}, {"lit": -0.5}"""), "Program", "the p of a percentile is a literal number from 0 to 100" },
         { "a percentile whose p is no literal", Percentile("""{"lit": 3}, {"ref": "k"}"""), "Program", "the p of a percentile is a literal number from 0 to 100" },

@@ -101,7 +101,8 @@ public sealed record TMap(string Name, string Id, IReadOnlyDictionary<string, Sr
 public sealed record TGroup(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, IReadOnlyList<(string Name, TExpr Value)> Keys, IReadOnlyList<TAgg> Aggs, bool ClosesWindows)
     : TOp(Name, Id, "Group", Inputs, Out);
 public sealed record TRetain(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string TimeField, long AgeNs) : TOp(Name, Id, "Retain", Inputs, Out);
-public sealed record TWindow(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string TimeField, long WidthNs, long HopNs) : TOp(Name, Id, "Window", Inputs, Out);
+/// <summary>`LatenessNs`: the largest lateness of the rows ports upstream when every one of them declares one (Ch. 6, Cor. 6.5): a window stays revisable that long after its end. Null: the host's late horizon.</summary>
+public sealed record TWindow(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string TimeField, long WidthNs, long HopNs, long? LatenessNs = null) : TOp(Name, Id, "Window", Inputs, Out);
 /// <summary>`Fill`: the value a covered window without a stored record has (Def. 7.15), or null.</summary>
 public sealed record TSeriesRead(string Var, string PropId, string OutName, string ValueKind, decimal? Fill = null);
 /// <summary>`TtlNs`: the time to live (Def. 7.16). With it the output has the column `noData`: true on the one record an element in no data has, which carries no values.</summary>
@@ -126,7 +127,8 @@ public sealed record TEmitRel(string Name, string Id, IReadOnlyDictionary<string
 public sealed record TLink(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string PolicyId, string PolicyName, TId Left, TId Right, decimal Confidence, string Mode, decimal Threshold, string? Rule)
     : TOp(Name, Id, "Link", Inputs, Out);
 
-public sealed record TPort(string Name, string Id, string Kind, Schema? Rows, string? RowTypeId, string? ExpectsModule);
+/// <summary>`TimeField` and `LatenessNs`, on a rows port that declares them: a row is late if the clock when it enters is beyond its time plus the lateness (Ch. 6, Def. 6.1).</summary>
+public sealed record TPort(string Name, string Id, string Kind, Schema? Rows, string? RowTypeId, string? ExpectsModule, string? TimeField = null, long? LatenessNs = null);
 /// <summary>Edit policies of a lens rule: accepted edits, the create key and defaults (the complement's "missing"), and what deleting sets.</summary>
 public sealed record TPolicy(IReadOnlyList<string> Accept, string? CreateDomainId, string? CreateDomainName, string? SourceTypeId,
     IReadOnlyList<(string PropId, string Name, TExpr Value)> Defaults, string? DeleteMode, IReadOnlyList<(string PropId, string Name, TExpr Value)> DeleteSets);
