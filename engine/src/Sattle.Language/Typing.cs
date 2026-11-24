@@ -71,8 +71,8 @@ public sealed record TCall(string Fn, IReadOnlyList<TExpr> Args, FType Type) : T
 public sealed record TComp(string CompId, string CompName, string Canonicalizer, TExpr Value);
 public sealed record TId(string DomainId, string DomainName, IReadOnlyList<TComp> Comps, FType Type) : TExpr(Type);
 
-/// <summary>`Row`: the mark of a `last`. The `last` aggregates of one group with the same mark take their values from one input row: the one with the greatest order, on a tie the greatest values in the order of the aggregates; a value that row does not have is absent.</summary>
-public sealed record TAgg(string Target, string Fn, TExpr? Value, TExpr? Order, FType Out, string? Row = null);
+/// <summary>`Percent`: the p of a `percentile`, from 0 to 100. `Row`: the mark of a `last`. The `last` aggregates of one group with the same mark take their values from one input row: the one with the greatest order, on a tie the greatest values in the order of the aggregates; a value that row does not have is absent.</summary>
+public sealed record TAgg(string Target, string Fn, TExpr? Value, TExpr? Order, FType Out, string? Row = null, decimal? Percent = null);
 public sealed record TSet(string PropId, string PropName, TExpr Value, bool Telemetry, long Period, string? Combine);
 public sealed record Src(bool IsPort, string Name);
 

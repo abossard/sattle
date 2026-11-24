@@ -262,6 +262,34 @@ public class DifferentialTests
     static Sattle.Reference.RowInput PlainRow(string source, long weight, string k, string g, long n, long seconds, decimal? d = null) =>
         new(source, Logs.Row(("k", Value.Text(k)), ("g", Value.Text(g)), ("n", Value.Integer(n)), ("d", d is { } q ? Value.Decimal(q) : Value.Null), ("t", Value.Instant(Logs.Origin + seconds * Logs.Second))), weight);
 
+    /// <summary>#159: the percentile of nearest rank of the rows of one group, each `+v` or `-v` (an integer `n` for p0 to p100, a decimal `d` for median and high, p 50 and 99.9), under every cut, equal to the reference. A value at rank that goes, ties at rank, one row, a group whose rows all went and one with no value; a decimal is its number whatever digits came first.</summary>
+    [Theory]
+    [InlineData("+5", "p50", "5")]                                                       // one row
+    [InlineData("+3 +1 +4 +2", "p0", "1")] [InlineData("+3 +1 +4 +2", "p50", "2")] [InlineData("+3 +1 +4 +2", "p95", "4")] [InlineData("+3 +1 +4 +2", "p100", "4")]
+    [InlineData("+1 +2 +3 +4 -2", "p50", "3")]                                         // the value at rank goes: 1 3 4, rank 2
+    [InlineData("+1 +2 +2 +2 +5", "p50", "2")] [InlineData("+2 +5 +5 +1 +5", "p95", "5")] [InlineData("+2 +2 +3 -2", "p50", "2")]       // ties at rank
+    [InlineData("+3 -3", "p50", null)]                                                  // the group's rows all went
+    [InlineData("+null", "median", null)]                                               // a group with no value
+    [InlineData("+2.50 +2.5 -2.50", "median", "2.5")] [InlineData("+2.5 +2.50 -2.5", "median", "2.5")] [InlineData("+2.50", "median", "2.5")]
+    [InlineData("+1 +2.50 +0", "median", "1")] [InlineData("+1 +2.50 +0", "high", "2.5")]
+    public void A_percentile_is_the_value_of_nearest_rank(string changes, string property, string? expected)
+    {
+        var w = Worlds.Percentile;
+        var dec = property is "median" or "high";
+        Sattle.Reference.Input[] log = [.. changes.Split(' ').Select(c => (Sattle.Reference.Input)(dec
+            ? PlainRow("a", c[0] == '+' ? 1 : -1, "k0", "g0", 0, 0, c[1..] == "null" ? null : decimal.Parse(c[1..], System.Globalization.CultureInfo.InvariantCulture))
+            : PlainRow("a", c[0] == '+' ? 1 : -1, "k0", "g0", long.Parse(c[1..], System.Globalization.CultureInfo.InvariantCulture), 0)))];
+        static Value? Of(Sattle.Reference.SpaceFacts f, string name) => f.Graphs["master"].Entities.Values.SelectMany(e => e.Props).Where(kv => kv.Key.EndsWith("prop:" + name, StringComparison.Ordinal)).Select(kv => kv.Value).SingleOrDefault();
+        static string? Text(Value? v) => v switch { DecimalValue d => d.Q.ToString(System.Globalization.CultureInfo.InvariantCulture), IntegerValue i => i.N.ToString(System.Globalization.CultureInfo.InvariantCulture), _ => null };
+        var reference = Of(Sattle.Reference.ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), log), property);
+        Assert.Equal(expected, Text(reference));
+        foreach (var chunking in new[] { Chunking.OneByOne, Chunking.Largest, Chunking.Reversed })
+        {
+            var engine = Text(Of(EngineRun.Final(w.Catalog, log, chunking), property));
+            Assert.True(engine == expected, $"{chunking.Name}: engine {engine}, expected {expected}");
+        }
+    }
+
     /// <summary>Review: Identity.cs:165 with Exprs.cs:107. An identity is allocated for the rows a sink emits (Def. 5.9), not for rows a Filter rejected.</summary>
     [Fact]
     public void A_row_that_a_filter_rejected_mints_no_identity()

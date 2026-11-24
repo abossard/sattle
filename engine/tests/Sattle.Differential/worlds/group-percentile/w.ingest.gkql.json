@@ -1,0 +1,16 @@
+{
+  "graph": "ingest",
+  "ontology": "w",
+  "history": 0,
+  "inputs": [{"name": "a", "rows": "w.R"}, {"name": "b", "rows": "w.R"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "a", "verb": "rows", "source": "a"},
+    {"id": "agg_1", "verb": "summarize", "by": {"g": {"ref": "g"}}, "aggregates": {"p0": {"fn": "percentile", "args": [{"ref": "n"}, {"lit": 0}]}, "p50": {"fn": "percentile", "args": [{"ref": "n"}, {"lit": 50}]}, "p95": {"fn": "percentile", "args": [{"ref": "n"}, {"lit": 95}]}, "p100": {"fn": "percentile", "args": [{"ref": "n"}, {"lit": 100}]}, "median": {"fn": "percentile", "args": [{"ref": "d"}, {"lit": 50}]}, "high": {"fn": "percentile", "args": [{"ref": "d"}, {"lit": 99.9}]}}},
+    {"id": "observed_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Agg", "id": {"identity": "agg", "args": [{"ref": "g"}]}, "props": {"g": {"ref": "g"}, "p0": {"ref": "p0"}, "p50": {"ref": "p50"}, "p95": {"ref": "p95"}, "p100": {"ref": "p100"}, "median": {"ref": "median"}, "high": {"ref": "high"}}}]}, "rule": "observed"}
+  ],
+  "wires": [
+    {"from": "a", "to": "agg_1"},
+    {"from": "agg_1", "to": "observed_1"}
+  ]
+}

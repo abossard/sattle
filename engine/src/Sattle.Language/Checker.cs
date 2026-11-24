@@ -492,6 +492,8 @@ public sealed class ProjectionChecker(Graph defs)
             if (ve is not null && v is null) continue;
             var row = d.Text(a, "row");
             if (row is not null && (fn != "last" || telemetry)) { Err("Aggregate", a, $"'row {row}' marks a last of a group: the last aggregates with one mark take their values from one row"); continue; }
+            var percent = d.Prop(a, "percent") is DecimalValue pv ? pv.Q : (decimal?)null;
+            if (percent is not null && (fn != "percentile" || telemetry)) { Err("Aggregate", a, $"'percent {Norm.Decimal(percent.Value)}' is the p of a percentile of a group"); continue; }
             FType? ft = null;
             if (fn == "count") { if (v is not null) Err("Aggregate", a, "count takes no argument"); ft = new FType(Ty.Int(), true, Role.Data); }
             else if (v is null) Err("Aggregate", a, $"{fn} needs an argument");
@@ -512,7 +514,12 @@ public sealed class ProjectionChecker(Graph defs)
                             else ft = new FType(v.Type.Ty, v.Type.Req, Role.Data);
                             break;
                         case "min" or "max": if (!v.Type.Ty.IsNumeric) Err("Aggregate", a, $"{fn} needs a numeric argument"); else ft = new FType(v.Type.Ty, v.Type.Req, Role.Data); break;
-                        default: Err("Unsupported", a, $"aggregate {fn} is not supported in this engine slice (count, countDistinct, sum, min, max, mean, last)"); break;
+                        case "percentile":
+                            if (!v.Type.Ty.IsNumeric) Err("Aggregate", a, "percentile needs a numeric argument");
+                            else if (percent is not (>= 0 and <= 100)) Err("Aggregate", a, "percentile needs its p, a number from 0 to 100");
+                            else ft = new FType(v.Type.Ty, v.Type.Req, Role.Data);
+                            break;
+                        default: Err("Unsupported", a, $"aggregate {fn} is not supported in this engine slice (count, countDistinct, sum, min, max, mean, last, percentile)"); break;
                     }
             }
             else
@@ -525,7 +532,7 @@ public sealed class ProjectionChecker(Graph defs)
                 else ft = new FType(fn == "mean" ? Ty.Dec() : v.Type.Ty, v.Type.Req, role, fn);
             }
             if (ft is not null && row is not null && res.Count(x => x.Row == row) >= 62) { Err("Aggregate", a, $"row {row} has more than 62 last aggregates"); continue; }
-            if (ft is not null) res.Add(new TAgg(target, fn, v, w, ft, row));
+            if (ft is not null) res.Add(new TAgg(target, fn, v, w, ft, row, percent));
         }
         return res;
     }

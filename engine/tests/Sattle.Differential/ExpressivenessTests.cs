@@ -127,7 +127,6 @@ static readonly World Difference = Rows("difference by tags and a group", "Union
         { "E6: a graph that reads itself", View("""{"id": "outs", "verb": "graph-match", "graph": "g", "pattern": {"nodes": [{"var": "i", "label": "Copy"}]}}, """ + Columns("keys", """ "k": {"ref": "i.k"}, "g": {"ref": "i.g"}, "n": {"ref": "i.n"}""") + ", " + Copy,
             Wire("outs", "keys") + ", " + Wire("keys", "copy"), """{"name": "g", "ontology": "w.view"}""", """{"name": "x", "projection": "view.v", "master": false, "inputs": {"g": "x"}}"""), "graph production has a cycle" },
         { "E9: an order over rows", View(ItemMatch + """, {"id": "previous", "verb": "serialize"}""", Wire("items", "previous")), "unknown verb 'serialize'" },
-        { "E9: a percentile", View(ItemMatch + """, {"id": "p50", "verb": "summarize", "by": {"k": {"ref": "i.k"}}, "aggregates": {"p": {"fn": "percentile", "args": [{"ref": "i.n"}, {"lit": 50}]}}}""", Wire("items", "p50")), "an aggregate is count" },
         { "E9: a group by an identity (#114)", View(ItemMatch + """, {"id": "named", "verb": "project", "columns": {"p": {"identity": "copy", "args": [{"ref": "i.k"}]}}}, {"id": "byName", "verb": "summarize", "by": {"p": {"ref": "p"}}, "aggregates": {"c": {"fn": "count"}}}""",
             Wire("items", "named") + ", " + Wire("named", "byName")), "identity(...) stands only in the key of a nodes statement" },
     };

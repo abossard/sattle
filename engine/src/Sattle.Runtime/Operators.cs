@@ -258,7 +258,7 @@ sealed class WindowOp : PhysOp
 
 // ---- aggregation -----------------------------------------------------------------------------------------
 
-/// <summary>The state of a group operator (core step 3): one row of a `Table` per key, holding the key, the row count, one accumulator per sum, count or mean (a decimal in two 8-byte columns), for a key with more than one value of a `min` or `max` their extreme in the accumulator the aggregate has, and whether the key's aggregate was emitted. A slot is the row number. The values emitted last are not kept: an operator retracts a key's aggregate when it first touches the key in a step, before the step's rows change it. The multisets of `min`, `max` and `countDistinct` are tables of (slot, aggregate, value) with a weight, found through their arrangement by (slot, aggregate); a number is keyed by its value whatever its scale (2.5 and 2.50 are one entry, which keeps the digits it came with first).</summary>
+/// <summary>The state of a group operator (core step 3): one row of a `Table` per key, holding the key, the row count, one accumulator per sum, count or mean (a decimal in two 8-byte columns), for a key with more than one value of a `min` or `max` their extreme in the accumulator the aggregate has, and whether the key's aggregate was emitted. A slot is the row number. The values emitted last are not kept: an operator retracts a key's aggregate when it first touches the key in a step, before the step's rows change it. The multisets of `min`, `max`, `percentile` and `countDistinct` are tables of (slot, aggregate, value) with a weight, found through their arrangement by (slot, aggregate); a number is keyed by its value whatever its scale (2.5 and 2.50 are one entry, which keeps the digits it came with first).</summary>
 sealed class KeyTable
 {
     readonly int k, nL, nD, nIndex;
@@ -267,9 +267,9 @@ sealed class KeyTable
     readonly long[] key;
     readonly Segments<byte> touched = new();
     public readonly List<int> TouchedList = [];
-    /// <summary>(slot, aggregate, value): the values of a `min` or `max` over integers and codes, and of a `countDistinct`. The aggregate is named by its accumulator in the key's row, which no two aggregates share.</summary>
+    /// <summary>(slot, aggregate, value): the values of a `min`, `max` or `percentile` over integers and codes, and of a `countDistinct`. The aggregate is named by its accumulator in the key's row, which no two aggregates share.</summary>
     readonly Table? longs;
-    /// <summary>(slot, aggregate, value as a number, its digits): the values of a `min` or `max` over decimals.</summary>
+    /// <summary>(slot, aggregate, value as a number, its digits): the values of a `min`, `max` or `percentile` over decimals.</summary>
     readonly Table? decimals;
     /// <summary>The entries of one aggregate of one key's row, in each of the two tables.</summary>
     readonly Arrangement? longsOf, decimalsOf;
@@ -387,23 +387,29 @@ sealed class KeyTable
             rows.Set(slot, accL + a, best);
         }
     }
-    /// <summary>The same for a `min` or `max` over decimals: 2.5 and 2.50 are one value, kept as it was first written.</summary>
-    public void AddExtremeD(int slot, int a, decimal v, long w, bool desc)
+    /// <summary>Adds a weight to a decimal of a multiset: 2.5 and 2.50 are one value, kept as it was first written. The change of the number of distinct values (+1, -1 or 0).</summary>
+    public int AddDecimal(int slot, int a, decimal v, long w)
     {
         var (lo, hi) = DecimalKey.Of(v);
         var had = decimals!.Find([slot, a, lo, hi]) >= 0;
         var row = decimals.Add([slot, a, lo, hi], w);
-        if (row >= 0 == had) return;
-        if (row >= 0) { var (x, y) = Pack(v); decimals.Set(row, 4, x); decimals.Set(row, 5, y); }
+        if (row >= 0 && !had) { var (x, y) = Pack(v); decimals.Set(row, 4, x); decimals.Set(row, 5, y); }
+        return (row >= 0 ? 1 : 0) - (had ? 1 : 0);
+    }
+    /// <summary>The same as `AddExtremeL` for a `min` or `max` over decimals.</summary>
+    public void AddExtremeD(int slot, int a, decimal v, long w, bool desc)
+    {
+        var change = AddDecimal(slot, a, v, w);
+        if (change == 0) return;
         var values = Values(decimalsOf!, slot, a);
         if (values < 2) { if (D(slot, a) != 0) SetD(slot, a, 0); }
-        else if (row >= 0 && values > 2) { if (desc ? v > D(slot, a) : v < D(slot, a)) SetD(slot, a, v); }
-        else if (row >= 0 || v == D(slot, a))
+        else if (change > 0 && values > 2) { if (desc ? v > D(slot, a) : v < D(slot, a)) SetD(slot, a, v); }
+        else if (change > 0 || v == D(slot, a))
         {
             decimal best = 0; var any = false;
             for (var r = decimalsOf!.First([slot, a]); r >= 0; r = decimalsOf.Next(r))
             {
-                var x = Unpack(decimals.Get(r, 4), decimals.Get(r, 5));
+                var x = Unpack(decimals!.Get(r, 4), decimals.Get(r, 5));
                 if (!any || (desc ? x > best : x < best)) { best = x; any = true; }
             }
             SetD(slot, a, best);
@@ -430,6 +436,41 @@ sealed class KeyTable
         var first = decimalsOf!.First([slot, a]);
         v = first < 0 ? 0 : decimalsOf.Next(first) < 0 ? Unpack(decimals!.Get(first, 4), decimals.Get(first, 5)) : D(slot, a);
         return first >= 0;
+    }
+    /// <summary>The value of nearest rank `percent` of a `percentile` over integers or decimals: of its values with a positive weight, each counted as often as its weight (n in all), the r-th smallest, r = max(1, ⌈percent · n / 100⌉); a decimal as its number without trailing zeros. False when no value has a positive weight. One weighted selection over the key's distinct values, copied to a scratch array the table reuses and grows only for a key with more values than any before.</summary>
+    public bool Percentile(int slot, int a, bool dec, decimal percent, out decimal v)
+    {
+        var (t, of) = dec ? (decimals!, decimalsOf!) : (longs!, longsOf!);
+        var m = 0; long n = 0;
+        for (var r = of.First([slot, a]); r >= 0; r = of.Next(r))
+        {
+            var w = t.Weight(r);
+            if (w <= 0) continue;
+            if (m == scratch.Length) Array.Resize(ref scratch, Math.Max(16, 2 * m));
+            scratch[m++] = (dec ? DecimalKey.Number(t.Get(r, 2), t.Get(r, 3)) : t.Get(r, 2), w);
+            n += w;
+        }
+        v = n == 0 ? 0 : Select(scratch.AsSpan(0, m), (long)Math.Max(1m, Math.Ceiling(percent * n / 100m)));
+        return n > 0;
+    }
+    (decimal Value, long Weight)[] scratch = [];
+    ulong pivots = 0x9E3779B97F4A7C15UL;
+
+    /// <summary>The r-th smallest of distinct values counted by their weights (1 ≤ r ≤ the sum of the weights): a weighted quickselect, in place, expected linear in the number of values. The pivots come from a xorshift, the same run to run.</summary>
+    decimal Select(Span<(decimal Value, long Weight)> xs, long r)
+    {
+        while (true)
+        {
+            pivots ^= pivots << 13; pivots ^= pivots >> 7; pivots ^= pivots << 17;
+            var p = (int)(pivots % (ulong)xs.Length);
+            (xs[p], xs[^1]) = (xs[^1], xs[p]);
+            var pivot = xs[^1]; var below = 0; long wBelow = 0;
+            for (var i = 0; i < xs.Length - 1; i++)
+                if (xs[i].Value < pivot.Value) { wBelow += xs[i].Weight; (xs[i], xs[below]) = (xs[below], xs[i]); below++; }
+            if (r <= wBelow) xs = xs[..below];
+            else if (r <= wBelow + pivot.Weight) return pivot.Value;
+            else { r -= wBelow + pivot.Weight; xs = xs[below..^1]; }
+        }
     }
     /// <summary>Adds a weight to a row of a row set: its order, the value of each member, and `has`, a bit per member that has a value.</summary>
     public void AddRow(int slot, int set, decimal ord, ReadOnlySpan<decimal> values, long has, long w)
@@ -477,12 +518,14 @@ sealed class KeyTable
     public void ReleaseIfDead(int slot) { if (Dead(slot)) rows.Add(KeyAt(slot), -1); }
 }
 
-enum AggKind { Count, SumL, SumD, Distinct, ExtL, ExtD, Mean, Last }
+enum AggKind { Count, SumL, SumD, Distinct, ExtL, ExtD, Mean, Last, PctL, PctD }
 sealed record AggSpec(AggKind Kind, int Index, VExpr? Value, bool ValueIsDec, bool Desc = false, int Index2 = -1, VExpr? Order = null, bool OutDec = false, bool ValueIsText = false)
 {
     /// <summary>For a `last`: the row set it takes its value from, and its place among the members; -1 for any other aggregate.</summary>
     public int RowSet { get; init; } = -1;
     public int Member { get; init; }
+    /// <summary>For a `percentile`: its p, from 0 to 100.</summary>
+    public decimal Percent { get; init; }
 }
 
 /// <summary>Group (and the accumulation half of Rollup): per-key accumulators updated by signed weights (DBSP linear aggregates). Output is a retraction plus an insertion per touched key.</summary>
@@ -576,6 +619,8 @@ abstract class AggregatingOp : PhysOp
                     }
                 case "min" or "max" when dec: list.Add(new AggSpec(AggKind.ExtD, d++, v, true, a.Fn == "max")); hasDecimals = true; break;       // the accumulator holds the extreme of a key with more than one value
                 case "min" or "max": list.Add(new AggSpec(AggKind.ExtL, l++, v, false, a.Fn == "max")); hasLongs = true; break;
+                case "percentile" when dec: list.Add(new AggSpec(AggKind.PctD, d++, v, true) { Percent = a.Percent!.Value }); hasDecimals = true; break;       // its values are filed under an accumulator it does not use
+                case "percentile": list.Add(new AggSpec(AggKind.PctL, l++, v, false) { Percent = a.Percent!.Value }); hasLongs = true; break;
                 default: throw new NotSupportedException($"aggregate {a.Fn}");
             }
         }
@@ -620,6 +665,13 @@ abstract class AggregatingOp : PhysOp
                         var c = valueCols[a]!;
                         if (c.P is not null && !c.P[row]) break;
                         t.AddExtremeD(slot, s.Index, c.IsDec ? c.D[row] : c.L[row], w, s.Desc);
+                        break;
+                    }
+                case AggKind.PctL or AggKind.PctD:
+                    {
+                        var c = valueCols[a]!;
+                        if (c.P is not null && !c.P[row]) break;
+                        if (s.Kind == AggKind.PctL) t.AddLong(slot, s.Index, c.L[row], w); else t.AddDecimal(slot, s.Index, c.IsDec ? c.D[row] : c.L[row], w);
                         break;
                     }
                 case AggKind.Mean:
@@ -704,6 +756,12 @@ abstract class AggregatingOp : PhysOp
         for (var a = 0; a < aggs.Length; a++)
         {
             var col = bt.Cols[outAggCol[a]];
+            if (aggs[a].Kind is AggKind.PctL or AggKind.PctD)
+            {
+                if (!t.Percentile(slot, aggs[a].Index, aggs[a].Kind == AggKind.PctD, aggs[a].Percent, out var p)) col.SetAbsent(row, bt.N);
+                else if (col.IsDec) col.D[row] = p; else col.L[row] = (long)p;
+                continue;
+            }
             if (aggs[a].Kind is AggKind.ExtL or AggKind.ExtD or AggKind.Mean or AggKind.Last && AggAbsent(t, slot, a)) { col.SetAbsent(row, bt.N); continue; }
             if (aggs[a].Kind is AggKind.SumD or AggKind.ExtD or AggKind.Mean || aggs[a].Kind == AggKind.Last && aggs[a].OutDec) col.D[row] = AggD(t, slot, a);
             else col.L[row] = AggL(t, slot, a);
@@ -1154,6 +1212,8 @@ static class DecimalKey
         decimal.GetBits(d / 1.0000000000000000000000000000m, bits);      // dividing by one at full scale drops trailing zeros
         return (((long)bits[0] << 32) | (uint)bits[1], ((long)bits[2] << 32) | (uint)bits[3]);
     }
+    /// <summary>The number of a key: the decimal without trailing zeros.</summary>
+    public static decimal Number(long lo, long hi) => new([(int)(lo >> 32), (int)lo, (int)(hi >> 32), (int)hi]);
 }
 
 /// <summary>Distinct: a row is in the output while its multiplicity is positive. The multiplicities are a Z-set (`Table`) whose key is the whole row: every column as its 8-byte code (a decimal as the two halves of its number, so 2.5 and 2.50 are one row) and a bit per absent column.</summary>

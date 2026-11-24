@@ -274,6 +274,16 @@ public static class Denotation
                 return decimalOut
                     ? Value.Decimal(valued.Sum(r => r.Weight * Canon.Number(r.Value)))
                     : Value.Integer(valued.Aggregate(BigInteger.Zero, (s, r) => s + r.Weight * Canon.Integer(r.Value)));
+            case "percentile":
+                {
+                    // nearest rank: per distinct number its net weight, counted when positive; the r-th smallest, r = max(1, ceil(p n / 100))
+                    var counted = valued.GroupBy(r => Canon.Of(r.Value)).Select(g => (Number: Canon.Number(g.First().Value), Weight: g.Sum(r => r.Weight))).Where(x => x.Weight > 0).OrderBy(x => x.Number).ToArray();
+                    var n = counted.Sum(x => x.Weight);
+                    if (n == 0) return Value.Null;
+                    var rank = Math.Max(1m, Math.Ceiling(a.Percent!.Value * n / 100m));
+                    var at = counted.First(x => (rank -= x.Weight) <= 0).Number;
+                    return decimalOut ? Value.Decimal(decimal.Parse(Norm.Decimal(at), System.Globalization.CultureInfo.InvariantCulture)) : Value.Integer(new BigInteger(at));
+                }
             case "min": return Present().OrderBy(v => v, Comparer<Value>.Create(Canon.Compare)).FirstOrDefault() ?? Value.Null;
             case "max": return Present().OrderByDescending(v => v, Comparer<Value>.Create(Canon.Compare)).FirstOrDefault() ?? Value.Null;
             case "mean":

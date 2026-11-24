@@ -40,6 +40,7 @@ public static class Support
         ["min"] = [new("Group", "numeric data value", "same as the value"), new("Rollup", "numeric telemetry value", "same as the value", "not cumulative")],
         ["max"] = [new("Group", "numeric data value", "same as the value"), new("Rollup", "numeric telemetry value", "same as the value", "not cumulative")],
         ["mean"] = [new("Group", "numeric data value", "Decimal"), new("Rollup", "numeric telemetry value", "Decimal", "gauge")],
+        ["percentile"] = [new("Group", "numeric data value and p, a number from 0 to 100: the value of nearest rank p, no interpolation", "same as the value")],
         ["last"] = [new("Group", "data value (not an element) and an ordering of data Integer, Decimal or Instant, marked with its row: the last aggregates of one row take their values from it (arg_max)", "same as the value")],
     };
     public static readonly HashSet<string> Aggregates = [.. AggregateContexts.Keys];
@@ -118,7 +119,7 @@ public static class Palette
         ["minDepth"] = new("count", "hops"), ["maxDepth"] = new("count", "hops"), ["minHops"] = new("count", "hops"), ["maxHops"] = new("count", "hops"),
         ["retain"] = new("count", "retained inputs per element"),
         ["min"] = new("value", "unit of the constrained property"), ["max"] = new("value", "unit of the constrained property"),
-        ["threshold"] = new("ratio", "fraction from 0 to 1"),
+        ["threshold"] = new("ratio", "fraction from 0 to 1"), ["percent"] = new("ratio", "percent from 0 to 100"),
     };
     public static IReadOnlyDictionary<string, Quantity> NumericQuantities => Quantities;
 

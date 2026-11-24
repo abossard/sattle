@@ -120,6 +120,10 @@ public class CheckerTests
     static readonly string LoadedWires = string.Join(", ", FromItems, Wire("fields", "loads"), Wire("fields", "series"), Wire("series", "rolled"), Wire("rolled", "load"));
     const string ByKey = "\"c\": {\"ref\": \"k\"}";
 
+    /// <summary>A percentile of the items by key with the arguments `args`.</summary>
+    static SourceFile[] Percentile(string args) => View(Items + ", " + """{"id": "p", "verb": "summarize", "by": {"k": {"ref": "k"}}, "aggregates": {"p": {"fn": "percentile", "args": [""" + args + "]}}}, " + Out,
+        string.Join(", ", FromItems, Wire("fields", "p"), Wire("p", "out")));
+
     static (Catalog Catalog, List<Diagnostic> Errors) Load(SourceFile[] files)
     {
         var catalog = new Catalog(Repo.Projections);
@@ -227,6 +231,13 @@ public class CheckerTests
         { "a threshold over a series with a time to live that does not say what no data gives", Quiet(", \"freshness\": \"2m\"", ""), "Threshold", "what no data gives" },
         { "a no-data state without a time to live upstream", Quiet("", Said), "Threshold", "needs telemetry with a time to live" },
         { "a telemetry roll-up keyed finer than the element it writes (premise B1)", View(Loaded(ByKey + ", \"g\": {\"ref\": \"g\"}"), LoadedWires, LoadType), "B1", "grouped by 'g'" },
+        { "a percentile with p above 100", Percentile("""{"lit": 3}, {"lit": 101}"""), "Program", "the p of a percentile is a literal number from 0 to 100" },
+        { "a percentile with p below 0", Percentile("""{"lit": 3}, {"lit": -0.5}"""), "Program", "the p of a percentile is a literal number from 0 to 100" },
+        { "a percentile whose p is no literal", Percentile("""{"lit": 3}, {"ref": "k"}"""), "Program", "the p of a percentile is a literal number from 0 to 100" },
+        { "a percentile without its p", Percentile("""{"lit": 3}"""), "Program", "percentile takes a value and p" },
+        { "a percentile of a text", Percentile("""{"ref": "k"}, {"lit": 50}"""), "Aggregate", "percentile needs a numeric argument" },
+        { "a percentile of telemetry windows: it does not combine them", View(Loaded(ByKey).Replace("""{"fn": "sum", "args": [{"ref": "hits"}]}""", """{"fn": "percentile", "args": [{"ref": "hits"}, {"lit": 95}]}"""), LoadedWires, LoadType),
+            "Program", "percentile does not combine telemetry windows" },
         { "a lens over a lens view: the engine runs one lens over a bijective rule (Ch. 8)", LensOverLens(), "Unsupported", "rule tops: a lens over the lens view view is later work" },
         { "a lens rule whose rows pass through a join: a join is not a lens step", View(Items + ", " + """
             {"id": "others", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "x", "label": "Other"}]}},

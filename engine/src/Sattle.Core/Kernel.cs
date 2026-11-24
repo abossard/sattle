@@ -91,7 +91,7 @@ public static class KernelTable
         T("Threshold : Operator | target:T above:D enterAfter:I high:T below:D exitAfter:I low:T initial:T nodata:T? nodataIgnore:B? evidenceWindow:B?"),
         T("PatternNode | var:T side:T? create:B?"), T("PatternEdge | var:T? minHops:I? maxHops:I? side:T? create:B?"),
         T("FieldRef : Expr | path:T fill:D?"), T("Literal : Expr | value:Any"), T("Call : Expr |"), T("IdOf : Expr |"),
-        T("Assign | target:T"), T("Aggregate | target:T fn:T row:T?"), T("SetProperty |"), T("SetComponent |"), T("RowValue |"),
+        T("Assign | target:T"), T("Aggregate | target:T fn:T row:T? percent:D?"), T("SetProperty |"), T("SetComponent |"), T("RowValue |"),
         T("Function | name:T signature:T role:T inverse:T?"),
         T("GraphSpace : Declaration |"), T("Graph | name:T"), T("Source | name:T adapter:T"), T("Binding | value:Any?"),
         // system vocabulary, section 2.7
@@ -158,7 +158,7 @@ public static class KernelTable
         ("EmitEntity", "mode", ["create", "update"]),
         ("EmitRelationship", "mode", ["create", "update"]),
         ("EmitRelationship", "retype", ["reject", "keepExisting", "takeNew"]),
-        ("Aggregate", "fn", ["count", "countDistinct", "sum", "min", "max", "mean", "last"]),
+        ("Aggregate", "fn", ["count", "countDistinct", "sum", "min", "max", "mean", "last", "percentile"]),
         ("PatternNode", "side", ["source", "target"]),
         ("PatternEdge", "side", ["source", "target"]),
         ("Function", "role", ["scalar", "canonicalizer"]),
@@ -346,5 +346,5 @@ public static class Kernel
 
     /// <summary>Digest of the kernel graph. The compiled constant is checked by a test (section 2.8, step 2).</summary>
     public static string ComputeDigest() => Graph.Digest();
-    public const string CompiledDigest = "sha256:9b8a072dea2ebe362ec9f6e981c59c9d94bb52f3aa744d682f8aead8d1c11d05";
+    public const string CompiledDigest = "sha256:9cd1e4184a7859ea0fb5e568803bb1028c51380a7c38dc001d6ff12a87e134e6";
 }

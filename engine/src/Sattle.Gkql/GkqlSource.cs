@@ -513,11 +513,11 @@ public static class Lowering
             return acc;
         }
 
-        static readonly string[] Aggregates = ["count", "countif", "count_distinct", "sum", "min", "max", "avg", "arg_max", "arg_min"];
+        static readonly string[] Aggregates = ["count", "countif", "count_distinct", "sum", "min", "max", "avg", "arg_max", "arg_min", "percentile"];
 
         /// <summary>A summary of the rows by keys. Over telemetry windows it keeps the windows (a Rollup: `windowStart` is a key, of the window itself);
         /// over other rows `windowStart` is a key like any other. `arg_max(order, value)` is the value of the row with the greatest order; the
-        /// arg_max and arg_min aggregates with one order read one row, the row of the first of them.</summary>
+        /// arg_max and arg_min aggregates with one order read one row, the row of the first of them. `percentile(value, p)` is the value of nearest rank p, a literal from 0 to 100.</summary>
         Rows Summarize(VerbNode v, Rows r)
         {
             var by = v.By ?? [];
@@ -547,11 +547,20 @@ public static class Lowering
                     ("sum" or "min" or "max", [var a]) => (fn, a, (Expr?)null),
                     ("arg_max", [var o, var a]) => ("last", a, o),
                     ("arg_min", [var o, var a]) => ("last", a, new Fn("negate", [o])),
+                    ("percentile", [var a, _]) => ("percentile", a, null),
                     ("arg_max" or "arg_min", _) => throw new Refused(v.Id, $"{fn} takes the order and a value"),
+                    ("percentile", _) => throw new Refused(v.Id, "percentile takes a value and p, a number from 0 to 100"),
                     _ => throw new Refused(v.Id, fn is "count" ? "count takes no value" : $"{fn} takes one value"),
                 };
                 if (r.Telemetry && engineFn is not ("count" or "sum" or "min" or "max" or "mean")) throw new Refused(v.Id, $"{fn} does not combine telemetry windows: count, sum, min, max or avg");
                 List<(string, Value)> props = [("target", T(name)), ("fn", T(engineFn))];
+                if (fn == "percentile")
+                    props.Add(("percent", Value.Decimal(call.Args[1] switch
+                    {
+                        Lit { V: IntegerValue { N: var i } } when i >= 0 && i <= 100 => (decimal)i,
+                        Lit { V: DecimalValue { Q: var q } } when q >= 0 && q <= 100 => q,
+                        _ => throw new Refused(v.Id, "the p of a percentile is a literal number from 0 to 100, {\"lit\": 95}"),
+                    })));
                 var sameRow = fn + ":" + (order is null ? "" : x.GetProperty("args")[0].GetRawText());
                 if (order is not null) props.Add(("row", T(rows.TryGetValue(sameRow, out var row) ? row : rows[sameRow] = name)));
                 var agg = B.Contain(op, "agg", name, "Aggregate", null, [.. props]);

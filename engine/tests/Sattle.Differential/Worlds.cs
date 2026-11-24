@@ -51,6 +51,8 @@ public static class Worlds
 
     /// <summary>A group of the rows of `a` by `g` into an element `Agg`.</summary>
     static World Aggregate(string name) => Rows("group " + name, "Group");
+    /// <summary>#159: percentiles of nearest rank of the integers `n` (p 0, 50, 95, 100) and the decimals `d` (p 50, 99.9) of a group.</summary>
+    public static readonly World Percentile = Aggregate("percentile") with { Witnesses = ["p95=n:", "high=n:"] };
 
     /// <summary>Rows in windows of their own time. A late row revises its window.</summary>
     static readonly World Windowed = Rows("window late revise", "Window, Group over windows", 0.25);
@@ -208,6 +210,7 @@ public static class Worlds
         Aggregate("countDistinct"),
         Aggregate("sum"),
         Aggregate("min and max") with { Witnesses = ["hi=n:", "top=n:"] },
+        Percentile,
         Aggregate("mean"),
         Aggregate("last of one row") with { Witnesses = ["v=t:k", "prop:x=n:"] },
         Aggregate("first of one row") with { Witnesses = ["v=t:k", "prop:x=n:"] },
