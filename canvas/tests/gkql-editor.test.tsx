@@ -142,6 +142,31 @@ it("shows the rows after each operation of the previewed draft until the text ch
   expect((screen.getByRole("button", { name: /^Show rows/ }) as HTMLButtonElement).disabled).toBe(true);
 });
 
+it.each<[string, Record<string, unknown>]>([
+  ["values", { values: { columns: { name: "Text" }, rows: [{ name: "web" }], key: "name" } }],
+  ["distinct", {}],
+  ["retain", { retain: { time: "time", age: "1h" } }],
+  ["traverse", { graph: "master", traverse: { edge: "Reaches", from: "n", to: "d", direction: "out", min: 1, max: 3 } }],
+  ["fixpoint", { fixpoint: { key: "n", value: "state", order: ["ok", "bad"], edges: { from: "a", to: "b" } } }],
+  ["link", { link: { policy: "sameName", left: { identity: "byName", args: [{ ref: "n" }] }, right: { identity: "byUid", args: [{ ref: "u" }] }, confidence: 0.5 } }],
+  ["summarize", { by: ["n"], aggregates: { p95: { fn: "percentile", args: [{ ref: "cpu" }, { lit: 95 }] } } }],
+])("sets the fields of %s through Apply operation", async (verb, fields) => {
+  const { save, user } = editor();
+  await user.click(screen.getByRole("button", { name: "Add operation" }));
+  await user.click(await screen.findByRole("menuitem", { name: verb }));
+  const json = screen.getByRole("textbox", { name: "Operation JSON" });
+  await user.clear(json);
+  await user.click(json);
+  await user.paste(JSON.stringify(fields));
+  const apply = screen.getByRole("button", { name: "Apply operation" }) as HTMLButtonElement;
+  // distinct has no fields: its JSON is already {}, so there is nothing to apply
+  expect(apply.disabled).toBe(Object.keys(fields).length === 0);
+  if (!apply.disabled) await user.click(apply);
+  await user.click(screen.getByRole("button", { name: "Check & store" }));
+  await waitFor(() => expect(save).toHaveBeenCalledOnce());
+  expect(save.mock.calls[0][0].verbs.at(-1)).toEqual({ id: verb, verb, ...fields });
+});
+
 it("edits the two hysteresis recovery settings through the Canvas fields", async () => {
   const { save, user } = editor();
   await user.click(screen.getByRole("button", { name: "hysteresis cpuState" }));
