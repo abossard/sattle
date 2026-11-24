@@ -181,7 +181,7 @@ dotnet engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll replay engine/tests/
 
 ### Learn why it works
 
-- [paper/README.md](paper/README.md), then chapters [0](paper/ch00-introduction.md) (the problem), [3](paper/ch03-graphs-and-revisions.md) (graphs and revisions), [5](paper/ch05-projection-language.md) (projections) and [7](paper/ch07-telemetry-plane.md) (telemetry and health). The [glossary](paper/glossary.md) explains every term.
+- [paper/README.md](paper/README.md), then core chapters [1](paper/core/ch01-problem-and-model.md) (the problem), [3](paper/core/ch03-graphs-type-graphs-revisions.md) (graphs and revisions), [5](paper/ch05-projection-language.md) (projections) and [7](paper/ch07-telemetry-plane.md) (telemetry and health). The [glossary](paper/glossary.md) explains every term.
 - [Research note 10](paper/research/10-existing-graph-languages.md): why projections are written in KQL.
 
 ### Run the tests
@@ -244,7 +244,7 @@ Screenshots of the running engine on the synthetic estate ([records](engine/test
 
 ![The master graph from every source, Azure included: a database that depends on a storage account (live, 2026-11-17)](docs/evidence/97/2-master-graph-all-sources.png)
 
-- Everything the sources reported, one entity per thing: [`acme.ops.ingest.kql`](engine/definitions/acme.ops.ingest.kql) under [`sattle.infra`](engine/definitions/sattle.infra.sattle) and [`sattle.azure`](engine/definitions/sattle.azure.sattle). Theory: [Ch. 1](paper/ch01-values-and-identity.md), [Ch. 3](paper/ch03-graphs-and-revisions.md).
+- Everything the sources reported, one entity per thing: [`acme.ops.ingest.kql`](engine/definitions/acme.ops.ingest.kql) under [`sattle.infra`](engine/definitions/sattle.infra.sattle) and [`sattle.azure`](engine/definitions/sattle.azure.sattle). Theory: [core Ch. 2](paper/core/ch02-values-and-identity.md), [Ch. 3](paper/ch03-graphs-and-revisions.md).
 
 ### 2. Services
 
@@ -298,13 +298,13 @@ Start at [paper/README.md](paper/README.md). It states the research plan and wha
 
 | Chapter | Topic |
 | --- | --- |
-| [0](paper/ch00-introduction.md) | Introduction and research plan |
-| [1](paper/ch01-values-and-identity.md) | Values and identity |
+| [core 1](paper/core/ch01-problem-and-model.md) | Problem and model (replaces old Ch. 0) |
+| [core 2](paper/core/ch02-values-and-identity.md) | Values and identity (replaces old Ch. 1) |
 | [2](paper/ch02-ontologies-as-type-graphs.md) | Ontologies as type graphs |
-| [3](paper/ch03-graphs-and-revisions.md) | Graphs and revisions |
-| [4](paper/ch04-change-algebra.md) | Change algebra |
+| [core 3](paper/core/ch03-graphs-type-graphs-revisions.md) | Graphs, type graphs and revisions (replaces old Ch. 3) |
+| [core 4](paper/core/ch04-one-change-algebra.md) | One change algebra (replaces old Ch. 4) |
 | [5](paper/ch05-projection-language.md) | The projection language |
-| [6](paper/ch06-semantics-and-incrementality.md) | Semantics and incrementality |
+| [core 5](paper/core/ch05-projections-as-functions-on-runs.md), [core 7](paper/core/ch07-requirements-on-a-projection-language.md) | Projections as functions on runs; requirements and step by step evaluation (replace old Ch. 6) |
 | [7](paper/ch07-telemetry-plane.md) | The telemetry plane |
 | [8](paper/ch08-sync-direction-and-bidirectional-consistency.md) | Direction and bidirectional consistency |
 | [9](paper/ch09-evolution-evidence-provenance.md) | Evolution, evidence, provenance |
@@ -313,7 +313,7 @@ Start at [paper/README.md](paper/README.md). It states the research plan and wha
 | [12](paper/ch12-outputs-documents-and-canvas.md) | Outputs: documents and canvas |
 | [13](paper/ch13-performance.md) | Performance |
 | [14](paper/ch14-evaluation.md) | Evaluation |
-| [15](paper/ch15-related-work-and-limitations.md) | Related work and limitations |
+| [core 8](paper/core/ch08-derived-results-limits-related-work.md) | Derived results, limits, related work (replaces old Ch. 15) |
 
 - Reference pages: [glossary](paper/glossary.md), [notation](paper/notation.md), [references](paper/references.md).
 - [Proof inventory](paper/inventory.md): every numbered statement with its status and what tests it.

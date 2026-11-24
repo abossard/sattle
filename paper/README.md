@@ -69,19 +69,19 @@ Chapter 0 states where each of the three goals of Phase 1 stands, and Chapter 15
 
 ## How to read
 
-Chapter 0 is the entry. The figure at its end shows which chapter needs which.
+The entry is Chapter 1 of the [core paper](core/README.md), which replaces the old chapters 0, 1, 3, 4, 6 and 15.
 
-For a worked example, follow a request through two calls and compare its ingress receipt with the declared receiver. The example uses separate keys for a call and an operation, a retained graph revision for the original finding, and a source report to interpret the coverage count. [Identity](ch01-values-and-identity.md#14-identity) · [Reviewing a receiver](ch09-evolution-evidence-provenance.md#worked-example--reviewing-a-receiver) · [Run the example](../engine/standard/README.md)
+For a worked example, follow a request through two calls and compare its ingress receipt with the declared receiver. The example uses separate keys for a call and an operation, a retained graph revision for the original finding, and a source report to interpret the coverage count. [Identity](core/ch02-values-and-identity.md#22-ids) · [Reviewing a receiver](ch09-evolution-evidence-provenance.md#worked-example--reviewing-a-receiver) · [Run the example](../engine/standard/README.md)
 
 | Ch. | Title | In one line |
 |---|---|---|
-| 0 | [Introduction](ch00-introduction.md) | the problem, the idea, the terms, the claims |
-| 1 | [Values, canonical form and identity](ch01-values-and-identity.md) | one written form for every value; names that do not depend on time |
+| 0 | [Problem and model, core Ch. 1](core/ch01-problem-and-model.md) | replaced by the core paper |
+| 1 | [Values and identity, core Ch. 2](core/ch02-values-and-identity.md) | replaced by the core paper |
 | 2 | [Types as graphs](ch02-ontologies-as-type-graphs.md) | definitions are graphs over a small fixed core |
-| 3 | [Graphs and versions](ch03-graphs-and-revisions.md) | what a graph is, what a version is |
-| 4 | [Algebra of changes](ch04-change-algebra.md) | changes invert and compose |
+| 3 | [Graphs, type graphs and revisions, core Ch. 3](core/ch03-graphs-type-graphs-revisions.md) | replaced by the core paper |
+| 4 | [One change algebra, core Ch. 4](core/ch04-one-change-algebra.md) | replaced by the core paper |
 | 5 | [Projection language](ch05-projection-language.md) | how a graph is computed from graphs; levels |
-| 6 | [Meaning and step-by-step evaluation](ch06-semantics-and-incrementality.md) | step by step equals from scratch; determinism |
+| 6 | [Projections as functions on runs, core Ch. 5](core/ch05-projections-as-functions-on-runs.md); [requirements, core Ch. 7](core/ch07-requirements-on-a-projection-language.md) | replaced by the core paper |
 | 7 | [Measurements](ch07-telemetry-plane.md) | series over time; the threshold; the health model |
 | 8 | [Editable views](ch08-sync-direction-and-bidirectional-consistency.md) | when an edit of a view may flow back |
 | 9 | [Changing definitions, evidence](ch09-evolution-evidence-provenance.md) | replay after a change; what supports an element |
@@ -90,7 +90,7 @@ For a worked example, follow a request through two calls and compare its ingress
 | 12 | [What a person sees](ch12-outputs-documents-and-canvas.md) | views, documents, the viewer |
 | 13 | [Efficiency](ch13-performance.md) | targets and cost model |
 | 14 | [Experiments](ch14-evaluation.md) | what was measured, and how |
-| 15 | [Related work and limits](ch15-related-work-and-limitations.md) | where this stands among others; what it does not do |
+| 15 | [Derived results, limits, related work, core Ch. 8](core/ch08-derived-results-limits-related-work.md) | replaced by the core paper |
 
 - Symbols: [notation.md](notation.md). Terms: [glossary.md](glossary.md). Sources cited: [references.md](references.md).
 - Software and how to repeat the experiments: appendix [Artifact](appendix-artifact.md). It is the only place with names of programs, files and commands.

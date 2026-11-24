@@ -90,13 +90,13 @@ Text status is **written** for all chapters. Prototype status is from the code i
 
 | Ch. | Title | Prototype |
 |---|---|---|
-| 0 | [Introduction and problem](ch00-introduction.md) | not applicable (Q1 and Q2 not implemented as queries) |
-| 1 | [Values, canonical form and identity](ch01-values-and-identity.md) | implemented, partly (merge implemented, no split) |
+| 0 | [Introduction and problem, replaced by core Ch. 1](../core/ch01-problem-and-model.md) | not applicable (Q1 and Q2 not implemented as queries) |
+| 1 | [Values, canonical form and identity, replaced by core Ch. 2](../core/ch02-values-and-identity.md) | implemented, partly (merge implemented, no split) |
 | 2 | [Ontologies as type graphs](ch02-ontologies-as-type-graphs.md) | implemented, partly (no compatibility classifier); value roles and health as ontology data implemented |
-| 3 | [Graphs, revisions and the graph space](ch03-graphs-and-revisions.md) | implemented |
-| 4 | [Change algebra](ch04-change-algebra.md) | implemented; definition drafts and undo as inverse patch implemented |
+| 3 | [Graphs, revisions and the graph space, replaced by core Ch. 3](../core/ch03-graphs-type-graphs-revisions.md) | implemented |
+| 4 | [Change algebra, replaced by core Ch. 4](../core/ch04-one-change-algebra.md) | implemented; definition drafts and undo as inverse patch implemented |
 | 5 | [Projection language](ch05-projection-language.md) | implemented, partly (19 of 20 operator kinds, parameters, aggregates per context, `Retain`, levels with the `lift` statement), refactoring implemented |
-| 6 | [Semantics and incrementality](ch06-semantics-and-incrementality.md) | implemented, partly (bounded `Fixpoint`, `Join`, `Traverse`; batch-invariance premises B1 to B4) |
+| 6 | [Semantics and incrementality, replaced by core Ch. 5 and 7](../core/ch05-projections-as-functions-on-runs.md) | implemented, partly (bounded `Fixpoint`, `Join`, `Traverse`; batch-invariance premises B1 to B4) |
 | 7 | [Telemetry plane](ch07-telemetry-plane.md) | implemented, partly; health model as worked example |
 | 8 | [Sync direction and bidirectional consistency](ch08-sync-direction-and-bidirectional-consistency.md) | `readonly`, `bijective`, `lens` implemented; `sync` not built |
 | 9 | [Evolution, evidence and provenance](ch09-evolution-evidence-provenance.md) | implemented, partly (configuration edit by full replay, releases, preview, evidence elements with retention); evidence history and provenance not built |
@@ -105,7 +105,7 @@ Text status is **written** for all chapters. Prototype status is from the code i
 | 12 | [Outputs: documents and canvas](ch12-outputs-documents-and-canvas.md) | canvas and engine seam implemented (protocol 3, content ETags), documents implemented as projections and shown in the canvas |
 | 13 | [Performance model and benchmarks](ch13-performance.md) | implemented, partly (`sattle bench`; ten-run H5, H7, H8, H10 on a loaded machine) |
 | 14 | [Evaluation](ch14-evaluation.md) | evaluation at evaluation 7, partial |
-| 15 | [Related work and limitations](ch15-related-work-and-limitations.md) | not applicable |
+| 15 | [Related work and limitations, replaced by core Ch. 8](../core/ch08-derived-results-limits-related-work.md) | not applicable |
 
 Dependencies: 1 → 2 → 3 → 4 → 5 → 6 → {7, 8, 9, 12}; 3 → 10; {6, 7} → 11 → 13; {10, 13} → 14. A forward reference is marked in the chapter that makes it.
 

@@ -1,6 +1,6 @@
 # Core paper
 
-The reset of the paper (#2). Eight chapters on a domain-neutral engine that projects graphs to graphs, change by change. All eight are written. The old chapters in the parent folder stay until their removal is decided.
+The reset of the paper (#2). Eight chapters on a domain-neutral engine that projects graphs to graphs, change by change. All eight are written. The old chapters 0, 1, 3, 4, 6 and 15 are removed; the other old chapters in the parent folder stay.
 
 ## Aim
 

@@ -4,8 +4,8 @@ const shopChapters = {
       description:"A request to pg-shop sits inside a larger graph of the observed estate. The workload and health views draw from that graph.",
       example:"The shop’s database is one part of a larger estate.",
       principle:"Layers of projection", meaning:"One master graph can answer several different questions.",
-      section:"0.2", reading:"ch00-introduction.md#02-the-idea-and-the-terms-it-needs",
-      papers:["ch00-introduction","ch05-projection-language"]
+      section:"1.2", reading:"core/ch01-problem-and-model.md#12-the-model",
+      papers:["core/ch01-problem-and-model","ch05-projection-language"]
     },
     rules: {
       figure:"How the alarm works", context:"Shop namespace",
@@ -21,7 +21,7 @@ const shopChapters = {
       example:"Calls between pods become one web → API link.",
       principle:"Levels of abstraction", meaning:"A projection can group both the parts and their connections.",
       section:"5.8", reading:"ch05-projection-language.md#58-levels-of-abstraction-a-projection-lifts-the-edges-with-the-nodes",
-      papers:["ch01-values-and-identity","ch02-ontologies-as-type-graphs","ch05-projection-language"]
+      papers:["core/ch02-values-and-identity","ch02-ontologies-as-type-graphs","ch05-projection-language"]
     },
     incident: {
       figure:"The outage across time", context:"10:11–10:15 UTC",
@@ -52,8 +52,8 @@ const shopChapters = {
       description:"A snapshot and ordered patches reconstruct the outage. Two calculation paths lead to the same graph.",
       example:"Both ways of rebuilding revision 16 show the outage.",
       principle:"Incremental equivalence", meaning:"Updating a graph in steps can give the same result as a rebuild.",
-      section:"6.3", reading:"ch06-semantics-and-incrementality.md#63-theorems",
-      papers:["ch03-graphs-and-revisions","ch04-change-algebra","ch06-semantics-and-incrementality"]
+      section:"7.4", reading:"core/ch07-requirements-on-a-projection-language.md#74-what-follows",
+      papers:["core/ch03-graphs-type-graphs-revisions","core/ch04-one-change-algebra","core/ch05-projections-as-functions-on-runs"]
     },
     inspect: {
       figure:"The pg-shop case file", context:"Canvas at workload revision 16",

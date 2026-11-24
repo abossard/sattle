@@ -53,7 +53,7 @@ function show(focus=false) {
   const references=new Map(c.sources.map(([name,file])=>[file,name]));
   for(const slug of ShopMap.chapters[c.id].papers || []){
     const file="paper/"+slug+".md";
-    if(!references.has(file))references.set(file,"White paper · chapter "+Number(slug.slice(2,4)));
+    if(!references.has(file))references.set(file,"White paper · chapter "+Number(slug.split("/").pop().slice(2,4)));
   }
   $("#reading").innerHTML='<div class="label">Explore the source</div>'+[...references].map(([file,name])=>link(name,file)).join("");
   const back=$("#back"), next=$("#next"), last=i===chapters.length-1;

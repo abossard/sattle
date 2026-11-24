@@ -4,7 +4,7 @@ const structureFile="engine/definitions/acme.workload.workloadStructure.kql";
 const healthFile="engine/definitions/acme.workload.workloadHealth.kql";
 const lessons={
   estate:["The shop’s master graph","Sattle connects records from the shop’s systems. Start with the stuck refund for order O-104. Follow its payment call, then switch views to see which pods run the refund job.",exploreJourney,[
-    ["Sources and adapters","paper/ch10-sources-and-adapters.md"],["Identity","paper/ch01-values-and-identity.md"],
+    ["Sources and adapters","paper/ch10-sources-and-adapters.md"],["Identity","paper/core/ch02-values-and-identity.md"],
     ["Shop source records","docs/learn/foundry/graph-journey.js"],["Retail architecture and sources","docs/learn/foundry/sources.md"]]],
   rollup:["Health Tree","The database answered at 10:10 UTC. A minute later its check failed. Follow the web service’s branch to PostgreSQL, then move through the checks to see when the alarm clears.",exploreHealthTree,[
     ["How the graphs are connected","engine/definitions/acme.space.sattle"],["Where the branches come from",structureFile],
