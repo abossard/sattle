@@ -5,6 +5,8 @@ import { labelOf, valueText, type Entity } from "../../src/core/model";
 import { field } from "../../src/editor/coverage-review";
 import { printGkql, readGkql } from "../../src/editor/gkql";
 import { LESSONS, lessonOf, sourceForLesson, type Lesson, type Step } from "../../src/tutorial/lessons";
+import { colorValueOf } from "../../src/app/color-by";
+import type { Role } from "../../src/source/presentation";
 import { CheckpointComparison } from "./CheckpointComparison";
 import { useCapturedKusto } from "./useCapturedKusto";
 import { masterLinks } from "./master-links";
@@ -234,15 +236,14 @@ function CpuReplay({ model }: { model: string }) {
       if (at === undefined) continue;
       for (const edit of patch.edits) {
         if (edit.kind !== "entity" || !edit.after) continue;
-        const state = edit.after.props.state;
+        const role = stateRole("signals", edit.after);
         const previous = stateBySignal.get(edit.id) ?? {};
-        if (state?.kind !== "text") continue;
-        if (state.value === "Healthy") {
+        if (role === "ok") {
           if (previous.healthy !== undefined && previous.degraded !== undefined)
             return { id: edit.id, healthy: previous.healthy, degraded: previous.degraded, recovered: at };
           previous.healthy = at;
         }
-        if (state.value === "Degraded" && previous.degraded === undefined) previous.degraded = at;
+        if (role === "warning" && previous.degraded === undefined) previous.degraded = at;
         stateBySignal.set(edit.id, previous);
       }
     }
@@ -252,10 +253,10 @@ function CpuReplay({ model }: { model: string }) {
   const nodes = [...(healthRevision?.graph.entities() ?? [])];
   const find = (role: string, scope: string) => nodes.find((node) => textProperty(node, "role") === role && textProperty(node, "scope") === scope);
   const states = [
-    ["Measured API CPU", revision?.graph.entity(example.id)],
-    ["Deploy to AKS", find("Flow", "deploy")],
-    ["Serve traffic", find("Flow", "serve")],
-    ["Workload", find("Workload", "tutorial")],
+    ["Measured API CPU", "signals", revision?.graph.entity(example.id)],
+    ["Deploy to AKS", model, find("Flow", "deploy")],
+    ["Serve traffic", model, find("Flow", "serve")],
+    ["Workload", model, find("Workload", "tutorial")],
   ] as const;
   const checkpoints = [
     ["CPU healthy", example.healthy, "success"],
@@ -273,10 +274,10 @@ function CpuReplay({ model }: { model: string }) {
       }}><Badge color={color} appearance="tint">{label}</Badge></Button>)}
     </div>
     <dl className={s.healthSummary} aria-label="States at this checkpoint">
-      {states.map(([label, node]) => {
+      {states.map(([label, graph, node]) => {
         const state = node && textProperty(node, "state");
         return state && <div key={label}><dt><Text size={200}>{label}</Text></dt><dd>
-          <Badge appearance="tint" color={state === "Healthy" ? "success" : state === "Degraded" ? "warning" : state === "Unhealthy" ? "danger" : "informative"}>{state}</Badge>
+          <Badge appearance="tint" color={ROLE_BADGE[stateRole(graph, node)]}>{state}</Badge>
         </dd></div>;
       })}
     </dl>
@@ -446,6 +447,12 @@ const textProperty = (node: Entity, property: string) => {
   const value = node.props[property] ?? Object.entries(node.props).find(([name]) => name.endsWith("." + property))?.[1];
   return value?.kind === "text" ? value.value : undefined;
 };
+/** The role the graph's presentation metadata gives a node's state: state words are data of the model, never of the canvas. */
+const stateRole = (graph: string, node: Entity): Role => {
+  const hint = runtime.ws?.graphInfo(graph)?.presentation?.find((h) => (h.property === "state" || h.property.endsWith(".state")) && node.props[h.property]);
+  return (hint && colorValueOf({ property: hint.property, hint }, node.props)?.role) ?? "neutral";
+};
+const ROLE_BADGE: Record<Role, "success" | "warning" | "danger" | "informative"> = { ok: "success", warning: "warning", danger: "danger", unknown: "informative", neutral: "informative" };
 
 function Coverage({ graph }: { graph: string }) {
   const inventory = useRevision("containerApps");
