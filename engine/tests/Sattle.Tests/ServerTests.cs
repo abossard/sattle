@@ -69,12 +69,23 @@ public class ServerTests
         if (code is not null) Assert.Equal(code, JsonNode.Parse(body)!["error"]!["code"]!.GetValue<string>());
     }
 
+    /// <summary>#144 C6: `/health` is the liveness of the process and its store, not the health of a model: its operational keys and per graph its name and head, no model state or authored policy.</summary>
+    [Theory]
+    [InlineData("", "mode,done,seq,digest,catalogRevision,graphs,lag")]
+    [InlineData("graphs", "name,head")]
+    public async Task Health_serves_only_operational_keys(string part, string keys)
+    {
+        var body = await Serving(async http => JsonNode.Parse(await http.GetStringAsync("/health"))!.AsObject());
+        var shown = part == "" ? body : body[part]!.AsArray().Select(g => g!.AsObject()).First();
+        Assert.Equal(keys.Split(','), shown.Select(x => x.Key));
+    }
+
     /// <summary>Review: Server.cs:182. The replay of `serve` runs on its own thread while request handlers intern under the host's lock. Given that lock, the replay interns only while it holds it: nothing is interned while the test holds the lock.</summary>
     [Fact]
     public async Task A_replay_that_is_given_the_lock_of_its_host_interns_only_while_it_holds_it()
     {
         using var host = HostTests.NewHost();
-        var replay = new Replay(host, host.Space, host.Adapters, new ReplayOptions { Cluster = "synth" }, host.Gate);
+        var replay = new Replay(host, host.Space, host.Adapters, new ReplayOptions { }, host.Gate);
         int before, during; Exception? failure = null;
         var run = new Thread(() => { try { replay.Run(EstateTests.EstateDir); } catch (Exception e) { failure = e; } });
         lock (host.Gate)

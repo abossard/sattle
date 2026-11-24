@@ -132,12 +132,12 @@ static partial class Bench
                 throw new ArgumentException("--graph-workers requires a positive integer");
             options = options with { PreparationWorkers = workers };
         }
-        var capture = Capture(o); var cluster = Program.DetectCluster(capture);
+        var capture = Capture(o);
         var cat = new Catalog(Program.Projections); var setup = Stopwatch.StartNew();
         var load = cat.Load(Program.ReadDefinitions(o), updatePins: true); var loadMs = setup.Elapsed.TotalMilliseconds;
         if (load.HasErrors) throw new InvalidOperationException(string.Join("\n", load.Diagnostics));
         var spaceId = cat.Spaces.Keys.First();
-        var adapters = AdapterRegistry.Create(cluster);
+        var adapters = AdapterRegistry.Create(cat.Spaces[spaceId], cat);
         var engine = new Engine(cat, spaceId, options);
         Console.WriteLine($"setup: catalog load (parse, check, lower, type every module) {loadMs:F0} ms, engine construction (plans for {engine.Graphs.Count} graphs) {setup.Elapsed.TotalMilliseconds - loadMs:F0} ms");
         var detailed = !o.Flags.Contains("timing-only");
@@ -145,7 +145,7 @@ static partial class Bench
         if (o.Flags.Contains("export")) new CanvasExport(engine, cat).Attach();
         using var proc = Process.GetCurrentProcess();
         var input = new TimedInput(engine, proc);
-        var replay = new Replay(input, cat.Spaces[spaceId], adapters, Program.ReplayOptionsOf(o, cluster));
+        var replay = new Replay(input, cat.Spaces[spaceId], adapters, Program.ReplayOptionsOf(o));
         long readTicks = 0, readAlloc = 0, procTicks = 0, procAlloc = 0, records = 0, readCpu = 0, procCpu = 0;
         var loadAverage = LoadAverage();
         GC.Collect();

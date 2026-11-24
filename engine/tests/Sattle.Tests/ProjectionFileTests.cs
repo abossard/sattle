@@ -7,7 +7,7 @@ namespace Sattle.Tests;
 public class ProjectionFileTests
 {
     static readonly Lazy<SpaceHost> Fresh = new(HostTests.NewHost);
-    static HostOptions Options => new() { Projections = Repo.Projections, Cluster = "synth" };
+    static HostOptions Options => new() { Projections = Repo.Projections};
     static string Text(string file) => File.ReadAllText(Path.Combine(Repo.Definitions, file));
     static bool IsProjectionFile(string path) => !path.EndsWith(".sattle", StringComparison.Ordinal);
     static string Deps => Fresh.Value.ProjectionFile("acme.svc.serviceDeps");
@@ -66,7 +66,7 @@ public class ProjectionFileTests
     public void Definitions_loaded_without_a_projection_source_name_each_projection_file_and_what_is_missing(bool host)
     {
         var files = Catalog.ReadDirectory(Repo.Definitions);
-        var message = host ? Assert.Throws<InvalidOperationException>(() => new SpaceHost(files, new HostOptions { Cluster = "synth" })).Message
+        var message = host ? Assert.Throws<InvalidOperationException>(() => new SpaceHost(files, new HostOptions { })).Message
             : string.Join("\n", new Catalog().Load(files).Diagnostics.Select(d => d.Message));
         var projectionFiles = files.Where(f => IsProjectionFile(f.Path)).ToList();
         Assert.NotEmpty(projectionFiles);

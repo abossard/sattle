@@ -36,7 +36,7 @@ public class PreparationTests
             edges Edge from s to d = graph("source") | graph-match (s)-[e]->(d) where labels(e) has "Edge" project s = s.id, d = d.id;
             """),
         Worlds.Space("import w.base @ 1.0.0 sha256:… as base;", """
-            source samples adapter "sattle.authoring" rows base.R;
+            source samples adapter "record" rows base.R;
             master graph master = base.ingest(samples: samples);
             graph first = base.copy(source: master);
             graph second = base.copy(source: master);
@@ -209,8 +209,8 @@ public class PreparationTests
                 | summarize n = sum(n) by h, k | project h, k, g = k, n;
             """),
         Worlds.Space("import w.base @ 1.0.0 sha256:… as base;", """
-            source nodes adapter "sattle.authoring" rows base.R;
-            source links adapter "sattle.authoring" rows base.EdgeRow;
+            source nodes adapter "record" rows base.R;
+            source links adapter "record" rows base.EdgeRow;
             master graph master = base.ingest(nodes: nodes, links: links);
             graph counts = base.count(source: master);
             """)

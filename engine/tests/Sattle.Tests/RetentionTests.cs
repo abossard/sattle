@@ -10,9 +10,9 @@ public class RetentionTests
     const long Min = 60_000_000_000;
     static readonly string[] EvidenceTypes = ["ActivityEvent", "WarningEvent", "AuditEvent"];
 
-    static Catalog Catalog(string age, bool captures = false)
+    static Catalog Catalog(string age)
     {
-        var files = Repo.DefinitionFiles(captures).Select(f => f.Path.EndsWith("acme.ops.ingest.kql", StringComparison.Ordinal) ? f with { Text = f.Text.Replace("ago(24h)", $"ago({age})") } : f).ToList();
+        var files = Repo.DefinitionFiles().Select(f => f.Path.EndsWith("acme.ops.ingest.kql", StringComparison.Ordinal) ? f with { Text = f.Text.Replace("ago(24h)", $"ago({age})") } : f).ToList();
         var cat = new Catalog(Repo.Projections);
         var res = cat.Load(files, updatePins: true);
         Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
@@ -21,12 +21,12 @@ public class RetentionTests
 
     public sealed record Result(Engine Engine, long Frontier);
 
-    static Result Run(Catalog cat, string dir, int chunk, string cluster)
+    static Result Run(Catalog cat, string dir, int chunk)
     {
         var space = cat.Spaces.Keys.Single();
         var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab", LateHorizonWindows = 3 });
-        var adapters = AdapterRegistry.Create(cluster);
-        var stats = new Replay(engine, cat.Spaces[space], adapters, new ReplayOptions { ChunkRows = chunk, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = cluster }).Run(dir);
+        var adapters = AdapterRegistry.Create(cat.Spaces[space], cat);
+        var stats = new Replay(engine, cat.Spaces[space], adapters, new ReplayOptions { ChunkRows = chunk, AdvanceEveryNs = Min, LatenessNs = Min}).Run(dir);
         return new Result(engine, stats.LastCaptureNs / Min * Min + Min + Min);   // the advance of FlushAtEnd
     }
 
@@ -35,7 +35,7 @@ public class RetentionTests
         [.. e.Master.State.Entities.Where(x => EvidenceTypes.Contains(Ids.Name(x.Type))).Select(x => (x.Id, Ids.Name(x.Type), ((InstantValue)x.Props.Items.First(k => k.Key.EndsWith("/prop:time", StringComparison.Ordinal)).Value).Ns))];
 
     static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<Result>> UnboundedRuns = new();
-    static Result Unbounded(string dir) => UnboundedRuns.GetOrAdd(dir, d => new Lazy<Result>(() => Run(Catalog("24h"), d, 2000, Repo.ClusterOf(d)))).Value;
+    static Result Unbounded(string dir) => UnboundedRuns.GetOrAdd(dir, d => new Lazy<Result>(() => Run(Catalog("24h"), d, 2000))).Value;
 
     /// <summary>An age, in milliseconds, that expires the oldest `q` of the evidence of the capture and keeps the rest (the evidence is older than the capture clock suggests, so a fixed age would keep nothing).</summary>
     static string AgeFor(string dir, double q)
@@ -49,15 +49,11 @@ public class RetentionTests
     [InlineData(0.25)] [InlineData(0.5)] [InlineData(0.9)]
     public void The_master_keeps_exactly_the_evidence_younger_than_the_age_at_the_frontier_on_the_estate(double q) => The_master_keeps_exactly_the_evidence_younger_than_the_age_at_the_frontier(Repo.Estate, q);
 
-    [FixturesTheory]
-    [InlineData(0.25)] [InlineData(0.5)] [InlineData(0.9)]
-    public void The_master_keeps_exactly_the_evidence_younger_than_the_age_at_the_frontier_on_the_fixtures(double q) => The_master_keeps_exactly_the_evidence_younger_than_the_age_at_the_frontier(Repo.Fixtures, q);
-
     static void The_master_keeps_exactly_the_evidence_younger_than_the_age_at_the_frontier(string dir, double q)
     {
         var age = AgeFor(dir, q);
         var all = Unbounded(dir);
-        var kept = Run(Catalog(age), dir, 2000, Repo.ClusterOf(dir));
+        var kept = Run(Catalog(age), dir, 2000);
         var ageNs = Lexer.DurationNs(age);
         var universe = Evidence(all.Engine); var retained = Evidence(kept.Engine);
         var expected = universe.Where(x => x.Time + ageNs > kept.Frontier).Select(x => x.Id).Order().ToList();
@@ -71,51 +67,11 @@ public class RetentionTests
         Assert.DoesNotContain(kept.Engine.Master.State.Rels, r => gone.Contains(r.Source));
     }
 
-    /// <summary>On real data, with an age that expires the older half of the evidence: the retained state does not depend on the chunk size. On generated logs every cut is compared with the reference by the Differential.</summary>
-    [FixturesTheory]
-    [InlineData(1)] [InlineData(7)] [InlineData(50)] [InlineData(100000)]
-    public void Retained_state_and_digests_do_not_depend_on_the_chunk_size_on_the_fixtures(int chunk) => Retained_state_and_digests_do_not_depend_on_the_chunk_size(Repo.Fixtures, chunk);
-
     static void Retained_state_and_digests_do_not_depend_on_the_chunk_size(string dir, int chunk)
     {
         var cat = Catalog(AgeFor(dir, 0.5));
-        var reference = Run(cat, dir, 2000, Repo.ClusterOf(dir)); var r = Run(cat, dir, chunk, Repo.ClusterOf(dir));
+        var reference = Run(cat, dir, 2000); var r = Run(cat, dir, chunk);
         Assert.Equal(reference.Engine.StateDigest(), r.Engine.StateDigest());
         Assert.Equal(Evidence(reference.Engine).Select(x => x.Id).Order(), Evidence(r.Engine).Select(x => x.Id).Order());
     }
-
-    static IEnumerable<string> CaptureDirs()
-    {
-        return Repo.CaptureDirs;
-    }
-
-    public static IEnumerable<object[]> CaptureNames() => CaptureDirs().Any() ? CaptureDirs().Select(d => new object[] { Path.GetFileName(d) }) : [[""]];
-
-    /// <summary>On the real captures: with an age that expires the older half of the evidence, what is left is exactly the evidence younger than the age at the frontier, and the digest is the same at chunk sizes 50 and 100000. Chunk size 1 of this definition variant is covered on `lab/fixtures` (`Retained_state_and_digests_do_not_depend_on_the_chunk_size_on_the_fixtures`).</summary>
-    [Trait("Category", "Capture")]
-    [CaptureTheory]
-    [MemberData(nameof(CaptureNames))]
-    public void Retention_is_batch_invariant_and_bounds_the_master_on_every_capture(string capture)
-    {
-        var dir = Path.Combine(Repo.Captures, capture);
-        var cluster = Sattle.Cli.Program.DetectCluster(dir);
-        var unbounded = CaptureRun(Catalog("24h", captures: true), dir, 100000, cluster);
-        var universe = unbounded.Evidence;
-        var cut = universe.Select(x => x.Time).Order().ToList()[universe.Count / 2];
-        var age = ((unbounded.Frontier - cut) / 1_000_000 + 1) + "ms";
-        var cat = Catalog(age, captures: true);
-        var reference = CaptureRun(cat, dir, 100000, cluster); var r = CaptureRun(cat, dir, 50, cluster);
-        Assert.Equal(reference.Digest, r.Digest);
-        Assert.Equal(universe.Where(x => x.Time + Lexer.DurationNs(age) > r.Frontier).Select(x => x.Id).Order(), r.Evidence.Select(x => x.Id).Order());
-        Assert.True(r.Evidence.Count > 0 && r.Evidence.Count < universe.Count);
-    }
-
-    /// <summary>A replay of a real capture, kept as its digest, evidence and frontier; the engine is disposed.</summary>
-    sealed record CaptureResult(string Digest, List<(string Id, string Type, long Time)> Evidence, long Frontier);
-
-    static CaptureResult CaptureRun(Catalog cat, string dir, int chunk, string cluster) => Scenarios.Gated(() =>
-    {
-        var r = Run(cat, dir, chunk, cluster);
-        using (r.Engine) return new CaptureResult(r.Engine.StateDigest(), Evidence(r.Engine), r.Frontier);
-    });
 }

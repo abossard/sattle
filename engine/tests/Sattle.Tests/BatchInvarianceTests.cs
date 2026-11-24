@@ -7,32 +7,6 @@ namespace Sattle.Tests;
 /// <summary>Batch invariance (T6) on every capture present, and the premise it rests on for identities: the order in which identity keys get bound does not change the result.</summary>
 public class BatchInvarianceTests
 {
-    static IReadOnlyList<string> Captures()
-    {
-        return Repo.CaptureDirs;
-    }
-
-    /// <summary>One row per (capture, chunk size 1 or 50), each compared with the run at chunk size 100000; a placeholder row when there are no captures (they are gitignored).</summary>
-    public static IEnumerable<object[]> CaptureChunks() => Captures().Count == 0 ? [["", 0]] : Captures().SelectMany(d => new[] { 1, 50 }.Select(c => new object[] { Path.GetFileName(d), c }));
-
-    /// <summary>T6 on every capture, with the settings of `sattle replay` (every window revisable, the cluster of the capture): chunk sizes 1 and 50 give the state digest, the graph digests and the integrated output of chunk size 100000, the integrated output of every graph equals its final state, and no identity conflicts. The chunk size 1 mismatch on the first capture was a merge case: a flow naming a pod before the pod row arrived bound the key to a provisional identity that the later row could not join.</summary>
-    [Trait("Category", "Capture")]
-    [CaptureTheory]
-    [MemberData(nameof(CaptureChunks))]
-    public void Every_capture_gives_the_same_state_digest_at_chunk_sizes_1_50_and_100000(string capture, int chunk)
-    {
-        var dir = Path.Combine(Repo.Captures, capture);
-        var reference = Scenarios.Of(dir, Scenarios.Full);
-        var r = Scenarios.Of(dir, chunk);
-        Assert.Equal(reference.StateDigest, r.StateDigest);
-        Assert.Equal(0, reference.Conflicts);
-        Assert.Equal(0, r.Conflicts);
-        Assert.Equal(reference.GraphDigests, r.GraphDigests);
-        Assert.Equal(reference.Integrated, r.Integrated);                                           // integrated output equals batch output (Quine invariant)
-        Assert.All(r.IntegratedIsFinal.Concat(reference.IntegratedIsFinal), x => Assert.True(x.Value, $"{x.Key}: the integrated output is not the final graph"));
-        Assert.True(r.MasterEntities > 100);
-    }
-
     /// <summary>An engine on the example space, for the tests below that feed it rows batch by batch.</summary>
     static Engine NewEngine()
     {
@@ -41,14 +15,14 @@ public class BatchInvarianceTests
         return new Engine(cat, cat.Spaces.Keys.Single());
     }
 
-    static string Line(string source, string at, long seq, object payload) =>
-        System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?> { ["v"] = 1, ["source"] = source, ["capturedAt"] = at, ["seq"] = seq, ["key"] = $"{source}/{seq}", ["meta"] = null, ["payload"] = payload });
+    static string Line(string type, string at, long seq, string key, object values) =>
+        System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?> { ["v"] = 1, ["source"] = "records:" + type, ["capturedAt"] = at, ["seq"] = seq, ["key"] = $"records:{type}/{seq}", ["meta"] = null, ["payload"] = new { key, values } });
 
-    static string Pod(string at, string uid, string name, long seq) => Line("kubernetes-watch", at, seq,
-        new Dictionary<string, object> { ["type"] = "ADDED", ["object"] = new Dictionary<string, object> { ["kind"] = "Pod", ["metadata"] = new Dictionary<string, object> { ["uid"] = uid, ["name"] = name, ["namespace"] = "x", ["resourceVersion"] = seq.ToString() }, ["status"] = new { phase = "Running" } } });
+    static string Pod(string at, string uid, string name, long seq) => Line("PodRow", at, seq, uid,
+        new { cluster = "synth", uid, @namespace = "x", name, phase = "Running" });
 
-    static string Flow(string at, string src, string dst, long seq) => Line("hubble", at, seq,
-        new { flow = new { time = at, verdict = "FORWARDED", source = new { @namespace = "x", cluster_name = "synth", pod_name = src }, destination = new { @namespace = "x", cluster_name = "synth", pod_name = dst } }, node_name = "n1", time = at });
+    static string Flow(string at, string src, string dst, long seq) => Line("FlowRow", at, seq, $"flow/{seq}",
+        new { time = at, cluster = "synth", verdict = "FORWARDED", srcNamespace = "x", srcPod = src, dstNamespace = "x", dstPod = dst });
 
     static string Capture(IEnumerable<string> lines)
     {
@@ -75,8 +49,8 @@ public class BatchInvarianceTests
         try
         {
             var opts = new EngineOptions { LateHorizonWindows = 1_000_000 };
-            var first = ReplayTests.Replay(a, chunk, "synth", o: opts);
-            var second = ReplayTests.Replay(b, chunk, "synth", o: opts);
+            var first = ReplayTests.Replay(a, chunk, o: opts);
+            var second = ReplayTests.Replay(b, chunk, o: opts);
             var i0 = first.Engine.Identities; var i1 = second.Engine.Identities;
             Assert.True(i1.Merges > i0.Merges, $"the order of the bindings did not change (merged {i0.Merges} against {i1.Merges}): the test would say nothing");
             Assert.Equal(0, i1.Conflicts);
@@ -170,7 +144,7 @@ public class BatchInvarianceTests
         module ds @ 1.0.0;
         import d @ 1.0.0 sha256:… as d;
         space s {
-          source a adapter "sattle.authoring" rows d.R;
+          source a adapter "record" rows d.R;
           master graph master = d.ingest(a: a);
         }
         """;

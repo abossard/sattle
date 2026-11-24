@@ -290,7 +290,7 @@ public class DraftTests
     public void A_draft_edits_a_projection_file_and_commits_it()
     {
         using var h = HostTests.NewHost();
-        new Replay(h, h.Space, h.Adapters, new ReplayOptions { Cluster = "synth" }).Run(Repo.Estate);
+        new Replay(h, h.Space, h.Adapters, new ReplayOptions { }).Run(Repo.Estate);
         int Contains() => h.Relationships("serviceTree", "Contains").Count;
         var (file, edited, before) = (Deps(h), WithoutShop(h), Contains());
         var d = h.CreateDraft(null)["draft"]!.GetValue<string>();

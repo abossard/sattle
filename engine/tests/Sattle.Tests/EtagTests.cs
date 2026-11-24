@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Sattle.Runtime;
+using Sattle.Cli;
 
 namespace Sattle.Tests;
 
@@ -7,7 +8,7 @@ namespace Sattle.Tests;
 public class EtagTests
 {
     const long Min = 60_000_000_000;
-    static HostOptions Options => new() { Projections = Repo.Projections, Cluster = "synth" };
+    static HostOptions Options => new() { Projections = Repo.Projections};
 
     static async Task<(int Status, string Tag, string Body)> Get(HttpClient http, string path, string? ifNoneMatch = null)
     {
@@ -45,7 +46,7 @@ public class EtagTests
         string[] before;
         using (var h = SpaceHost.OpenDurable(store, Sattle.Language.Catalog.ReadDirectory(Repo.Definitions), Options))
         {
-            new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 1, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" }).Run(fixture);
+            new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 1, AdvanceEveryNs = Min, LatenessNs = Min}).Run(fixture);
             before = await Tags(h, paths);
         }
         using var restarted = SpaceHost.OpenDurable(store, null, Options);

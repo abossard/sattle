@@ -25,7 +25,7 @@ public class ProcessKillTests
         }
         catch (SqliteException) { return 0; }
     }
-    static HostOptions Options => new() { Projections = Repo.Projections, Cluster = "synth" };
+    static HostOptions Options => new() { Projections = Repo.Projections};
     static (string Digest, long Seq, string Space) Of(SpaceHost h) => (h.StateDigest(), h.Seq, h.SpaceInfo().ToJsonString());
 
     [Theory]

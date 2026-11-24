@@ -12,7 +12,7 @@ public class DocumentTests
     static SpaceHost Replayed()
     {
         var h = HostTests.NewHost();
-        new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 1, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" }).Run(Fixture);
+        new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 1, AdvanceEveryNs = Min, LatenessNs = Min}).Run(Fixture);
         return h;
     }
 

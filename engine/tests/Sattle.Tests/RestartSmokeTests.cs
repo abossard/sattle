@@ -10,7 +10,7 @@ public class RestartSmokeTests
     const long Min = 60_000_000_000;
     static string Fixture => Path.Combine(Repo.Root, "engine", "tests", "Sattle.Tests", "fixtures", "deploy-health");
     static IReadOnlyList<Sattle.Language.SourceFile> Files => Sattle.Language.Catalog.ReadDirectory(Repo.Definitions);
-    static HostOptions Options => new() { Projections = Repo.Projections, Cluster = "synth" };
+    static HostOptions Options => new() { Projections = Repo.Projections};
 
     [Fact]
     public void A_space_restarts_from_its_journal_and_from_a_seal_with_the_same_digest_and_sequence()
@@ -19,7 +19,7 @@ public class RestartSmokeTests
         string digest; long seq;
         using (var h = SpaceHost.OpenDurable(store, Files, Options))
         {
-            new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 1, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" }).Run(Fixture);
+            new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 1, AdvanceEveryNs = Min, LatenessNs = Min}).Run(Fixture);
             h.Finish(); h.Seal();
             digest = h.StateDigest(); seq = h.Seq;
         }
@@ -36,7 +36,7 @@ public class RestartSmokeTests
         string digest;
         using (var h = SpaceHost.OpenDurable(store, Files, Options))
         {
-            new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 1, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" }).Run(Fixture);
+            new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 1, AdvanceEveryNs = Min, LatenessNs = Min}).Run(Fixture);
             h.Finish(); h.Seal();
             digest = h.StateDigest();
         }
@@ -54,7 +54,7 @@ public class RestartSmokeTests
     public void A_live_run_killed_and_restarted_from_its_store_ends_where_an_uninterrupted_one_does()
     {
         var events = LiveResumeTests.Arrival(Fixture, seed: 2, distance: 4);
-        var ro = new ReplayOptions { ChunkRows = 40, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth", FlushAtEnd = false };
+        var ro = new ReplayOptions { ChunkRows = 40, AdvanceEveryNs = Min, LatenessNs = Min, FlushAtEnd = false };
         string whole;
         using (var h = SpaceHost.OpenDurable(new InMemoryGraphStore(), Files, Options)) { LiveInput.Run(h, new LiveResumeTests.FakeSource(events), ro, CancellationToken.None, flushEvery: TimeSpan.FromHours(1)); whole = h.StateDigest(); }
         var store = new InMemoryGraphStore(); var killed = events.Count / 2 + 1;
@@ -72,7 +72,7 @@ public class RestartSmokeTests
         var path = Path.Combine(Path.GetTempPath(), "sattle-verify-" + Guid.NewGuid().ToString("N") + ".db");
         using var store = new SqliteGraphStore(path);
         using var h = SpaceHost.OpenDurable(store, Files, Options with { SealEvery = 8 });
-        new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 1, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" }).Run(Fixture);
+        new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 1, AdvanceEveryNs = Min, LatenessNs = Min}).Run(Fixture);
         h.Finish();
         return (path, h.StateDigest());
     }

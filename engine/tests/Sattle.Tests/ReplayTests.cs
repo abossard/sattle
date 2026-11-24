@@ -13,16 +13,15 @@ public class ReplayTests
     public sealed record Run(Engine Engine, ReplayStats Stats, CanvasExport Export, IReadOnlyList<ISourceAdapter> Adapters);
 
     /// <summary>A replay of `dir` as `sattle replay` builds it: an engine with its export. On the definitions `sattle replay` reads for `dir`, or on `cat` (a test's own definitions); up to the capture time `until`, or all of it.</summary>
-    public static Run Replay(string dir, int chunk = 2000, string cluster = "", long advanceEvery = Min, long lateness = Min, EngineOptions? o = null, Catalog? cat = null, long? until = null)
+    public static Run Replay(string dir, int chunk = 2000, long advanceEvery = Min, long lateness = Min, EngineOptions? o = null, Catalog? cat = null, long? until = null)
     {
         if (cat is null) { cat = Repo.CatalogFor(dir, out var res); Assert.Empty(res.Diagnostics); }
         var space = cat.Spaces.Keys.Single();
-        if (cluster == "") cluster = "synth";
-        var adapters = AdapterRegistry.Create(cluster);
+        var adapters = AdapterRegistry.Create(cat.Spaces[space], cat);
         Assert.Empty(AdapterRegistry.Verify(cat, cat.Spaces[space], adapters));
         var engine = new Engine(cat, space, o);
         var export = new CanvasExport(engine, cat); export.Attach();
-        var replay = new Replay(engine, cat.Spaces[space], adapters, new ReplayOptions { ChunkRows = chunk, AdvanceEveryNs = advanceEvery, LatenessNs = lateness, Cluster = cluster, UntilNs = until });
+        var replay = new Replay(engine, cat.Spaces[space], adapters, new ReplayOptions { ChunkRows = chunk, AdvanceEveryNs = advanceEvery, LatenessNs = lateness, UntilNs = until });
         var stats = replay.Run(dir);
         return new Run(engine, stats, export, adapters);
     }
@@ -32,9 +31,6 @@ public class ReplayTests
 
     [Fact]
     public void The_estate_replays_into_a_master_graph_and_a_service_tree() => A_capture_replays_into_a_master_graph_and_a_service_tree(Repo.Estate);
-
-    [FixturesFact]
-    public void Fixtures_replay_into_a_master_graph_and_a_service_tree() => A_capture_replays_into_a_master_graph_and_a_service_tree(Repo.Fixtures);
 
     static void A_capture_replays_into_a_master_graph_and_a_service_tree(string dir)
     {
@@ -51,9 +47,6 @@ public class ReplayTests
 
     [Fact]
     public void T7_replay_is_deterministic_same_inputs_same_patches_and_digests_on_the_estate() => T7_replay_is_deterministic_same_inputs_same_patches_and_digests(Repo.Estate);
-
-    [FixturesFact]
-    public void T7_replay_is_deterministic_same_inputs_same_patches_and_digests_on_the_fixtures() => T7_replay_is_deterministic_same_inputs_same_patches_and_digests(Repo.Fixtures);
 
     static void T7_replay_is_deterministic_same_inputs_same_patches_and_digests(string dir)
     {
@@ -122,10 +115,6 @@ public class ReplayTests
         }
         Assert.True(windows > 0, "the scenario writes no telemetry window: the claim says nothing here");
     }
-
-    /// <summary>The same on `lab/fixtures`, without a pin: the data differ per machine.</summary>
-    [FixturesFact]
-    public void The_lab_fixtures_end_in_one_state_digest_at_chunk_sizes_1_50_and_100000() => One_state_at_chunk_sizes_1_50_and_100000(Repo.Fixtures);
 
     static void One_state_at_chunk_sizes_1_50_and_100000(string dir)
     {

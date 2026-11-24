@@ -9,53 +9,29 @@ public static class Repo
     public static string Definitions => Path.Combine(Root, "engine", "definitions");
     /// <summary>The projection languages the tests read: the registration of the CLI, the one place that names a language. An engine test names none.</summary>
     public static IProjectionSource Projections => Sattle.Cli.Program.Projections;
-    /// <summary>The folder of the local data (`fixtures`, `captures`): `lab` of the repository, or the folder the environment variable SATTLE_LAB names. With an empty folder the tests run as on a fresh clone, where neither is there.</summary>
-    static string Lab => Environment.GetEnvironmentVariable("SATTLE_LAB") is { Length: > 0 } folder ? folder : Path.Combine(Root, "lab");
-    /// <summary>The scrubbed excerpt of a real capture. Its data files are generated locally and are not in the repository.</summary>
-    public static string Fixtures => Path.Combine(Lab, "fixtures");
     /// <summary>The synthetic estate: a capture with invented names only, in the repository.</summary>
     public static string Estate => Path.Combine(Root, "engine", "tests", "Sattle.Tests", "fixtures", "estate");
-    public static string Captures => Path.Combine(Lab, "captures");
-    /// <summary>The real captures, oldest first (`sattle replay latest` takes the last).</summary>
-    public static IReadOnlyList<string> CaptureDirs => Sattle.Cli.Program.Captures(Captures);
 
-    /// <summary>The local space binding for the real captures (gitignored, next to them): the tracked `acme.space.sattle` has invented workload arguments, this file has the real ones. Null when it is not there.</summary>
-    public static string? Overlay => File.Exists(Path.Combine(Captures, "space-overlay.sattle")) ? Path.Combine(Captures, "space-overlay.sattle") : null;
+    /// <summary>The definitions.</summary>
+    public static List<SourceFile> DefinitionFiles() => DefinitionFilesFor(null);
 
-    /// <summary>The space module `sattle replay DIR` puts in place of the tracked one for `dir`: the local overlay for the real captures (null when absent), none otherwise.</summary>
-    public static string? OverlayFor(string dir) => IsCapture(dir) ? Overlay : null;
-
-    public static bool IsCapture(string dir) => Path.GetFullPath(dir).StartsWith(Path.GetFullPath(Captures), StringComparison.Ordinal);
-
-    /// <summary>The definitions, with the local overlay replacing `acme.space` when `forCaptures` and the overlay exists.</summary>
-    public static List<SourceFile> DefinitionFiles(bool forCaptures) => DefinitionFilesWith(forCaptures ? Overlay : null);
-
-    /// <summary>The definitions `sattle replay DIR` reads for `dir`: with the overlay it applies.</summary>
-    public static List<SourceFile> DefinitionFilesFor(string dir, string? folder = null) =>
-        OverlayFor(dir) is { } overlay ? DefinitionFilesWith(overlay, folder)
-        : Sattle.Cli.Program.ArgumentsOf(dir) is { } arguments ? Sattle.Cli.Program.WithArguments(DefinitionFilesWith(null, folder), arguments)      // a capture that names its workload (`space-arguments.json`, as `lab/fixtures/build.sh` writes it)
-        : DefinitionFilesWith(null, folder);
-
-    static List<SourceFile> DefinitionFilesWith(string? overlay, string? folder = null)
+    /// <summary>The definitions `sattle replay DIR` reads for `dir`: with the arguments file of the directory when it has one (`space-arguments.json`).</summary>
+    public static List<SourceFile> DefinitionFilesFor(string? dir, string? folder = null)
     {
         var files = Catalog.ReadDirectory(folder ?? Definitions).ToList();
-        if (overlay is not null) { var i = files.FindIndex(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal)); files[i] = files[i] with { Text = File.ReadAllText(overlay) }; }
-        return files;
+        return dir is not null && Sattle.Cli.Program.ArgumentsOf(dir) is { } arguments ? Sattle.Cli.Program.WithArguments(files, arguments) : files;
     }
 
-    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<(Catalog Cat, LoadResult Result)>> WithOverlay = new();
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<(Catalog Cat, LoadResult Result)>> WithArguments = new();
 
-    /// <summary>The checked catalog for replaying `dir`: the examples, or with the overlay `sattle replay` applies to it (the local overlay for the real captures when it exists, the arguments file of the directory when it has one).</summary>
+    /// <summary>The checked catalog for replaying `dir`: the examples, or with the arguments file of the directory when it has one.</summary>
     public static Catalog CatalogFor(string dir, out LoadResult result)
     {
-        if (OverlayFor(dir) is null && Sattle.Cli.Program.ArgumentsOf(dir) is null) return LoadExamples(out result);
-        var loaded = WithOverlay.GetOrAdd(Path.GetFullPath(dir), _ => new(() => { var cat = new Catalog(Projections); var res = cat.Load(DefinitionFilesFor(dir), updatePins: true); return (cat, res); })).Value;
+        if (Sattle.Cli.Program.ArgumentsOf(dir) is null) return LoadExamples(out result);
+        var loaded = WithArguments.GetOrAdd(Path.GetFullPath(dir), _ => new(() => { var cat = new Catalog(Projections); var res = cat.Load(DefinitionFilesFor(dir), updatePins: true); return (cat, res); })).Value;
         result = loaded.Result; return loaded.Cat;
     }
 
-    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> Clusters = new();
-    /// <summary>The cluster name the records of a capture carry (read from its Hubble flows, as `sattle replay` does).</summary>
-    public static string ClusterOf(string dir) => Clusters.GetOrAdd(dir, d => Sattle.Cli.Program.DetectCluster(d));
     static string FindRoot()
     {
         var d = new DirectoryInfo(AppContext.BaseDirectory);

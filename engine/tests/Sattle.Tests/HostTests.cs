@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using Sattle.Core;
 using Sattle.Language;
 using Sattle.Runtime;
+using Sattle.Cli;
 
 namespace Sattle.Tests;
 
@@ -17,7 +18,7 @@ public class HostTests
     public static SpaceHost NewHost() => NewHost(lateHorizon: 3);
 
     /// <summary>The same with another late horizon: 1,000,000 windows for a recorded input whose every window stays revisable, as `sattle replay` sets it.</summary>
-    public static SpaceHost NewHost(int? lateHorizon) => new(Shared.Value.Files, new HostOptions { Projections = Repo.Projections, Cluster = "synth", LateHorizonWindows = lateHorizon }, Shared.Value.Loaded);
+    public static SpaceHost NewHost(int? lateHorizon) => new(Shared.Value.Files, new HostOptions { Projections = Repo.Projections, LateHorizonWindows = lateHorizon }, Shared.Value.Loaded);
 
     /// <summary>Services 0 to 2, flows pod-0 to pod-1 with 10 percent drops for 3 windows, then none: the health status degrades and recovers.</summary>
     internal static void Drive(SpaceHost h, int windows = 9)
@@ -139,7 +140,7 @@ public class HostTests
         Assert.Equal(masterHead, Head(h, "master"));
         Assert.Equal("degraded", Status());
         // the result equals a fresh engine with the new definition fed the same inputs
-        using var fresh = new SpaceHost(Catalog.ReadDirectory(Repo.Definitions).Select(f => f.Path.EndsWith(File) ? f with { Text = edited } : f).ToList(), new HostOptions { Projections = Repo.Projections, Cluster = "synth" });
+        using var fresh = new SpaceHost(Catalog.ReadDirectory(Repo.Definitions).Select(f => f.Path.EndsWith(File) ? f with { Text = edited } : f).ToList(), new HostOptions { Projections = Repo.Projections});
         Drive(fresh);
         Assert.Equal(fresh.StateDigest(), h.StateDigest());
         AssertHistoryGivesTheSnapshot(h, "serviceTree");
@@ -409,7 +410,7 @@ public class HostTests
     [Fact]
     public async Task A_subscriber_that_applies_every_telemetry_batch_holds_the_windows_the_range_read_answers()
     {
-        using var h = new SpaceHost(EstateTests.Files(demo: false), new HostOptions { Projections = Repo.Projections, Cluster = "synth", LateHorizonWindows = 3 });
+        using var h = new SpaceHost(EstateTests.Files(demo: false), new HostOptions { Projections = Repo.Projections, LateHorizonWindows = 3 });
         var sub = h.Subscribe(["master"], false, null);
         var replica = new SortedDictionary<string, double>(StringComparer.Ordinal);
         var reading = Task.Run(async () =>
@@ -417,7 +418,7 @@ public class HostTests
             await foreach (var text in sub.Messages.Reader.ReadAllAsync())
                 if (JsonNode.Parse(text)! is { } m && m["type"]!.GetValue<string>() == "telemetry") Apply(replica, m["batch"]!);
         });
-        new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 50, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" }).Run(EstateTests.EstateDir);
+        new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 50, AdvanceEveryNs = Min, LatenessNs = Min}).Run(EstateTests.EstateDir);
         h.Unsubscribe(sub);
         await reading;
         Assert.True(h.Engine.Identities.Merges > 0, "no identity merged on the estate");          // the protocol does not serve the number of merges: the one read inside the engine

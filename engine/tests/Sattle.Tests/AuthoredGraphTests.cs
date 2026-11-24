@@ -50,8 +50,8 @@ public class AuthoredGraphTests
         import t.base @ 1.0.0 sha256:… as base;
         import t.view @ 1.0.0 sha256:… as view;
         space s {
-          source items adapter "sattle.authoring" rows base.CapabilityRow;
-          source obs adapter "sattle.authoring" rows base.RealizesRow;
+          source items adapter "record" rows base.CapabilityRow;
+          source obs adapter "record" rows base.RealizesRow;
           {{graphs}}
         }
         """;
@@ -71,7 +71,7 @@ public class AuthoredGraphTests
 
     static SpaceHost Host()
     {
-        var h = new SpaceHost(Files(), new HostOptions { Projections = Repo.Projections, Cluster = "synth" });
+        var h = new SpaceHost(Files(), new HostOptions { Projections = Repo.Projections});
         var rw = new RowWriter(h.RowLayout("items"), h.Interner);
         foreach (var k in new[] { "k1", "k2" }) { rw.Begin(); rw.Text("capId", k); rw.Text("name", "a-" + k); rw.Text("owner", "d"); rw.Text("status", "live"); }
         h.Ingest("items", rw.Build()!, 1);
@@ -172,7 +172,7 @@ public class AuthoredGraphTests
             "link noteKeyIsName from k to n with (rule = \"observed\", confidence = 1.0) = obs | project k = identity(\"noteKey\", capId), n = identity(\"noteName\", service);\n",
             "nodes Note on n with (rule = \"notes\", description = \"a note per item, by key and by name\") = items | project n = identity(\"noteKey\", capId);\n"
             + "nodes Note on n with (rule = \"notes\") = items | project n = identity(\"noteName\", name);\n");
-        using var h = new SpaceHost(files, new HostOptions { Projections = Repo.Projections, Cluster = "synth" });
+        using var h = new SpaceHost(files, new HostOptions { Projections = Repo.Projections});
         int Notes() => h.Entities("authored", "Note").Count;
         var rw = new RowWriter(h.RowLayout("items"), h.Interner);
         rw.Begin(); rw.Text("capId", "k1"); rw.Text("name", "a-k1"); rw.Text("owner", "d"); rw.Text("status", "live");

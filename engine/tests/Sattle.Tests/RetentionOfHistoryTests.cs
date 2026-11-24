@@ -11,8 +11,8 @@ public class RetentionOfHistoryTests
     const long Min = 60_000_000_000;
     static SpaceHost Fed(int patches, int events)
     {
-        var h = new SpaceHost(EstateTests.Files(demo: false), new HostOptions { Projections = Repo.Projections, Cluster = "synth", RetainPatches = patches, RetainEvents = events });
-        new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 1, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" }).Run(EstateTests.EstateDir);
+        var h = new SpaceHost(EstateTests.Files(demo: false), new HostOptions { Projections = Repo.Projections, RetainPatches = patches, RetainEvents = events });
+        new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 1, AdvanceEveryNs = Min, LatenessNs = Min}).Run(EstateTests.EstateDir);
         return h;
     }
 

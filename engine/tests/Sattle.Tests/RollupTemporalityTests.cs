@@ -32,7 +32,7 @@ public class RollupTemporalityTests
                 module s @ 1.0.0;
                 import t @ 1.0.0 sha256:… as t;
                 space s {
-                  source a adapter "sattle.authoring" rows t.R;
+                  source a adapter "record" rows t.R;
                   master graph master = t.ingest(a: a);
                   graph view = t.view(master: master);
                 }

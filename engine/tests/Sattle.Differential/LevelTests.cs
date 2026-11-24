@@ -70,9 +70,9 @@ public class LevelTests
             Worlds.Kql("w", "ingest", Ingest),
             Worlds.Kql("w", "level", Level(oneImage)),
             Worlds.Space("import w @ 1.0.0 sha256:… as base;", """
-                  source items adapter "sattle.authoring" rows base.ItemRow;
-                  source belongs adapter "sattle.authoring" rows base.BelongsRow;
-                  source calls adapter "sattle.authoring" rows base.CallRow;
+                  source items adapter "record" rows base.ItemRow;
+                  source belongs adapter "record" rows base.BelongsRow;
+                  source calls adapter "record" rows base.CallRow;
                   master graph master = base.ingest(items: items, belongs: belongs, calls: calls);
                   graph level = base.level(master: master);
                 """),

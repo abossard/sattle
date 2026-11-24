@@ -17,7 +17,6 @@ public sealed record ReplayOptions
     public bool FlushAtEnd { get; init; } = true;
     /// <summary>Capture seconds per wall second. 0 means as fast as possible.</summary>
     public double Speed { get; init; }
-    public string Cluster { get; init; } = "";
     public long? UntilNs { get; init; }
 }
 
@@ -36,17 +35,10 @@ public sealed class ReplayStats
 /// <summary>Reads a capture directory (or lab/fixtures) in capture-time order and feeds the engine: adapters make rows, chunks go in order, explicit Advance controls are inserted at data-defined positions.</summary>
 public static class CaptureReader
 {
-    static bool IsMirror(string dir, string file)
-    {
-        var rel = Path.GetRelativePath(dir, file);
-        return rel.StartsWith("eventhub", StringComparison.Ordinal) && Path.GetFileNameWithoutExtension(file) is "sattle-ingest" or "sattle-hubble";
-    }
-
     /// <summary>All envelopes of the capture, merged by (capturedAt, file order, line). Streaming: one line per file in memory. An envelope is valid until the next one is read (`Envelope`).</summary>
     public static IEnumerable<Envelope> Read(string dir)
     {
         var files = Directory.EnumerateFiles(dir, "*.ndjson", SearchOption.AllDirectories)
-            .Where(f => !IsMirror(dir, f)) // the hubs sattle-ingest and sattle-hubble mirror the direct sources; the hubs written by Azure (sattle-activity, sattle-aks) are sources of their own
             .Order(StringComparer.Ordinal).ToList();
         var its = files.Select((f, i) => (Index: i, It: ReadFile(f).GetEnumerator())).ToList();
         try

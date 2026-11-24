@@ -455,17 +455,17 @@
   "space": {
     "name": "azureTutorial",
     "sources": [
-      {"name": "resources", "adapter": "azure.resource-graph", "rows": "ResourceRow"},
-      {"name": "metrics", "adapter": "azure.metrics", "rows": "ResourceMetricRow"},
-      {"name": "network", "adapter": "azure.resource-graph", "rows": "AzureNetworkRow"},
-      {"name": "pods", "adapter": "kubernetes.list-watch", "rows": "PodRow"},
-      {"name": "deployments", "adapter": "kubernetes.list-watch", "rows": "DeploymentRow"},
-      {"name": "services", "adapter": "kubernetes.list-watch", "rows": "ServiceRow"},
-      {"name": "kubeNodes", "adapter": "kubernetes.list-watch", "rows": "NodeRow"},
-      {"name": "kubeLinks", "adapter": "kubernetes.list-watch", "rows": "KubernetesLinkRow"},
-      {"name": "selections", "adapter": "kubernetes.list-watch", "rows": "SelectsRow"},
-      {"name": "endpoints", "adapter": "kubernetes.list-watch", "rows": "EndpointRow"},
-      {"name": "flows", "adapter": "hubble.observe", "rows": "FlowRow"}
+      {"name": "resources", "adapter": "record", "rows": "ResourceRow"},
+      {"name": "metrics", "adapter": "record", "rows": "ResourceMetricRow"},
+      {"name": "network", "adapter": "record", "rows": "AzureNetworkRow"},
+      {"name": "pods", "adapter": "record", "rows": "PodRow"},
+      {"name": "deployments", "adapter": "record", "rows": "DeploymentRow"},
+      {"name": "services", "adapter": "record", "rows": "ServiceRow"},
+      {"name": "kubeNodes", "adapter": "record", "rows": "NodeRow"},
+      {"name": "kubeLinks", "adapter": "record", "rows": "KubernetesLinkRow"},
+      {"name": "selections", "adapter": "record", "rows": "SelectsRow"},
+      {"name": "endpoints", "adapter": "record", "rows": "EndpointRow"},
+      {"name": "flows", "adapter": "record", "rows": "FlowRow"}
     ],
     "graphs": [
       {

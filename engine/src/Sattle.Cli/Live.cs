@@ -53,7 +53,7 @@ static class Live
     }
 
     /// <summary>The live input of `serve --live`, run under the stop state machine (`LiveInput.RunUntilStopped`): Ctrl-C, SIGTERM or `--seconds` stop it, and its end stops the server. It prints the counts, the position and the state digest when it stopped; the server waits for that before the process ends.</summary>
-    public static void Run(SpaceHost host, Program.Options o, string cluster, Microsoft.Extensions.Hosting.IHostApplicationLifetime lifetime)
+    public static void Run(SpaceHost host, Program.Options o, Microsoft.Extensions.Hosting.IHostApplicationLifetime lifetime)
     {
         var hub = o.Get("hub") ?? "sattle-ingest";
         var outDir = o.Get("live-out") ?? Path.Combine("out", "live-" + DateTime.UtcNow.ToString("yyyyMMddTHHmmss"));
@@ -78,7 +78,7 @@ static class Live
                 ["lag"] = bus?.Lag is { } lag ? new JsonObject { ["events"] = lag.Events.ToString(System.Globalization.CultureInfo.InvariantCulture), ["seconds"] = lag.Seconds.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) } : null,
             };
             // the ready line comes after the first read, when the link to the hub is open: a forwarder started on it is not missed
-            return LiveInput.Run(host, source, Program.ReplayOptionsOf(o, cluster), ct, record,
+            return LiveInput.Run(host, source, Program.ReplayOptionsOf(o), ct, record,
                 ready: () => { retrying = null; Console.WriteLine("live: " + (bus?.Start ?? "following " + inputPath)); },
                 retry: (e, n) =>
                 {
@@ -89,6 +89,6 @@ static class Live
         });
         Console.WriteLine($"live stopped after {(DateTimeOffset.UtcNow - started).TotalSeconds:F0} s ({reason}): {counts.Consumed:N0} events, {counts.Duplicates} duplicate(s), {counts.Rejected} rejected, position {host.SourcePosition("eventhub:" + hub)}");
         Console.WriteLine($"state digest {host.StateDigest()}");
-        Console.WriteLine($"replay with: sattle replay {outDir} --no-flush --late-horizon 3 --cluster {cluster}   (add the same --advance-every and --lateness if the live run set them)");
+        Console.WriteLine($"replay with: sattle replay {outDir} --no-flush --late-horizon 3   (add the same --advance-every and --lateness if the live run set them)");
     }
 }

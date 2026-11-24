@@ -24,7 +24,6 @@ public sealed class HostError(string code, string message, int status = 422, Jso
 public sealed record HostOptions
 {
     public string Tenant { get; init; } = "lab";
-    public string Cluster { get; init; } = "lab";
     /// <summary>Closed windows a Group keeps revisable behind the frontier (the engine's late horizon). 3 for a live source, which must bound its state; a recorded input is finite and is served as `replay` runs it (no late horizon), so serving a capture gives the replay result. Null is no late horizon. It is part of what a run computes, so it is stored in the journal header and in every seal.</summary>
     public int? LateHorizonWindows { get; init; } = 3;
 
@@ -98,7 +97,7 @@ public abstract record EngineInput
                     case Entry.Progress g: yield return new Progress(g.Source, g.Until, g.Seq); break;
                     case Entry.Loss l: yield return new Loss(l.Time, l.Count, l.Reason); break;
                     case Entry.LiveStart start: live = new Replay(collected, space, adapters, start.Options); break;
-                    case Entry.Envelope e: { using var env = CaptureReader.Parse(e.Body, "eventhub:" + e.Source, 0)!; live!.Process(env, pace: false); break; }
+                    case Entry.Envelope e: { using var env = CaptureReader.Parse(e.Body, "live:" + e.Source, 0)!; live!.Process(env, pace: false); break; }
                     case Entry.Flush: live!.FlushPending(); break;
                 }
                 for (taken = collected.Take(), next = 0; next < taken.Count; next++) yield return taken[next];
@@ -232,7 +231,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         others.AddRange(files.Where(f => !sources.Values.Any(m => m.Path == f.Path)));
         spaceId = options.SpaceName is { } sn ? cat.Spaces.Keys.First(k => Ids.Name(k) == sn) : cat.Spaces.Keys.First();
         Catalog = cat;
-        Adapters = AdapterRegistry.Create(options.Cluster, cat.Spaces[spaceId], cat);
+        Adapters = AdapterRegistry.Create(cat.Spaces[spaceId], cat);
         var bad = AdapterRegistry.Verify(cat, cat.Spaces[spaceId], Adapters);
         if (bad.Count > 0) throw new InvalidOperationException(string.Join("\n", bad));
         catalogHistory.AddRange(cat.Log.Commits.Select(c => c.Patch));
@@ -300,7 +299,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         if (kept is not null) return kept;
         if (journal is null) throw new HostError("InputsNotRetained", "the inputs of this space are beyond the row cap and it has no journal to read them from; activating a changed definition needs a restart", 422);
         var entries = journal.JournalRead(0).Take((int)Math.Min(journalPos, int.MaxValue)).Skip(1).Select(text => Entry.Parse(text, RowLayout, interner));
-        return EngineInput.Derive(entries, Space, AdapterRegistry.Create(options.Cluster, Space, Catalog), RowLayout, interner, WantsProgress);
+        return EngineInput.Derive(entries, Space, AdapterRegistry.Create(Space, Catalog), RowLayout, interner, WantsProgress);
     }
 
     /// <summary>A fresh engine for a candidate catalog, given every input so far, or as many as hold `rowLimit` rows. Used by a definition commit and by a preview.</summary>
@@ -340,7 +339,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         {
             var given = files ?? throw new ArgumentException("definitions are needed to start a new journal");
             var host = new SpaceHost(given, options, LoadDefinitions(given, options.Projections), store, Phase.Running, 0, null);
-            j.JournalAppend(new Entry.Header(options.Tenant, options.LateHorizonWindows, options.Cluster, host.Space.Name, host.Mode, host.DefinitionFiles()).Text(host.interner));
+            j.JournalAppend(new Entry.Header(options.Tenant, options.LateHorizonWindows, host.Space.Name, host.Mode, host.DefinitionFiles()).Text(host.interner));
             host.journalPos = 1;
             return host;
         }
@@ -357,7 +356,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         }
         var entries = j.JournalRead().ToList();
         var h = (Entry.Header)Entry.Parse(entries[0], _ => throw new InvalidDataException("the journal does not start with its header"), new Interner());
-        var restored = new SpaceHost(h.Files, options with { Tenant = h.Tenant, LateHorizonWindows = h.LateHorizon, Cluster = h.Cluster, SpaceName = h.Space }, LoadDefinitions(h.Files, options.Projections), store, Phase.Replaying, 0, null);
+        var restored = new SpaceHost(h.Files, options with { Tenant = h.Tenant, LateHorizonWindows = h.LateHorizon, SpaceName = h.Space }, LoadDefinitions(h.Files, options.Projections), store, Phase.Replaying, 0, null);
         restored.journalPos = 1;
         var check = options.VerifyJournal ? j.SealLatest() : null;
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -417,7 +416,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         lock (Gate)
         {
             if (live is null) throw new InvalidOperationException("the live input has not been started");
-            using var env = CaptureReader.Parse(text, "eventhub:" + source, 0);
+            using var env = CaptureReader.Parse(text, "live:" + source, 0);
             if (env is null || (env.Key is { } key && liveKeys.Contains(key) && !(Adapters.FirstOrDefault(x => x.Handles(env.Source)) is IRedelivery again && again.Counts(env))))
             {
                 Accept(new Entry.Skipped(source, position));
@@ -437,7 +436,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
 
     void LiveApply(string source, string text, string position)
     {
-        using var own = parsedLive is null ? CaptureReader.Parse(text, "eventhub:" + source, 0)! : null;
+        using var own = parsedLive is null ? CaptureReader.Parse(text, "live:" + source, 0)! : null;
         var env = parsedLive ?? own!;
         if (env.Key is { } key && liveKeys.Add(key)) { liveKeyOrder.Enqueue(key); if (liveKeyOrder.Count > LiveKeyWindow) liveKeys.Remove(liveKeyOrder.Dequeue()); }
         sourcePositions[source] = position;
@@ -477,7 +476,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             var meta = new JsonObject
             {
                 ["position"] = journalPos, ["format"] = SealFormat, ["build"] = BuildId, ["kernel"] = Kernel.CompiledDigest, ["digest"] = Engine.StateDigest(), ["catalogDigest"] = Catalog.Graph.Digest(), ["generation"] = generation,
-                ["tenant"] = options.Tenant, ["lateHorizon"] = options.LateHorizonWindows, ["cluster"] = options.Cluster, ["space"] = Space.Name, ["mode"] = Mode, ["seq"] = Seq,
+                ["tenant"] = options.Tenant, ["lateHorizon"] = options.LateHorizonWindows, ["space"] = Space.Name, ["mode"] = Mode, ["seq"] = Seq,
                 ["live"] = liveOptions,
                 ["sources"] = Entry.FilesText(DefinitionFiles()),
                 ["heads"] = new JsonObject(Engine.Graphs.Select(g => KeyValuePair.Create(g.Name, (JsonNode?)g.Head))),
@@ -501,7 +500,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             var sw = System.Diagnostics.Stopwatch.StartNew();
             var snapshot = StateSnapshot.Open(seal.Data);
             var loadMs = sw.ElapsedMilliseconds;
-            host = new SpaceHost(files, options with { Tenant = m["tenant"]!.GetValue<string>(), LateHorizonWindows = HostOptions.StoredLateHorizon(m), Cluster = m["cluster"]!.GetValue<string>(), SpaceName = m["space"]!.GetValue<string>() }, LoadDefinitions(files, options.Projections), store, Phase.Replaying, m["generation"]!.GetValue<int>(), snapshot.Texts);
+            host = new SpaceHost(files, options with { Tenant = m["tenant"]!.GetValue<string>(), LateHorizonWindows = HostOptions.StoredLateHorizon(m), SpaceName = m["space"]!.GetValue<string>() }, LoadDefinitions(files, options.Projections), store, Phase.Replaying, m["generation"]!.GetValue<int>(), snapshot.Texts);
             if (host.Catalog.Graph.Digest() != m["catalogDigest"]!.GetValue<string>()) { rejected = "the definitions give another catalog than the one sealed"; host.Dispose(); return null; }
             if (m["live"]?.GetValue<string>() is { } liveJson) host.Apply(new Entry.LiveStart(Entry.ParseOptions(liveJson)));
             var root = host.StateRootOf();
@@ -530,7 +529,6 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     public string RestoreSummary() => Restart is not { } r ? "started new" : r.FromSeal
         ? $"loaded from the seal at journal entry {r.SealPosition}: state digest and catalog digest checked against the seal; {r.SealedRevisions:N0} revisions of {Engine.Graphs.Count} graphs came from the seal and were not recomputed; replayed the {r.EntriesReplayed:N0} entries after it and recomputed {r.Recomputed:N0} revisions, each compared with the stored log; the {r.SealPosition:N0} entries before the seal were not read (--verify-journal replays and checks them)"
         : $"replayed all {r.EntriesReplayed + 1:N0} journal entries and recomputed {r.Recomputed:N0} revisions of {Engine.Graphs.Count} graphs, each compared with the stored log" + (r.SealChecked ? $"; the state at the seal (entry {r.SealPosition}) equals the seal's digest" : "");
-    public string Cluster => options.Cluster;
 
     /// <summary>Applies the entries read back from the journal, then leaves `Replaying` for `then` (or `Finished`, if the entries end the input). With `verifyDigest`: the state after entry `verifyAt` must have that digest. Returns the revisions recomputed and compared with the stored log, the sum of the heads, and whether the digest was checked.</summary>
     (long Recomputed, long Verified, bool SealChecked) Recover(IEnumerable<string> entries, Phase then, long verifyAt, string? verifyDigest)

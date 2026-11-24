@@ -40,7 +40,7 @@ public class CheckerTests
             import t @ 1.0.0 sha256:… as t;
             import v @ 1.0.0 sha256:… as v;
             space s {
-              source a adapter "sattle.authoring" rows t.R;
+              source a adapter "record" rows t.R;
               master graph master = t.ingest(a: a);
               {{space}}
             }
@@ -216,20 +216,6 @@ public class CheckerTests
         Assert.True(errors.Count == 0, string.Join("; ", errors.Select(e => e.ToString())));
         var refused = Assert.Throws<InvalidOperationException>(() => new Engine(catalog, catalog.Spaces.Keys.Single()));
         Assert.Contains("no source feeds", refused.Message, StringComparison.Ordinal);
-    }
-
-    /// <summary>Def. 7.15: authored rows come when someone writes them, so their source does not report and nothing it feeds is ever covered. A fill of such a property is refused when the space is activated; the same definitions over a source that reports are accepted.</summary>
-    [Theory]
-    [InlineData("sattle.authoring", "authored data records no progress")]
-    [InlineData("test.reporting", null)]
-    public void A_fill_of_a_property_that_an_authored_source_feeds_is_refused_at_activation(string adapter, string? refusal)
-    {
-        var files = View(Quiet("telemetry_filled(\"master\", 3m, 2m, 0)", Said));
-        files = [.. files.Select(f => f.Path == "s.sattle" ? f with { Text = f.Text.Replace("source a adapter \"sattle.authoring\"", $"source a adapter \"{adapter}\"") } : f)];
-        var (catalog, errors) = Load(files);
-        Assert.True(errors.Count == 0, string.Join("; ", errors.Select(e => e.ToString())));
-        if (refusal is null) { using var engine = new Engine(catalog, catalog.Spaces.Keys.Single()); Assert.True(engine.WantsProgress); }
-        else Assert.Contains(refusal, Assert.Throws<InvalidOperationException>(() => new Engine(catalog, catalog.Spaces.Keys.Single())).Message, StringComparison.Ordinal);
     }
 
     /// <summary>A Match reads the properties its own projection uses. One checker serves every projection of a module and keeps its demand set; before, a Match also read what a same-named operator of an earlier projection demanded.</summary>

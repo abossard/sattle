@@ -48,7 +48,7 @@ wait_for() {
 }
 
 echo "1/4 engine: serving the estate on port $port at speed $speed (log $logs/engine.log)"
-dotnet "$dll" serve "$root/engine/tests/Sattle.Tests/fixtures/estate" --cluster synth --port "$port" --speed "$speed" > "$logs/engine.log" 2>&1 &
+dotnet "$dll" serve "$root/engine/tests/Sattle.Tests/fixtures/estate" --port "$port" --speed "$speed" > "$logs/engine.log" 2>&1 &
 engine_pid=$!
 wait_for "$logs/engine.log" "serving http" "$engine_pid" 90
 echo "    serving; the replay of 24 minutes takes about $(( 24 * 60 / speed )) s"

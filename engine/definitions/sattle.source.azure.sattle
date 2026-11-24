@@ -6,6 +6,8 @@ rows ResourceRow { id: Text; name: Text; type: Text; location?: Text; resourceGr
                    address?: Text; linkedId?: Text; clientId?: Text; principalId?: Text; scope?: Text; }
 /// Activity Log events (management API EventData). One row per event.
 rows ActivityRow { eventId: Text; time: Instant; resourceId: Text; operation: Text; status: Text; caller?: Text; }
+/// The same row from the Activity Log diagnostic setting: a source of its own.
+rows DiagnosticActivityRow { eventId: Text; time: Instant; resourceId: Text; operation: Text; status: Text; caller?: Text; }
 /// One AKS audit record (category kube-audit-admin of the cluster diagnostic setting), one row per completed request.
 rows AuditRow { eventId: Text; time: Instant; verb: Text; resource: Text; namespace?: Text; name?: Text; user?: Text; code?: Integer; }
 /// One tuple of a VNet flow log (Network Watcher, format version 2). time is the tuple's event time. state is B (begin), C (continue), E (end) or D (denied); packets and bytes count source to destination, the Back columns the reverse direction.

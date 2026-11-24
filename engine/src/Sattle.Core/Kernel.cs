@@ -37,7 +37,7 @@ public static class Ids
         BooleanValue b => b.B ? "~btrue" : "~bfalse",
         _ => "~null",
     };
-    /// <summary>Last path segment name of a definition id, e.g. d:m/entity:Pod gives Pod.</summary>
+    /// <summary>Last path segment name of a definition id, e.g. d:m/entity:Item gives Item.</summary>
     public static string Name(string id) { var i = id.LastIndexOf(':'); return i < 0 ? id : id[(i + 1)..]; }
 }
 

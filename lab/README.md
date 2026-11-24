@@ -83,7 +83,7 @@ fixtures/build.sh captures/<timestamp>
 - Verify is the last step and fails the build, printing counts only, when anything the capture itself holds as identifying (every id, address and e-mail written anywhere in it, resource, group and node names, people behind claims, tag and claim values) is still in the output.
 - Record selection (the first records in capture order, so a rebuild from the same capture gives the same files): Resource Graph resources one per type, up to 10; resource containers two per type, up to 4; ARG pages 5; Kubernetes list one per list kind, up to 25; Kubernetes watch one per event type and kind, merged into one file; Hubble flows two per verdict, protocol and direction, up to 14; Prometheus one per query, up to 16; Azure metrics the first record of each file; Activity Log one per operation, up to 10; VNet flow logs two allowed and two denied; Event Hubs three per source, up to 8. The table is `SAMPLE` in `fixtures/scrub.mjs`.
 - Scrub rules and what is kept: see CAPTURE-FORMAT.md, section Fixtures.
-- Without Azure: the public tests and the default canvas view use the synthetic estate (`engine/tests/Sattle.Tests/fixtures/build-estate.py`, owned by the engine). `lab/fixtures` is only for people who captured their own data.
+- Without Azure: the public tests and the default canvas view use the synthetic estate (`engine/tests/Sattle.Tests/fixtures/estate`, record envelopes owned by the engine). `lab/fixtures` is only for people who captured their own data.
 - Tests (scrubber, hooks with stand-ins for `az` and `azd`, forwarder sink and consumer stop rule; no Azure needed): `cd capture && npm test`.
 
 ### Developer guide data

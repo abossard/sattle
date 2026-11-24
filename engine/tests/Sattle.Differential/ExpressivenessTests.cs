@@ -19,8 +19,8 @@ public class ExpressivenessTests
             new SourceFile("w.sattle", $"module w @ 1.0.0;\n{types}\n{R}\n"),
             Worlds.Kql("w", "ingest", $"graph ingest : w;\ninput a : R;\ninput b : R;\n{body}\n"),
             Worlds.Space("import w @ 1.0.0 sha256:… as base;", """
-                  source a adapter "sattle.authoring" rows base.R;
-                  source b adapter "sattle.authoring" rows base.R;
+                  source a adapter "record" rows base.R;
+                  source b adapter "record" rows base.R;
                   master graph master = base.ingest(a: a, b: b);
                 """),
         ], [A, B]);
@@ -82,8 +82,8 @@ public class ExpressivenessTests
                     | project t = identity("walk", x, y, z), x, y, z;
                 """),
             Worlds.Space("import w @ 1.0.0 sha256:… as base;\nimport w.view @ 1.0.0 sha256:… as view;", """
-                  source a adapter "sattle.authoring" rows base.R;
-                  source edges adapter "sattle.authoring" rows base.EdgeRow;
+                  source a adapter "record" rows base.R;
+                  source edges adapter "record" rows base.EdgeRow;
                   master graph master = base.ingest(a: a, edges: edges);
                   graph view = view.v(master: master);
                 """),
@@ -165,9 +165,9 @@ public class ExpressivenessTests
         new SourceFile("w.view.sattle", "module w.view @ 1.0.0;\nimport w.base @ 1.0.0 sha256:… as base;\nentity Out { k: Text; }\nidentity out for Out version \"1\" { k: Text by exact; }\n"),
         Worlds.Kql("w.view", "v", $"graph v : w.view;\n{input}\n{body}\n"),
         Worlds.Space("import w.base @ 1.0.0 sha256:… as base;\nimport w.view @ 1.0.0 sha256:… as view;", """
-              source a adapter "sattle.authoring" rows base.R;
-              source b adapter "sattle.authoring" rows base.R;
-              source edges adapter "sattle.authoring" rows base.EdgeRow;
+              source a adapter "record" rows base.R;
+              source b adapter "record" rows base.R;
+              source edges adapter "record" rows base.EdgeRow;
               master graph master = base.ingest(a: a, b: b, edges: edges);
             """ + graphs),
     ];
@@ -238,8 +238,8 @@ public class ExpressivenessTests
                 nodes Caller on p = graph("master") | graph-match (c)-[o]->(p) where labels(o) has "Of" project p = p.id | summarize calls = count() by p;
                 """),
             Worlds.Space("import w @ 1.0.0 sha256:… as base;\nimport w.view @ 1.0.0 sha256:… as view;", """
-                  source pods adapter "sattle.authoring" rows base.PodRow;
-                  source calls adapter "sattle.authoring" rows base.CallRow;
+                  source pods adapter "record" rows base.PodRow;
+                  source calls adapter "record" rows base.CallRow;
                   master graph master = base.ingest(pods: pods, calls: calls);
                   graph view = view.v(master: master);
                 """),

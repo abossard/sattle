@@ -544,7 +544,7 @@ public interface ITelemetryStore
     long ScanWindow(GraphKey g, IReadOnlyList<int> elements, IReadOnlyList<int> props, long fromNs, long toNs, WindowVisitor visit);
     /// <summary>Window changes after a position, in order. Each change is emitted once; this stream is the only telemetry an engine input may carry (L12). A plane has one reader, its graph, which reads right after its step: what is returned is released.</summary>
     IReadOnlyList<WindowChange> ClosedWindows(GraphKey g, long afterPosition, out long newPosition);
-    /// <summary>A source reported lost events (a Hubble LostEvent): the window becomes Partial(sourceLoss) (Def. 7.7). Part of the ingest side of the port.</summary>
+    /// <summary>A source reported lost events (a loss mark): the window becomes Partial(sourceLoss) (Def. 7.7). Part of the ingest side of the port.</summary>
     void MarkPartial(GraphKey g, long windowStart, string reason, long count);
     /// <summary>An element changed its id (two identities merged): its windows move to the new id. Where the new id already has the window, the two values combine as if every row had been written under the survivor from the start (Law 7.5): by the property's combine rule for `sum`, `min` and `max` (`combineOf` gives the rule of a property); under any other rule equal values are one value and different values are a conflict, so the window has no value. Each moved window is a window change (removed under the old id, set or removed under the new one) so derived graphs follow.</summary>
     void MoveElement(GraphKey g, int from, int to, Func<int, string?>? combineOf = null);

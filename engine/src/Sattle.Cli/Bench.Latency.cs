@@ -59,16 +59,16 @@ static partial class Bench
     sealed class Rig : IDisposable
     {
         public readonly Catalog Cat = new(Program.Projections); public readonly string Space; public readonly Engine Engine; public readonly TimingInput Input; public readonly Replay Replay;
-        public Rig(string cluster, Func<string, IGraphStore> factory, int chunkRows)
+        public Rig(Func<string, IGraphStore> factory, int chunkRows)
         {
             var res = Cat.Load(Catalog.ReadDirectory(FindDefs()));
             if (res.HasErrors) throw new InvalidOperationException(string.Join("\n", res.Diagnostics));
             Space = Cat.Spaces.Keys.First();
-            var adapters = AdapterRegistry.Create(cluster);
+            var adapters = AdapterRegistry.Create(Cat.Spaces[Space], Cat);
             Engine = new Engine(Cat, Space, new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000, StoreFactory = factory });
             Input = new TimingInput(Engine);
-            var ro = Program.ReplayOptionsOf(Program.Options.Parse([]), cluster);
-            Replay = new Replay(Input, Cat.Spaces[Space], adapters, new ReplayOptions { ChunkRows = chunkRows, AdvanceEveryNs = ro.AdvanceEveryNs, LatenessNs = ro.LatenessNs, FlushAtEnd = true, Speed = 0, Cluster = cluster });
+            var ro = Program.ReplayOptionsOf(Program.Options.Parse([]));
+            Replay = new Replay(Input, Cat.Spaces[Space], adapters, new ReplayOptions { ChunkRows = chunkRows, AdvanceEveryNs = ro.AdvanceEveryNs, LatenessNs = ro.LatenessNs, FlushAtEnd = true, Speed = 0 });
         }
         public void Dispose() => Engine.Dispose();
     }
@@ -80,7 +80,7 @@ static partial class Bench
     /// <summary>One record at a time: adapter parse, row building, ingest, master commit. The time spent in window closes that the record triggered is taken out (H4 and H12 cover closes) and reported on its own.</summary>
     public static int SourceToGraph(Program.Options o)
     {
-        var capture = Capture(o); var cluster = Program.DetectCluster(capture);
+        var capture = Capture(o);
         var kind = o.Get("store") ?? "memory"; var runs = int.TryParse(o.Get("runs"), out var rn) ? rn : Runs;
         Console.WriteLine($"# B5 source to graph: capture {Path.GetFileName(capture.TrimEnd('/'))}, store {kind}, {runs} runs, one record per ingest call");
         Environment();
@@ -89,7 +89,7 @@ static partial class Bench
         {
             var path = Path.Combine(Path.GetTempPath(), "sattle-b5-" + Guid.NewGuid().ToString("N") + ".db");
             using var shared = kind == "sqlite" ? new SqliteGraphStore(path) : null;
-            using var rig = new Rig(cluster, _ => shared is not null ? new Shared(shared) : new InMemoryGraphStore(), 2000);
+            using var rig = new Rig(_ => shared is not null ? new Shared(shared) : new InMemoryGraphStore(), 2000);
             var all = new List<double>(300_000); var committing = new List<double>(); var master = rig.Engine.Master; var wall = Stopwatch.StartNew();
             foreach (var env in CaptureReader.Read(capture))
             {
@@ -215,13 +215,13 @@ static partial class Bench
 
     public static int ColdStart(Program.Options o)
     {
-        var capture = Capture(o); var cluster = Program.DetectCluster(capture); var runs = int.TryParse(o.Get("runs"), out var rn) ? rn : Runs;
+        var capture = Capture(o); var runs = int.TryParse(o.Get("runs"), out var rn) ? rn : Runs;
         Console.WriteLine($"# B10 cold start: capture {Path.GetFileName(capture.TrimEnd('/'))}, {runs} runs");
         Environment();
         var path = Path.Combine(Path.GetTempPath(), "sattle-b10-" + Guid.NewGuid().ToString("N") + ".db");
         List<(GraphKey Key, long Head)> graphs;
         double wallLoad;
-        using (var rig = new Rig(cluster, _ => new SqliteGraphStore(path), 2000))
+        using (var rig = new Rig(_ => new SqliteGraphStore(path), 2000))
         {
             var sw = Stopwatch.StartNew(); rig.Replay.Run(capture); wallLoad = sw.Elapsed.TotalSeconds;
             graphs = rig.Engine.Graphs.Select(x => (x.Key, x.Head)).ToList();
@@ -255,7 +255,7 @@ static partial class Bench
         var rebuild = new List<double>();
         for (var run = 0; run < runs; run++)
         {
-            using var rig = new Rig(cluster, _ => new InMemoryGraphStore(), 2000);
+            using var rig = new Rig(_ => new InMemoryGraphStore(), 2000);
             var sw = Stopwatch.StartNew(); rig.Replay.Run(capture); rebuild.Add(sw.Elapsed.TotalSeconds);
             Console.WriteLine($"run {run + 1}: whole engine rebuilt from the inputs of the capture in {sw.Elapsed.TotalSeconds:F1} s; load {LoadAvg()}");
         }
@@ -266,12 +266,12 @@ static partial class Bench
     /// <summary>H10: the space is built from the newest capture repeated with shifted time until its logical span reaches `--hours` (default 1), journaled in a SQLite store; then the process is "restarted" `--runs` times: a fresh host replays the journal, recomputes every commit and compares it with the stored one.</summary>
     public static int Restart(Program.Options o)
     {
-        var capture = Capture(o); var cluster = Program.DetectCluster(capture); var runs = int.TryParse(o.Get("runs"), out var rn) ? rn : Runs;
+        var capture = Capture(o); var runs = int.TryParse(o.Get("runs"), out var rn) ? rn : Runs;
         var hours = double.TryParse(o.Get("hours"), NumberStyles.Float, CultureInfo.InvariantCulture, out var hh) ? hh : 1.0;
         var path = o.Get("db") ?? Path.Combine(Path.GetTempPath(), "sattle-b10-" + Guid.NewGuid().ToString("N") + ".db");
         var files = Catalog.ReadDirectory(FindDefs());
         var sealEvery = long.TryParse(o.Get("seal-every"), out var se) ? se : 0;
-        var opts = new Sattle.Runtime.HostOptions { Cluster = cluster, SealEvery = sealEvery, Projections = Program.Projections };
+        var opts = new Sattle.Runtime.HostOptions { SealEvery = sealEvery, Projections = Program.Projections };
         var restartOpts = opts with { UseSeal = !o.Flags.Contains("no-seal") };
         var cosmos = o.Get("cosmos"); var dbName = "b10" + Guid.NewGuid().ToString("N")[..10];
         IDurableStore Open() => cosmos is null ? new SqliteGraphStore(path) : CosmosGraphStore.Open(cosmos, dbName, false);
@@ -280,8 +280,8 @@ static partial class Bench
         if (cosmos is not null || !File.Exists(path))
         {
             using var store = Open(); using var host = SpaceHost.OpenDurable(store, files, opts);
-            var ro = Program.ReplayOptionsOf(Program.Options.Parse([]), cluster);
-            var replay = new Replay(host, host.Space, host.Adapters, new ReplayOptions { ChunkRows = 2000, AdvanceEveryNs = ro.AdvanceEveryNs, LatenessNs = ro.LatenessNs, FlushAtEnd = true, Speed = 0, Cluster = cluster });
+            var ro = Program.ReplayOptionsOf(Program.Options.Parse([]));
+            var replay = new Replay(host, host.Space, host.Adapters, new ReplayOptions { ChunkRows = 2000, AdvanceEveryNs = ro.AdvanceEveryNs, LatenessNs = ro.LatenessNs, FlushAtEnd = true, Speed = 0 });
             long first = 0, last = 0, span = 0; var wall = Stopwatch.StartNew();
             for (var pass = 0; ; pass++)
             {

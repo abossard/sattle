@@ -58,8 +58,8 @@ public static class Worlds
             new SourceFile("w.sattle", $"module w @ 1.0.0;\n{types}\n{R}\n"),
             Kql("w", "ingest", $"graph ingest : w;\ninput a : R;\ninput b : R;\n{body}\n{tail}\n"),
             Space("import w @ 1.0.0 sha256:… as base;", """
-                  source a adapter "sattle.authoring" rows base.R;
-                  source b adapter "sattle.authoring" rows base.R;
+                  source a adapter "record" rows base.R;
+                  source b adapter "record" rows base.R;
                   master graph master = base.ingest(a: a, b: b);
                 """),
         ], sources ?? [A, B], advanceShare);
@@ -118,9 +118,9 @@ public static class Worlds
 
     /// <summary>The space of a view over `BaseModule`: the master and the graph `view` of the projection `v`.</summary>
     static readonly SourceFile ViewSpace = Space("import w.base @ 1.0.0 sha256:… as base;\nimport w.view @ 1.0.0 sha256:… as view;", """
-          source a adapter "sattle.authoring" rows base.R;
-          source b adapter "sattle.authoring" rows base.R;
-          source edges adapter "sattle.authoring" rows base.EdgeRow;
+          source a adapter "record" rows base.R;
+          source b adapter "record" rows base.R;
+          source edges adapter "record" rows base.EdgeRow;
           master graph master = base.ingest(a: a, b: b, edges: edges);
           graph view = view.v(master: master);
         """);
@@ -170,8 +170,8 @@ public static class Worlds
         edges Calls from s to d with (rule = "observed") = flows | project s = identity("podName", src), d = identity("podName", dst);
         """;
     const string LinkedSources = """
-          source pods adapter "sattle.authoring" rows base.PodRow;
-          source flows adapter "sattle.authoring" rows base.FlowRow;
+          source pods adapter "record" rows base.PodRow;
+          source flows adapter "record" rows base.FlowRow;
         """;
     /// <summary>The master of the linked pods: pods by their uid, pods named by flows, the calls between them, and the link of a pod's uid to its name.</summary>
     static readonly IReadOnlyList<SourceFile> Linked = [new SourceFile("w.sattle", LinkedTypes), Kql("w", "ingest", LinkedIngest)];
@@ -230,9 +230,9 @@ public static class Worlds
                     | summarize load = sum(value) by p, windowStart;
                 """),
             Space("import w @ 1.0.0 sha256:… as base;\nimport w.view @ 1.0.0 sha256:… as view;", """
-                  source pods adapter "sattle.authoring" rows base.PodRow;
-                  source flows adapter "sattle.authoring" rows base.FlowRow;
-                  source loads adapter "sattle.authoring" rows base.LoadRow;
+                  source pods adapter "record" rows base.PodRow;
+                  source flows adapter "record" rows base.FlowRow;
+                  source loads adapter "record" rows base.LoadRow;
                   master graph master = base.ingest(pods: pods, flows: flows, loads: loads);
                   graph view = view.v(master: master);
                 """),
@@ -336,8 +336,8 @@ public static class Worlds
         """;
     static readonly IReadOnlyList<SourceSpec> ItemsAndEdges = [new("items", (r, _) => Row(("k", Text(r, "k", 5)), ("g", Text(r, "g", 3))), f => ((TextValue)f["k"]).S), BagEdges];
     const string ItemSources = """
-          source items adapter "sattle.authoring" rows base.ItemRow;
-          source edges adapter "sattle.authoring" rows base.EdgeRow;
+          source items adapter "record" rows base.ItemRow;
+          source edges adapter "record" rows base.EdgeRow;
           master graph master = base.ingest(items: items, edges: edges);
         """;
 
@@ -418,8 +418,8 @@ public static class Worlds
                 edges Edge from s to d with (rule = "observed", key = "second") = more | project s = identity("item", src), d = identity("item", dst);
                 """),
             Space("import w @ 1.0.0 sha256:… as base;", """
-                  source edges adapter "sattle.authoring" rows base.EdgeRow;
-                  source more adapter "sattle.authoring" rows base.EdgeRow;
+                  source edges adapter "record" rows base.EdgeRow;
+                  source more adapter "record" rows base.EdgeRow;
                   master graph master = base.ingest(edges: edges, more: more);
                 """),
         ], [BagEdges, BagEdges with { Name = "more" }]) { Witnesses = ["rel "] };
@@ -514,10 +514,10 @@ public static class Worlds
             new SourceFile("w.view.sattle", $"module w.view @ 1.0.0;\nimport w.base @ 1.0.0 sha256:… as base;\n{ReachType}\n"),
             Kql("w.view", "v", $"graph v : w.view;\ninput master : base;\n{Reach("-[p*1..3]->")}\n"),
             Space("import w.base @ 1.0.0 sha256:… as base;\nimport w.view @ 1.0.0 sha256:… as view;", """
-                  source a adapter "sattle.authoring" rows base.R;
-                  source edges adapter "sattle.authoring" rows base.EdgeRow;
-                  source fast adapter "sattle.authoring" rows base.EdgeRow;
-                  source other adapter "sattle.authoring" rows base.EdgeRow;
+                  source a adapter "record" rows base.R;
+                  source edges adapter "record" rows base.EdgeRow;
+                  source fast adapter "record" rows base.EdgeRow;
+                  source other adapter "record" rows base.EdgeRow;
                   master graph master = base.ingest(a: a, edges: edges, fast: fast, other: other);
                   graph view = view.v(master: master);
                 """),

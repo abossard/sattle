@@ -415,10 +415,6 @@ public sealed class Engine : IDisposable, IEngineInput
                 series.Feeding = [.. fed.Select(x => x.Sources.ToArray())]; series.Lag = [.. fed.Select(x => x.Lag)];
                 if (st.Reads.Select((r, i) => (r, i)).FirstOrDefault(x => x.r.Fill is not null && series.Feeding[x.i].Length == 0) is { r: not null } unfed)
                     throw new InvalidOperationException($"graph {g.Name}: {st.Name} fills '{unfed.r.OutName}', and no source feeds that property: a window cannot be known to be covered (Def. 7.15)");
-                // authored rows come when someone writes them: their source does not report, so nothing it feeds is ever covered
-                var authored = catalog.Spaces[spaceId].Sources.Where(s => s.Adapter == "sattle.authoring").Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
-                if (st.Reads.Select((r, i) => (r, i)).FirstOrDefault(x => x.r.Fill is not null && series.Feeding[x.i].Any(authored.Contains)) is { r: not null } written)
-                    throw new InvalidOperationException($"graph {g.Name}: {st.Name} fills '{written.r.OutName}', which an authored source feeds ({string.Join(", ", series.Feeding[st.Reads.ToList().IndexOf(written.r)].Where(authored.Contains))}): authored data records no progress (Def. 7.15)");
             }
         // the rows of a graph that ingests are not evaluated again: each one's sink follows a merge
         var ingesting = graphs.Where(g => g.Ingests).Select(g => (Graph: g, Properties: catalog.OntologyOf(g.Typed.OutputModule).Props)).ToList();      // a function of the catalog, which an engine never changes: built once, not per merge

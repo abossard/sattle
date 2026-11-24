@@ -648,6 +648,12 @@ The text editor of a projection reads and checks its `.kql` text through these c
   - `PropertyType`, `Field`, `KeyComponent`: `valueKind` (ValueKind, required, `1`, scope `kernel`).
 - A declaration without such references has an empty list. Additive: a client of 3.54 ignores the key.
 
+## Version 3.56: one record envelope, no domain adapters (#144)
+- **Sources.** The engine reads keyed records only (`records:<RowType>`, lab/CAPTURE-FORMAT.md). The adapters `kubernetes.list-watch`, `hubble.observe`, `azure.resource-graph`, `prometheus.range`, `azure.activity-log`, `azure.metrics`, `azure.vnet-flow-log`, `azure.diagnostic-activity`, `azure.aks-audit` and `sattle.authoring` are removed. A space that binds one of them does not activate (`AdapterUnknown`). Collectors outside the engine produce records (#147).
+- **Record envelope.** A payload without `key` carries no row: `{}` is a heartbeat, `{"lost": n, "time"?, "reason"?}` a loss mark (Def. 10.4). A record envelope is progress of the sources that bind its row type only.
+- **Options.** `--cluster` and `HostOptions.Cluster` are removed. The journal header, the seal and the stored options of a live input no longer carry `cluster`; an old store is rebuilt by replay.
+- **Live input.** An envelope read live is labelled `live:<source>` (was `eventhub:<source>`); capture files under `eventhub/` are read like any other file.
+
 ## After 3.16 (no change of the wire format)
 - **Authoring record `signalRule`.** A rule whose `above` is not greater than its `below`, or whose `enterAfter` or `exitAfter` is below 1, is rejected and counted like a record with a missing field. A `Threshold` that reads its parameters from the row drops a row with such parameters and counts it (`replay` prints the count with the runtime faults); each window is read with the parameters of its own row.
 - **Diagnostics of a draft or a load.** Two new codes: `Duplicate` (an element is declared twice: two constraints of one name, two assignments to one column) and `DuplicateColumn` (an operator would give two columns one name). Both were an exception before, or a silent merge. `null` is an optional value, the result of `if` is telemetry when its condition is, steps after the `max` of a fixpoint are refused, a `Ref<T>` property takes only an entity of type `T`, and one projection may produce several graphs of a space.

@@ -40,8 +40,8 @@ public class KqlOperatorTests
         import t.chem @ 1.0.0 sha256:… as c;
         import t.mol @ 1.0.0 sha256:… as m;
         space s {
-          source atoms adapter "sattle.authoring" rows c.AtomRow;
-          source bonds adapter "sattle.authoring" rows c.BondRow;
+          source atoms adapter "record" rows c.AtomRow;
+          source bonds adapter "record" rows c.BondRow;
           master graph master = c.ingest(atoms: atoms, bonds: bonds);
           graph near = m.near(master: master);
         }

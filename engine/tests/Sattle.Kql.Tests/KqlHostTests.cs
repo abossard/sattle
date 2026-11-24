@@ -16,7 +16,7 @@ public class KqlHostTests
         return d?.FullName ?? throw new InvalidOperationException("repository root not found");
     }
 
-    static HostOptions Options => new() { Cluster = "synth", Projections = new KqlSource() };
+    static HostOptions Options => new() { Projections = new KqlSource() };
 
     internal static readonly Lazy<SpaceHost> Served = new(() => new SpaceHost(Files, Options));
 

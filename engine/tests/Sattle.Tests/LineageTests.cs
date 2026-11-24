@@ -12,8 +12,8 @@ public class LineageTests
 
     static SpaceHost Serve(string dir)
     {
-        var h = new SpaceHost(EstateFiles(), new HostOptions { Projections = Repo.Projections, Cluster = "synth", LateHorizonWindows = 1_000_000 });
-        new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 200, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000, Cluster = "synth" }).Run(dir);
+        var h = new SpaceHost(EstateFiles(), new HostOptions { Projections = Repo.Projections, LateHorizonWindows = 1_000_000 });
+        new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 200, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000}).Run(dir);
         h.Finish();
         return h;
     }
@@ -208,10 +208,10 @@ public class LineageTests
         var i = files.FindIndex(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal));
         files[i] = files[i] with { Text = files[i].Text.Replace("import acme.biz ", "import acme.bygroup @ 1.0.0 sha256:… as bg;\nimport acme.biz ").Replace("  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");", "  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");\n  graph byGroup = bg.pairs(master: master);") };
         files.AddRange([new SourceFile("acme.bygroup.sattle", ByGroup), new SourceFile("acme.bygroup.pairs.kql", Pairs)]);
-        var h = new SpaceHost(files, new HostOptions { Projections = Repo.Projections, Cluster = "synth", LateHorizonWindows = 1_000_000 });
+        var h = new SpaceHost(files, new HostOptions { Projections = Repo.Projections, LateHorizonWindows = 1_000_000 });
         using (h)
         {
-            new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 200, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000, Cluster = "synth" }).Run(Estate);
+            new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 200, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000}).Run(Estate);
             h.Finish();
             var grouped = h.Snapshot("byGroup", null)["extent"]!["relationships"]!.AsArray();
             var rowLevel = h.Snapshot("serviceTree", null)["extent"]!["relationships"]!.AsArray().Where(r => r!["type"]!["value"]!.GetValue<string>().EndsWith("DependsOn", StringComparison.Ordinal)).ToList();
@@ -241,7 +241,7 @@ public class LineageTests
         entity Tag { key: Text; label: Text; }
         identity item for Item version "1" { key: Text by exact; }
         identity tag for Tag version "1" { key: Text by exact; }
-        /// the row shapes of the authoring adapter, the rows a host takes from a test: an item is a capability row (its name the group, its owner the score), a tag a realizes row (its cluster the label)
+        /// the row types CapabilityRow and RealizesRow, the rows a host takes from a test: an item is a capability row (its name the group, its owner the score), a tag a realizes row (its cluster the label)
         rows CapabilityRow { capId: Text; name: Text; owner: Text; status: Text; parentId?: Text; }
         rows RealizesRow { capId: Text; cluster: Text; namespace: Text; service: Text; }
         """;
@@ -268,13 +268,13 @@ public class LineageTests
                 import t.view @ 1.0.0 sha256:… as v;
                 {{imports}}
                 space s {
-                  source items adapter "sattle.authoring" rows base.CapabilityRow;
-                  source tags adapter "sattle.authoring" rows base.RealizesRow;
+                  source items adapter "record" rows base.CapabilityRow;
+                  source tags adapter "record" rows base.RealizesRow;
                   master graph master = base.ingest(items: items, tags: tags);
                   {{graphs}}
                 }
                 """),
-        ], new HostOptions { Projections = Repo.Projections, Cluster = "synth" });
+        ], new HostOptions { Projections = Repo.Projections});
 
     static void Items(SpaceHost h, long seq, params (string Key, string Group, string Score, long W)[] rows)
     {

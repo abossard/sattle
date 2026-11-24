@@ -5,7 +5,7 @@ import sattle.infra         @ 1.0.0 sha256:ba54f30c296e4c443921263456f1c4ff59ee0
 import sattle.source.k8s    @ 1.0.0 sha256:5e6031686b2731a54774a35f7126f1b8bc9ea9e8c3d34669588ffb61cc46aab7 as k8s;
 import sattle.source.hubble @ 1.0.0 sha256:95433584c514e135464e77fc445141fec30b87e7cd1545544e709026682cb857 as hubble;
 import sattle.azure          @ 1.0.0 sha256:dcb352c6e8f5b162a5c7139bb563be7ecd7e1d5afa433e3fac5a2a3124a2d12d as azure;
-import sattle.source.azure   @ 1.0.0 sha256:be995c31959e6102a8ed54512c6d5a3fb7a41f5d8d0498615a519734bc159d64 as azsrc;
+import sattle.source.azure   @ 1.0.0 sha256:f686c1d43c19b29e66dd559f2eb6b6f5ebda554d641cac9f5ce5012c6fd15a66 as azsrc;
 import sattle.source.prometheus @ 1.0.0 sha256:2a01c41a1b364e8b156d289f2afedf42ad97e508c7f1c870872d47b44b5da0d5 as prom;
 
 extend infra.Pod { team?: Text; }

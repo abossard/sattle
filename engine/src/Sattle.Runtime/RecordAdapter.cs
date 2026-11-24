@@ -10,7 +10,8 @@ public sealed class RecordAdapter : ISourceAdapter, IRedelivery
     public const string AdapterId = "record";
     public const string Prefix = "records:";
     readonly Dictionary<string, RowContract> rows = new(StringComparer.Ordinal);
-    readonly Dictionary<(string Type, string Key), (long At, object?[]? Values)> current = [];
+    /// <summary>Per record its capture time and the values of its row as text (`Encode`): plain data, so a seal holds it as it holds any text.</summary>
+    readonly Dictionary<(string Type, string Key), (long At, string? Values)> current = [];
     public string Id => AdapterId;
     public IReadOnlyList<RowContract> Contracts { get; }
 
@@ -83,7 +84,8 @@ public sealed class RecordAdapter : ISourceAdapter, IRedelivery
                 }
             }
         }
-        bool same = previous.Values is null ? next is null : next is not null && previous.Values.SequenceEqual(next);
+        var old = previous.Values is { } text ? Decode(text, row) : null;
+        bool same = old is null ? next is null : next is not null && old.SequenceEqual(next);
         if (exists && previous.At == envelope.CapturedNs && !same)
         {
             sink.Rejected(Id, $"Conflicting values for {type}/{key} at one checkpoint");
@@ -91,10 +93,37 @@ public sealed class RecordAdapter : ISourceAdapter, IRedelivery
         }
         if (!same)
         {
-            if (previous.Values is { } old) Write(sink, row, old, -1);
+            if (old is not null) Write(sink, row, old, -1);
             if (next is not null) Write(sink, row, next, 1);
         }
-        current[id] = (envelope.CapturedNs, next);
+        current[id] = (envelope.CapturedNs, next is null ? null : Encode(next));
+    }
+
+    /// <summary>The values of a row as one text: per field a tag and the value (`-` absent, `s` text, `b` boolean, `i` integer or instant, `d` decimal with its digits), separated by U+001F.</summary>
+    static string Encode(object?[] values) => string.Join('\u001f', values.Select(v => v switch
+    {
+        null => "-",
+        string t => "s" + t,
+        bool b => b ? "b1" : "b0",
+        decimal d => "d" + d.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        long n => "i" + n.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        _ => throw new InvalidOperationException($"a record value of type {v.GetType().Name}"),
+    }));
+
+    static object?[] Decode(string text, RowContract row)
+    {
+        var parts = text.Split('\u001f');
+        var values = new object?[row.Fields.Length];
+        for (var i = 0; i < values.Length; i++)
+            values[i] = parts[i][0] switch
+            {
+                '-' => null,
+                's' => parts[i][1..],
+                'b' => parts[i][1] == '1',
+                'd' => decimal.Parse(parts[i][1..], System.Globalization.CultureInfo.InvariantCulture),
+                _ => long.Parse(parts[i][1..], System.Globalization.CultureInfo.InvariantCulture),
+            };
+        return values;
     }
 
     static bool Read(RowField field, JsonElement? json, out object? value)

@@ -24,7 +24,7 @@ public class InternerTests
         module t.space @ 1.0.0;
         import t.base @ 1.0.0 sha256:… as base;
         space s {
-          source events adapter "sattle.authoring" rows base.EventRow;
+          source events adapter "record" rows base.EventRow;
           master graph master = base.ingest(events: events);
         }
         """;
@@ -140,9 +140,9 @@ public class InternerTests
     public void A_preview_of_a_live_space_leaves_nothing_holding_the_interner(string? maxRows)
     {
         using var d = new RestartTests.Durable("memory");
-        using var h = SpaceHost.OpenDurable(d.Open(), EstateTests.Files(demo: true), new HostOptions { Projections = Repo.Projections, Cluster = "synth" });
+        using var h = SpaceHost.OpenDurable(d.Open(), EstateTests.Files(demo: true), new HostOptions { Projections = Repo.Projections});
         var events = LiveResumeTests.Arrival(EstateTests.EstateDir, seed: 4, distance: 12);
-        LiveInput.Run(h, new LiveResumeTests.FakeSource(events[..^3]), new ReplayOptions { ChunkRows = 1000, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000, Cluster = "synth", FlushAtEnd = false }, CancellationToken.None);
+        LiveInput.Run(h, new LiveResumeTests.FakeSource(events[..^3]), new ReplayOptions { ChunkRows = 1000, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000, FlushAtEnd = false }, CancellationToken.None);
         for (var i = events.Count - 3; i < events.Count; i++) h.LiveEnvelope("eventhub:fake", LiveInput.EnvelopeText(events[i]), $"{{\"n\":{i}}}");
         Assert.True(h.Interner.Holding);                 // the last envelopes' rows are pending: no flush yet
         var draft = h.CreateDraft(null)["draft"]!.GetValue<string>();

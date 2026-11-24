@@ -20,7 +20,7 @@ public class DeployHealthTests
         var cat = new Catalog(Repo.Projections);
         var res = cat.Load(files, updatePins: true);
         Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
-        var run = ReplayTests.Replay(Fixture, 1, "synth", cat: cat);
+        var run = ReplayTests.Replay(Fixture, 1, cat: cat);
         var nodes = new Dictionary<string, List<string>>(); var edges = new Dictionary<string, List<string>>();
         var names = new Dictionary<string, string>();
         foreach (var p in run.Patches("deploymentHealth"))

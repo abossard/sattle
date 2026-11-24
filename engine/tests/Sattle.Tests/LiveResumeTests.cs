@@ -44,8 +44,8 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
     static IReadOnlyList<string> Events() => Arrival(EstateTests.EstateDir, seed: 4, distance: 12);
     /// <summary>The definitions as shipped: their space binds the workload of the estate.</summary>
     static List<SourceFile> Files => EstateTests.Files(demo: false);
-    static ReplayOptions Ro => new() { ChunkRows = 40, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth", FlushAtEnd = false };
-    static HostOptions Options(long sealEvery) => new() { Projections = Repo.Projections, Cluster = "synth", SealEvery = sealEvery };
+    static ReplayOptions Ro => new() { ChunkRows = 40, AdvanceEveryNs = Min, LatenessNs = Min, FlushAtEnd = false };
+    static HostOptions Options(long sealEvery) => new() { Projections = Repo.Projections, SealEvery = sealEvery };
 
     /// <summary>The digest and input rows of the run that was never interrupted, computed once for the class (every case uses the same events).</summary>
     static readonly Lazy<(string Digest, long Rows)> Uninterrupted = new(() =>
@@ -264,15 +264,9 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
     [Theory]
     [InlineData(1, 0)] [InlineData(2, 8)] [InlineData(3, 30)]
     public void The_reader_loop_of_Live_cs_is_reproduced_by_a_replay_of_its_recording(int seed, int distance) =>
-        The_reader_loop_is_reproduced_by_a_replay_of_its_recording(EstateTests.EstateDir, Files, "synth", seed, distance);
+        The_reader_loop_is_reproduced_by_a_replay_of_its_recording(EstateTests.EstateDir, Files, seed, distance);
 
-    /// <summary>T-LIVE on the scrubbed excerpt of a real capture, with the definitions `sattle replay` reads for it.</summary>
-    [FixturesTheory]
-    [InlineData(1, 0)] [InlineData(2, 8)] [InlineData(3, 30)]
-    public void The_reader_loop_of_Live_cs_is_reproduced_by_a_replay_of_its_recording_on_the_lab_fixtures(int seed, int distance) =>
-        The_reader_loop_is_reproduced_by_a_replay_of_its_recording(Repo.Fixtures, Repo.DefinitionFilesFor(Repo.Fixtures), Repo.ClusterOf(Repo.Fixtures), seed, distance);
-
-    void The_reader_loop_is_reproduced_by_a_replay_of_its_recording(string capture, List<SourceFile> files, string cluster, int seed, int distance)
+    void The_reader_loop_is_reproduced_by_a_replay_of_its_recording(string capture, List<SourceFile> files, int seed, int distance)
     {
         static string Payload(string line) { using var d = System.Text.Json.JsonDocument.Parse(line); return d.RootElement.GetProperty("payload").GetRawText(); }
         var rnd = new Random(seed);
@@ -291,8 +285,8 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
         try
         {
             var recording = new Recording(Path.Combine(dir, "live", "stream.ndjson"));
-            var ro = Ro with { Cluster = cluster };
-            using var h = SpaceHost.OpenDurable(new InMemoryGraphStore(), files, Options(0) with { Cluster = cluster });
+            var ro = Ro with { };
+            using var h = SpaceHost.OpenDurable(new InMemoryGraphStore(), files, Options(0) with { });
             var counts = LiveInput.Run(h, new Scripted(arrival, idle), ro, CancellationToken.None, recording, flushEvery: TimeSpan.FromHours(1));
             var live = h.StateDigest();
             // LV1: every envelope once, in the order it arrived; duplicates dropped, records that are no envelopes rejected
@@ -308,7 +302,7 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
                 var cat = new Catalog(Repo.Projections); Assert.DoesNotContain(cat.Load(files, updatePins: true).Diagnostics, d => d.IsError);
                 var space = cat.Spaces.Keys.Single();
                 using var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab", LateHorizonWindows = horizon });
-                new Replay(engine, cat.Spaces[space], AdapterRegistry.Create(cluster), ro).Run(dir);
+                new Replay(engine, cat.Spaces[space], AdapterRegistry.Create(cat.Spaces[space], cat), ro).Run(dir);
                 return engine.StateDigest();
             }
             Assert.Equal(live, Replayed(3));
@@ -351,7 +345,7 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
             var cat = new Catalog(Repo.Projections); Assert.DoesNotContain(cat.Load(files, updatePins: true).Diagnostics, d => d.IsError);
             var space = cat.Spaces.Keys.Single();
             using var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab", LateHorizonWindows = 3 });
-            new Replay(engine, cat.Spaces[space], AdapterRegistry.Create("synth"), Ro with { FlushAtEnd = false }).Run(dir);
+            new Replay(engine, cat.Spaces[space], AdapterRegistry.Create(cat.Spaces[space], cat), Ro with { FlushAtEnd = false }).Run(dir);
             Assert.Equal(h.StateDigest(), engine.StateDigest());
         }
         finally { Directory.Delete(dir, true); }

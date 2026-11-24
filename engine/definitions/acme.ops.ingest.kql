@@ -15,7 +15,7 @@ input events : k8s.EventRow;
 input resources : azsrc.ResourceRow;
 input metrics : prom.MetricRow;
 input activity : azsrc.ActivityRow;
-input diagActivity : azsrc.ActivityRow;
+input diagActivity : azsrc.DiagnosticActivityRow;
 input audit : azsrc.AuditRow;
 input resourceMetrics : azsrc.ResourceMetricRow;
 input flowLogs : azsrc.FlowLogRow;

@@ -100,51 +100,45 @@ public class ProjectionEdgesTests
             var rel = Path.GetRelativePath(Estate, f); if (rel.StartsWith("space", StringComparison.Ordinal)) continue;
             var target = Path.Combine(dir, rel); Directory.CreateDirectory(Path.GetDirectoryName(target)!); File.Copy(f, target);
         }
-        var lines = File.ReadAllLines(Path.Combine(Estate, "authoring", "capabilities.ndjson")).Where(l => !l.Contains("\"kind\":\"realizes\"")).ToList();
-        if (retired is not null) lines = [.. lines.Select(l => l.Contains($"\"capId\":\"{retired}\"") && l.Contains("\"kind\":\"capability\"") ? l.Replace("\"status\":\"active\"", "\"status\":\"retired\"") : l)];
-        var services = new[] { "web", "api", "db" };
+        var records = Path.Combine(dir, "records", "records.ndjson");
+        var lines = File.ReadAllLines(records).Where(l => !(l.Contains("\"source\":\"records:RealizesRow\"") && l.Contains("\"values\""))).ToList();
+        if (retired is not null) lines = [.. lines.Select(l => l.Contains($"\"capId\":\"{retired}\"") && l.Contains("\"source\":\"records:CapabilityRow\"") ? l.Replace("\"status\":\"active\"", "\"status\":\"retired\"") : l)];
+        File.WriteAllLines(records, lines);
+        var services = new[] { "web", "api", "db" }; var realizes = new List<string>();
         for (var i = 0; i < 3; i++)
             foreach (var cap in (realizesWebApiDb[i] ?? "").Split('|', StringSplitOptions.RemoveEmptyEntries))
-                lines.Add($"{{\"v\":1,\"source\":\"authoring\",\"capturedAt\":\"2026-01-01T10:00:00.600Z\",\"seq\":{100 + i * 10 + Array.IndexOf((realizesWebApiDb[i] ?? "").Split('|'), cap)},\"key\":\"authoring/realizes/{cap}/{services[i]}\",\"meta\":null,\"payload\":{{\"kind\":\"realizes\",\"capId\":\"{cap}\",\"cluster\":\"synth\",\"namespace\":\"shop\",\"service\":\"{services[i]}\"}}}}");
-        File.WriteAllLines(Path.Combine(dir, "authoring", "capabilities.ndjson"), lines);
+                realizes.Add(Record("RealizesRow", 0.6, 100 + i * 10 + Array.IndexOf((realizesWebApiDb[i] ?? "").Split('|'), cap), $"realizes/{cap}/{services[i]}", new { capId = cap, cluster = "synth", @namespace = "shop", service = services[i] }));
+        File.WriteAllLines(Path.Combine(dir, "records", "realizes.ndjson"), realizes);
         AddDb(dir, extraWebToDb);
         return dir;
     }
 
-    /// <summary>A third service behind api for the lift tests: Deployment, Service and pod `db` and its endpoint slice, flows from both api pods to the db pod every 5 s for ten minutes (every other one dropped in minutes 4 to 7), and with `extraWebToDb` the same flows from web-7d4-1 too. The shipped estate's database is an ExternalName Service without pods.</summary>
+    static string At(double sec) => new DateTimeOffset(2026, 1, 1, 10, 0, 0, TimeSpan.Zero).AddSeconds(sec).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>A record envelope of the row type `type`, captured `sec` seconds after 10:00, its row `values` under the record key `key`.</summary>
+    static string Record(string type, double sec, long seq, string key, object values) =>
+        JsonSerializer.Serialize(new Dictionary<string, object?> { ["v"] = 1, ["source"] = "records:" + type, ["capturedAt"] = At(sec), ["seq"] = seq, ["key"] = $"records:{type}/{key}", ["meta"] = null, ["payload"] = new { key, values } });
+
+    /// <summary>A third service behind api for the lift tests: Deployment, Service and pod `db` and its endpoint, flows from both api pods to the db pod every 5 s for ten minutes (every other one dropped in minutes 4 to 7), and with `extraWebToDb` the same flows from web-7d4-1 too. The shipped estate's database is an ExternalName Service without pods.</summary>
     static void AddDb(string dir, bool extraWebToDb)
     {
-        static string At(double sec) => new DateTimeOffset(2026, 1, 1, 10, 0, 0, TimeSpan.Zero).AddSeconds(sec).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", System.Globalization.CultureInfo.InvariantCulture);
-        static string Line(string source, double sec, string key, object payload) =>
-            JsonSerializer.Serialize(new Dictionary<string, object?> { ["v"] = 1, ["source"] = source, ["capturedAt"] = At(sec), ["seq"] = 0, ["key"] = key, ["meta"] = null, ["payload"] = payload });
-        object Obj(string kind, string uid, string name, Dictionary<string, object> extra) =>
-            new Dictionary<string, object>(extra) { ["kind"] = kind, ["metadata"] = new Dictionary<string, object>((Dictionary<string, object>?)extra.GetValueOrDefault("metadata") ?? []) { ["name"] = name, ["uid"] = uid, ["namespace"] = "shop", ["resourceVersion"] = "900" } };
         var k8s = new List<string>
         {
-            Line("kubernetes-watch", 0.2, "kubernetes-watch/ADDED/Deployment/dep-db/900", new { type = "ADDED", @object = Obj("Deployment", "dep-db", "db", new() { ["spec"] = new { replicas = 1 } }) }),
-            Line("kubernetes-watch", 0.4, "kubernetes-watch/ADDED/Service/svc-db/900", new { type = "ADDED", @object = Obj("Service", "svc-db", "db", new()) }),
-            Line("kubernetes-watch", 1, "kubernetes-watch/ADDED/Pod/uid-db-6b8-1/900", new { type = "ADDED", @object = Obj("Pod", "uid-db-6b8-1", "db-6b8-1", new()
-            {
-                ["metadata"] = new Dictionary<string, object> { ["ownerReferences"] = new[] { new { kind = "ReplicaSet", name = "db-6b8" } } },
-                ["spec"] = new { nodeName = "node-b" }, ["status"] = new { phase = "Running" },
-            }) }),
-            Line("kubernetes-watch", 2, "kubernetes-watch/ADDED/EndpointSlice/slice-db/900", new { type = "ADDED", @object = Obj("EndpointSlice", "slice-db", "db-slice", new()
-            {
-                ["metadata"] = new Dictionary<string, object> { ["labels"] = new Dictionary<string, string> { ["kubernetes.io/service-name"] = "db" } },
-                ["endpoints"] = new[] { new { addresses = new[] { "10.0.2.1" }, targetRef = new { kind = "Pod", uid = "uid-db-6b8-1" } } },
-            }) }),
+            Record("DeploymentRow", 0.2, 0, "deployment/shop/db", new { cluster = "synth", @namespace = "shop", name = "db", replicas = 1 }),
+            Record("ServiceRow", 0.4, 0, "service/shop/db", new { cluster = "synth", @namespace = "shop", name = "db" }),
+            Record("PodRow", 1, 0, "pod/uid-db-6b8-1", new { cluster = "synth", uid = "uid-db-6b8-1", @namespace = "shop", name = "db-6b8-1", phase = "Running", nodeName = "node-b", deployment = "db" }),
+            Record("EndpointRow", 2, 0, "endpoint/shop/db/10.0.2.1", new { cluster = "synth", @namespace = "shop", service = "db", address = "10.0.2.1", podUid = "uid-db-6b8-1" }),
         };
         var flows = new List<string>(); var n = 0;
         for (var sec = 10; sec < 600; sec += 5)
             foreach (var src in extraWebToDb ? new[] { "api-5c9-1", "api-5c9-2", "web-7d4-1" } : ["api-5c9-1", "api-5c9-2"])
             {
                 var verdict = sec is >= 240 and < 420 && sec / 5 % 2 == 0 ? "DROPPED" : "FORWARDED";
-                var t = At(sec + 0.0005);
-                flows.Add(Line("hubble", sec + 0.0005, $"hubble/flow-db-{n}", new { flow = new { time = t, uuid = $"flow-db-{n}", verdict, source = new { @namespace = "shop", cluster_name = "synth", pod_name = src }, destination = new { @namespace = "shop", cluster_name = "synth", pod_name = "db-6b8-1" } }, node_name = "node-a", time = t }));
+                flows.Add(Record("FlowRow", sec + 0.0005, 0, $"flow-db-{n}", new { time = At(sec + 0.0005), cluster = "synth", verdict, srcNamespace = "shop", srcPod = src, dstNamespace = "shop", dstPod = "db-6b8-1" }));
                 n++;
             }
-        File.WriteAllLines(Path.Combine(dir, "kubernetes", "db.ndjson"), k8s);
-        File.WriteAllLines(Path.Combine(dir, "hubble", "db.ndjson"), flows);
+        File.WriteAllLines(Path.Combine(dir, "records", "db-kubernetes.ndjson"), k8s);
+        File.WriteAllLines(Path.Combine(dir, "records", "db-flows.ndjson"), flows);
     }
 
     /// <summary>Realizes of web, api, db; the extra flow web to db; the retired capability; and the lifted edges expected, with the sum of flows read from the service level.</summary>
@@ -160,7 +154,7 @@ public class ProjectionEdgesTests
         var dir = Copy([.. realizes.Split(',').Select(x => x == "" ? null : x)], extraWebToDb, retired);
         try
         {
-            var e = ReplayTests.Replay(dir, cluster: "synth");
+            var e = ReplayTests.Replay(dir);
             var lifted = Summed(e, "capabilities", "callFlows", "capabilities");
             Assert.Equal(expected == "" ? [] : expected.Split('|').Order().ToList(), lifted.Keys.Order().ToList());
             var rels = e.Relationships("capabilities", "DependsOn").Count;
@@ -211,7 +205,7 @@ public class ProjectionEdgesTests
         files.AddRange(moduleFiles);
         var cat = new Catalog(Repo.Projections); var res = cat.Load(files, updatePins: true);
         Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
-        return ReplayTests.Replay(dir, 200, "synth", o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 }, cat: cat);
+        return ReplayTests.Replay(dir, 200, o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 }, cat: cat);
     }
 
     /// <summary>One step from the pods straight to the capabilities: the composition of the two lifts, written as one.</summary>
@@ -269,7 +263,7 @@ public class ProjectionEdgesTests
         var dir = Copy(["storefront|ordering", "ordering", "data-platform"], false, null);        // web realizes two capabilities
         try
         {
-            var e = ReplayTests.Replay(dir, cluster: "synth", o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 });
+            var e = ReplayTests.Replay(dir, o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 });
             var lifted = Summed(e, "capabilities", "callFlows", "capabilities");
             var service = Summed(e, "serviceTree", "flows", "serviceTree");
             Assert.Equal(["Ordering -> Data platform"], lifted.Keys.ToList());                      // web has two images: its edge is not lifted to either; api to db is
@@ -290,7 +284,7 @@ public class ProjectionEdgesTests
         {
             // a host, for the windows of two graphs by their start: the replay's files number the windows of each graph on their own
             using var h = HostTests.NewHost(lateHorizon: 1_000_000);
-            h.RunCapture(dir, new ReplayOptions { ChunkRows = 2000, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000, Cluster = "synth" });
+            h.RunCapture(dir, new ReplayOptions { ChunkRows = 2000, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000});
             var edge = Assert.Single(h.Relationships("capabilities", "DependsOn"))["id"].Id();
             Dictionary<string, decimal> Of(string prop) => h.Windows("capabilities", prop).Where(x => x.Element == edge).ToDictionary(x => x.Window, x => x.Value);
             var (flows, drops, ratio) = (Of("callFlows"), Of("callDrops"), Of("callDropRatio"));

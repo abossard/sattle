@@ -54,7 +54,7 @@ public class ProjectionLanguagesTests
     [Fact]
     public void Two_languages_load_side_by_side_in_one_space_and_the_protocol_names_each_file_s_language()
     {
-        using var h = new SpaceHost(Files(), new HostOptions { Cluster = "synth", Projections = Both });
+        using var h = new SpaceHost(Files(), new HostOptions { Projections = Both });
         Assert.Contains(h.Space.Graphs, g => g.Name == "title");
         Assert.Contains(h.Space.Graphs, g => g.Name == "deploymentReport");
         var report = h.Definitions().AsArray().Single(m => m!["name"]!.GetValue<string>() == "acme.report")!["projections"]!.AsArray();

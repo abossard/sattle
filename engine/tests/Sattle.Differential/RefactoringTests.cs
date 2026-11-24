@@ -81,9 +81,9 @@ public class RefactoringTests
             .. projections.Select(p => Worlds.Kql("w.view", p.Name, $"graph {p.Name} : w.view;\ninput master : base;\n{p.Body}\n")),
             .. reader is null ? Array.Empty<SourceFile>() : [Worlds.Kql("w.view", "reader", reader)],
             Worlds.Space("import w.base @ 1.0.0 sha256:… as base;\nimport w.view @ 1.0.0 sha256:… as view;", $"""
-                  source a adapter "sattle.authoring" rows base.R;
-                  source b adapter "sattle.authoring" rows base.R;
-                  source edges adapter "sattle.authoring" rows base.EdgeRow;
+                  source a adapter "record" rows base.R;
+                  source b adapter "record" rows base.R;
+                  source edges adapter "record" rows base.EdgeRow;
                   master graph master = base.ingest(a: a, b: b, edges: edges);
                 {graphs}
                 """),

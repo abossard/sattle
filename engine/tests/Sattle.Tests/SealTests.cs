@@ -10,12 +10,12 @@ namespace Sattle.Tests;
 public class SealTests
 {
     const long Min = 60_000_000_000;
-    static HostOptions Options(long sealEvery) => new() { Projections = Repo.Projections, Cluster = "synth", SealEvery = sealEvery };
+    static HostOptions Options(long sealEvery) => new() { Projections = Repo.Projections, SealEvery = sealEvery };
     static List<SourceFile> Files => EstateTests.Files(demo: true);
 
     public static IEnumerable<object[]> Stores() => RestartTests.Stores();
 
-    static void Feed(SpaceHost h) => new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 30, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" }).Run(EstateTests.EstateDir);
+    static void Feed(SpaceHost h) => new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 30, AdvanceEveryNs = Min, LatenessNs = Min}).Run(EstateTests.EstateDir);
 
     static string Space(SpaceHost h) => h.SpaceInfo().ToJsonString();
 
@@ -119,7 +119,7 @@ public class SealTests
             else
             {
                 var events = LiveResumeTests.Arrival(EstateTests.EstateDir, seed: 4, distance: 12);
-                var ro = new ReplayOptions { ChunkRows = 40, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth", FlushAtEnd = false };
+                var ro = new ReplayOptions { ChunkRows = 40, AdvanceEveryNs = Min, LatenessNs = Min, FlushAtEnd = false };
                 Assert.Throws<LiveResumeTests.Crash>(() => Sattle.Cli.LiveInput.Run(h, new LiveResumeTests.FakeSource(events, crashAt: events.Count / 2), ro, CancellationToken.None, flushEvery: TimeSpan.FromHours(1)));
             }
         }

@@ -37,8 +37,8 @@ public class ReferencesTests
 
     static (SpaceHost Host, JsonNode Space) Serve(string dir, List<SourceFile> files)
     {
-        var h = new SpaceHost(files, new HostOptions { Projections = Repo.Projections, Cluster = "synth", LateHorizonWindows = 1_000_000 });
-        new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 200, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000, Cluster = "synth" }).Run(dir);
+        var h = new SpaceHost(files, new HostOptions { Projections = Repo.Projections, LateHorizonWindows = 1_000_000 });
+        new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 200, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000}).Run(dir);
         h.Finish();
         return (h, h.SpaceInfo());
     }
@@ -48,8 +48,8 @@ public class ReferencesTests
     /// <summary>The estate's flows only: the pods they name were never listed.</summary>
     static string FlowsOnly()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "sattle-refs-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(Path.Combine(dir, "hubble"));
-        File.Copy(Path.Combine(Estate, "hubble", "flows.ndjson"), Path.Combine(dir, "hubble", "flows.ndjson"));
+        var dir = Path.Combine(Path.GetTempPath(), "sattle-refs-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(Path.Combine(dir, "records"));
+        File.WriteAllLines(Path.Combine(dir, "records", "flows.ndjson"), File.ReadLines(Path.Combine(Estate, "records", "records.ndjson")).Where(l => l.Contains("\"source\":\"records:FlowRow\"", StringComparison.Ordinal)));
         return dir;
     }
 
@@ -130,20 +130,6 @@ public class ReferencesTests
         }
     }
 
-    [Trait("Category", "Capture")]
-    [CaptureFact]
-    public void On_the_newest_real_capture_the_derived_graphs_have_no_dangling_edge_and_every_master_reference_is_explained()
-    {
-        var dir = Repo.CaptureDirs.LastOrDefault();
-        Assert.NotNull(dir);
-        var run = Scenarios.Run(dir);
-        foreach (var g in run.Engine.Graphs.Where(g => !g.IsMaster))
-            Assert.Empty(run.Read(x => x.Unresolved(g)));
-        var master = run.Read(x => x.Unresolved(run.Engine.Master));
-        Assert.NotEmpty(master);                                                       // the capture names resources and pods that no source listed
-        Assert.All(master, r => { Assert.Equal("absent", r.State); Assert.NotNull(r.EntityType); Assert.NotNull(r.Domain); Assert.NotEmpty(r.Key); });
-    }
-
     [Fact]
     public void The_references_alone_are_paged_by_id_and_equal_the_references_of_the_snapshot()
     {
@@ -184,7 +170,7 @@ public class ReferencesTests
             var (h, _) = Serve(dir, files);
             using (h)
             {
-                var run = ReplayTests.Replay(dir, cluster: "synth", o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 });
+                var run = ReplayTests.Replay(dir, o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 });
                 run.Read(x => { x.WriteFiles(outDir, Repo.LoadExamples(out _).Spaces.Values.Single()); return 0; });
                 var manifest = JsonNode.Parse(File.ReadAllText(Path.Combine(outDir, "manifest.json")))!["graphs"]!.AsObject();
                 Assert.All(manifest, g =>

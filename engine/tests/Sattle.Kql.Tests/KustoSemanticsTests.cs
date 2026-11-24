@@ -72,7 +72,7 @@ public class KustoSemanticsTests
         module t.space @ 1.0.0;
         import t.base @ 1.0.0 sha256:… as b;
         space s {
-          source items adapter "sattle.authoring" rows b.ItemRow;
+          source items adapter "record" rows b.ItemRow;
           master graph master = b.ingest(items: items);
         }
         """;

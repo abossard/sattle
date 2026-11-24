@@ -18,11 +18,11 @@ public static class Program
 {
     const string Usage = """
         sattle check  [--defs DIR] [--update-pins] [--print MODULE] [--plan]
-        sattle replay CAPTURE [--defs DIR] [--overlay FILE] [--space NAME] [--cluster NAME] [--speed N] [--advance-every 60s] [--lateness 60s] [--late-horizon WINDOWS] [--chunk N]
+        sattle replay CAPTURE [--defs DIR] [--overlay FILE] [--space NAME] [--speed N] [--advance-every 60s] [--lateness 60s] [--late-horizon WINDOWS] [--chunk N]
                               [--store memory|sqlite=PATH|cosmos=ENDPOINT[,db=NAME][,drop]] [--until RFC3339] [--out DIR]
         sattle serve  CAPTURE [replay options] [--port 5080] [--write-definitions] [--store sqlite=PATH|cosmos=ENDPOINT[,db=NAME]] [--seal-every ENTRIES] [--no-seal] [--verify-journal] [--retain-patches N] [--retain-events N]
         sattle serve  --store sqlite=PATH|cosmos=ENDPOINT[,db=NAME] [--port 5080]       (restart from the journal of the store, no capture needed)
-        sattle serve  --live [--follow NDJSON | --eh-namespace NS] [--hub sattle-ingest] [--group $Default] [--from latest|earliest] [--seconds 300] [--live-out DIR] [--cluster NAME]
+        sattle serve  --live [--follow NDJSON | --eh-namespace NS] [--hub sattle-ingest] [--group $Default] [--from latest|earliest] [--seconds 300] [--live-out DIR]
         sattle bench  [--rows N] [--pods N] [--services N] [--windows N]
         sattle bench  gen-estate --nodes N [--minutes 10] [--pairs-per-node 0.24] --out DIR
         sattle bench  phases [--capture DIR] [--census] [--timing-only] [--graph-workers N]
@@ -207,7 +207,7 @@ public static class Program
             foreach (var sp in cat.Spaces.Keys)
             {
                 using var e = new Engine(cat, sp);
-                var bad = AdapterRegistry.Verify(cat, cat.Spaces[sp], AdapterRegistry.Create("c", cat.Spaces[sp], cat));
+                var bad = AdapterRegistry.Verify(cat, cat.Spaces[sp], AdapterRegistry.Create(cat.Spaces[sp], cat));
                 Print(bad); errors += bad.Count(x => x.IsError);
                 foreach (var g in e.Graphs)
                 {
@@ -222,22 +222,6 @@ public static class Program
 
     // ---- replay and serve ----
 
-    public static string DetectCluster(string dir)
-    {
-        var f = Directory.EnumerateFiles(dir, "flows.ndjson", SearchOption.AllDirectories).FirstOrDefault(x => !x.Contains("eventhub"));
-        if (f is null) return "lab";
-        foreach (var line in File.ReadLines(f).Take(50))
-        {
-            try
-            {
-                using var d = JsonDocument.Parse(line);
-                var c = d.RootElement.Path("payload", "flow", "source", "cluster_name") ?? d.RootElement.Path("payload", "flow", "destination", "cluster_name");
-                if (c is { ValueKind: JsonValueKind.String } s && s.GetString() is { Length: > 0 } v) return v;
-            }
-            catch (JsonException) { /* skip */ }
-        }
-        return "lab";
-    }
 
     /// <summary>`--store cosmos=<endpoint>[,db=<database>][,drop]`: Entra authentication for an account, the emulator's well-known key only for a localhost endpoint. `drop` deletes the database when the run ends.</summary>
     static CosmosGraphStore? cosmos;
@@ -256,7 +240,7 @@ public static class Program
         if (o.Positional.Count == 0 && !live && !resumeOnly) return Fail("a capture directory is needed\n" + Usage);
         var capture = live || resumeOnly ? "" : FindCapture(o.Positional[0]);
         if (!live && !resumeOnly && !Directory.Exists(capture)) return Fail($"capture directory {capture} does not exist");
-        if (resumeOnly) return Serve(o, "", o.Get("cluster") ?? "lab", output);
+        if (resumeOnly) return Serve(o, "", output);
         var files = ReadDefinitions(o);
         if (serve && o.Flags.Contains("write-definitions") && NotAsOnDisk(files) is { Count: > 0 } bound)
             return Fail($"--write-definitions is refused: {string.Join(", ", bound)} would be written with the values of the capture's {SpaceArguments} or of an overlay, not as the file is. Serve without --write-definitions, or without the arguments file and the overlay.");
@@ -264,12 +248,8 @@ public static class Program
         var load = cat.Load(files, updatePins: true);
         if (load.HasErrors) { Print(load.Diagnostics); return 1; }
         var spaceId = o.Get("space") is { } sn ? cat.Spaces.Keys.FirstOrDefault(k => Ids.Name(k) == sn) ?? throw new ArgumentException($"no graph space '{sn}'") : cat.Spaces.Keys.First();
-        string cluster;
-        if (o.Get("cluster") is { } cl) cluster = cl;
-        else if (live) { try { cluster = DetectCluster(FindCapture("latest")); } catch (ArgumentException) { cluster = "lab"; } }
-        else cluster = DetectCluster(capture);
-        if (serve) return Serve(o, capture, cluster, output);
-        var adapters = AdapterRegistry.Create(cluster, cat.Spaces[spaceId], cat);
+        if (serve) return Serve(o, capture, output);
+        var adapters = AdapterRegistry.Create(cat.Spaces[spaceId], cat);
         var bad = AdapterRegistry.Verify(cat, cat.Spaces[spaceId], adapters);
         if (bad.Count > 0) { Print(bad); return 1; }
         var store = o.Get("store") ?? "memory";
@@ -283,9 +263,9 @@ public static class Program
         engine.TrackAllocations = o.Flags.Contains("trace-alloc");
         var export = new CanvasExport(engine, cat);
         export.Attach();
-        var ropts = ReplayOptionsOf(o, cluster);
+        var ropts = ReplayOptionsOf(o);
         var replay = new Replay(engine, cat.Spaces[spaceId], adapters, ropts);
-        output.WriteLine($"capture {Path.GetFileName(capture.TrimEnd('/'))}, space {Ids.Name(spaceId)}, cluster {cluster}, store {store}, speed {(ropts.Speed > 0 ? ropts.Speed + "x" : "max")}");
+        output.WriteLine($"capture {Path.GetFileName(capture.TrimEnd('/'))}, space {Ids.Name(spaceId)}, store {store}, speed {(ropts.Speed > 0 ? ropts.Speed + "x" : "max")}");
         var stats = replay.Run(capture);
         Report(engine, cat, stats, adapters, output);
         if (engine.TrackAllocations) { output.WriteLine("operator kinds over the replay:"); Bench.KindTable(engine, output); }
@@ -295,12 +275,12 @@ public static class Program
         return 0;
     }
 
-    public static ReplayOptions ReplayOptionsOf(Options o, string cluster) => new()
+    public static ReplayOptions ReplayOptionsOf(Options o) => new()
     {
         ChunkRows = (int)(long.TryParse(o.Get("chunk"), out var ch) ? ch : 2000),
         AdvanceEveryNs = o.Duration("advance-every", 60_000_000_000), LatenessNs = o.Duration("lateness", 60_000_000_000),
         FlushAtEnd = !o.Flags.Contains("no-flush"), Speed = double.TryParse(o.Get("speed"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var sp) ? sp : 0,
-        Cluster = cluster, UntilNs = o.Get("until") is { } u && Norm.TryParseInstant(u, out var un) ? un : null,
+        UntilNs = o.Get("until") is { } u && Norm.TryParseInstant(u, out var un) ? un : null,
     };
 
     static void Report(Engine e, Catalog cat, ReplayStats s, IReadOnlyList<ISourceAdapter> adapters, TextWriter output)
@@ -310,10 +290,6 @@ public static class Program
         output.WriteLine("rows by source:    " + string.Join(", ", s.Rows.OrderBy(x => x.Key).Select(x => $"{x.Key}={x.Value:N0}")));
         if (s.Dropped.Count > 0) output.WriteLine("dropped rows (no source of the space binds their type): " + string.Join(", ", s.Dropped.OrderBy(x => x.Key, StringComparer.Ordinal).Select(x => $"{x.Key.Replace('|', ' ')}={x.Value:N0}")));
         output.WriteLine($"rejected records: {s.Rejected}" + (s.RejectionSamples.Count > 0 ? " e.g. " + string.Join("; ", s.RejectionSamples.Take(3)) : ""));
-        var hub = adapters.OfType<HubbleAdapter>().First();
-        output.WriteLine($"hubble: {hub.Flows:N0} flows, {hub.LostEventRecords} lost-event record(s) ({hub.LostEvents:N0} events lost)");
-        var k8s = adapters.OfType<KubernetesAdapter>().First();
-        output.WriteLine($"kubernetes events consumed: {k8s.Events:N0}, azure resources: {adapters.OfType<AzureResourceGraphAdapter>().First().Resources:N0}, prometheus samples: {adapters.OfType<PrometheusAdapter>().First().Samples:N0}");
         foreach (var g in e.Graphs)
         {
             var byType = g.State.Entities.GroupBy(x => Ids.Name(x.Type)).Select(x => $"{x.Key}={x.Count():N0}")
@@ -346,20 +322,20 @@ public static class Program
     // ---- serve ----
 
     /// <summary>The options `serve` builds its host with.</summary>
-    public static Sattle.Runtime.HostOptions HostOptionsFor(Options o, string cluster, IDurableStore? durable) =>
-        new Sattle.Runtime.HostOptions { Cluster = cluster, LateHorizonWindows = LateHorizonFor(o), SpaceName = o.Get("space"), SealEvery = o.Flags.Contains("no-seal") ? 0 : long.TryParse(o.Get("seal-every"), out var se) ? se : durable is null ? 0 : 5000, UseSeal = !o.Flags.Contains("verify-journal") && !o.Flags.Contains("no-seal"), VerifyJournal = o.Flags.Contains("verify-journal"), RetainPatches = int.TryParse(o.Get("retain-patches"), out var rp) ? rp : 2_000, RetainEvents = int.TryParse(o.Get("retain-events"), out var re) ? re : 20_000, Projections = Program.Projections };
+    public static Sattle.Runtime.HostOptions HostOptionsFor(Options o, IDurableStore? durable) =>
+        new Sattle.Runtime.HostOptions { LateHorizonWindows = LateHorizonFor(o), SpaceName = o.Get("space"), SealEvery = o.Flags.Contains("no-seal") ? 0 : long.TryParse(o.Get("seal-every"), out var se) ? se : durable is null ? 0 : 5000, UseSeal = !o.Flags.Contains("verify-journal") && !o.Flags.Contains("no-seal"), VerifyJournal = o.Flags.Contains("verify-journal"), RetainPatches = int.TryParse(o.Get("retain-patches"), out var rp) ? rp : 2_000, RetainEvents = int.TryParse(o.Get("retain-events"), out var re) ? re : 20_000, Projections = Program.Projections };
 
-    static int Serve(Options o, string capture, string cluster, TextWriter output)
+    static int Serve(Options o, string capture, TextWriter output)
     {
         IReadOnlyList<SourceFile>? files = null;
         try { files = ReadDefinitions(o); } catch (ArgumentException) when (o.Get("store") is { } && o.Get("store") != "memory") { /* a store with a journal needs no definitions directory */ }
         var spec = o.Get("store");
         IDurableStore? durable = spec is null || spec == "memory" ? null : spec.StartsWith("sqlite=", StringComparison.Ordinal) ? new SqliteGraphStore(spec["sqlite=".Length..]) : spec.StartsWith("cosmos=", StringComparison.Ordinal) ? OpenCosmos(spec["cosmos=".Length..]) : throw new ArgumentException($"unknown store '{spec}'");
-        var hopts = HostOptionsFor(o, cluster, durable);
+        var hopts = HostOptionsFor(o, durable);
         var host = durable is null ? new SpaceHost(files!, hopts) : SpaceHost.OpenDurable(durable, files, hopts);
         host.DefinitionsDir = files is null ? null : FindDefinitions(o); host.WriteDefinitions = o.Flags.Contains("write-definitions");
         if (host.Restart is not null) output.WriteLine($"restored from {spec}: {host.RestoreSummary()}. Sequence {host.Seq}, catalog revision {host.CatalogRevision}, state digest {host.StateDigest()}");
-        return Server.Run(host, o, capture, host.Cluster, files ?? []);
+        return Server.Run(host, o, capture, files ?? []);
     }
 }
 

@@ -131,7 +131,7 @@ Steps 1 and 2 in one command, with the walkthrough printed: `scripts/demo-replay
 ### 1. Start the engine
 
 ```bash
-dotnet engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll serve engine/tests/Sattle.Tests/fixtures/estate --cluster synth --port 5080 --speed 20
+dotnet engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll serve engine/tests/Sattle.Tests/fixtures/estate --port 5080 --speed 20
 ```
 
 - Wait for the line `serving http://127.0.0.1:5080`. From then on it replays the estate's records at 20 times their speed (the 24 minutes take about 72 seconds) and serves every graph as it changes.
@@ -172,7 +172,7 @@ The space that binds them to graphs is [`acme.space.sattle`](engine/definitions/
 ### Change a projection and see the effect
 
 ```bash
-dotnet engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll replay engine/tests/Sattle.Tests/fixtures/estate --cluster synth
+dotnet engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll replay engine/tests/Sattle.Tests/fixtures/estate
 ```
 
 - It prints the elements of each graph and a state digest.
@@ -236,7 +236,7 @@ flowchart LR
 
 ## Portfolio
 
-Screenshots of the running engine on the synthetic estate ([generator](engine/tests/Sattle.Tests/fixtures/build-estate.py)); no real names.
+Screenshots of the running engine on the synthetic estate ([records](engine/tests/Sattle.Tests/fixtures/estate/records/records.ndjson)); no real names.
 
 ### 1. The master graph
 
@@ -371,7 +371,7 @@ An `azd` project that added capture to an existing AKS cluster and removed it ag
 - Infrastructure: [`azure.yaml`](lab/azure.yaml), [`main.bicep`](lab/infra/main.bicep).
 - Capture format: [CAPTURE-FORMAT.md](lab/CAPTURE-FORMAT.md). Live forwarder to Event Hubs: [`eh-forward.mjs`](lab/capture/eh-forward.mjs).
 - Captures and the fixtures derived from them are not in the repository. [`build.sh`](lab/fixtures/build.sh) builds scrubbed fixtures from a capture with [`scrub.mjs`](lab/fixtures/scrub.mjs).
-- What the repository does carry is the synthetic estate, written by a [generator](engine/tests/Sattle.Tests/fixtures/build-estate.py). The canvas's default graph source and the public tests use it.
+- What the repository does carry is the synthetic estate, kept as [record envelopes](engine/tests/Sattle.Tests/fixtures/estate/records/records.ndjson). The canvas's default graph source and the public tests use it.
 
 ## Status
 

@@ -1,5 +1,7 @@
 # Live demo: the canvas follows the AKS cluster
 
+Not runnable since #144: the engine reads record envelopes only, and the forwarder writes Kubernetes, Hubble and Azure envelopes. It runs again once the collectors of #147 turn them into records.
+
 One command runs steps 1 to 3 and prints a checkpoint after each: `scripts/demo-live.sh` (Ctrl-C stops all three). By hand, each block is one terminal, run from the repository root. Needs `az login`, the azd env in `lab/` and the local space binding `lab/captures/space-overlay.sattle` (gitignored: the namespace and cluster of the lab workload).
 
 ```mermaid
@@ -48,7 +50,7 @@ engine/src/Sattle.Cli/bin/Release/net11.0/sattle serve --live --eh-namespace "$N
 - No state until the forwarder starts (step 2): its relist is the whole cluster.
 - The forwarder reads the cluster's name as Hubble gives it (Cilium's `cluster-name`) and puts it on every Kubernetes and Prometheus record, so the pods a flow names are the pods the Kubernetes rows describe. `--cluster NAME` is needed only for a cluster without Cilium.
 - Same command again: resumes from the journaled position and catches up in seconds.
-- Ctrl-C, SIGTERM or `--seconds` print why the input stopped, its counts and the state digest. `sattle replay tmp/live-stream/demo --no-flush --late-horizon 3 --overlay lab/captures/space-overlay.sattle --cluster <cluster>` gives the same digest.
+- Ctrl-C, SIGTERM or `--seconds` print why the input stopped, its counts and the state digest. `sattle replay tmp/live-stream/demo --no-flush --late-horizon 3 --overlay lab/captures/space-overlay.sattle` gives the same digest.
 - `curl -s localhost:5080/space | jq .input.lag`: events and seconds behind the hub.
 - Not `--from earliest`: the hub keeps 24 h and one throughput unit reads about 1.6 MB/s, too slow to catch up.
 

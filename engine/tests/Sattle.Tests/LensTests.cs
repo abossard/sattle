@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using Sattle.Core;
 using Sattle.Language;
 using Sattle.Runtime;
+using Sattle.Cli;
 
 namespace Sattle.Tests;
 
@@ -230,7 +231,7 @@ public class LensTests
             .Replace("flowLogs: flowLogs)", "flowLogs: flowLogs, capNames: capNames)");
         Assert.NotEqual(ops, editedOps); Assert.NotEqual(ingest, editedIngest); Assert.NotEqual(space, editedSpace);
         var edited = new Dictionary<string, string> { ["acme.ops.sattle"] = editedOps, ["acme.ops.ingest.kql"] = editedIngest, ["acme.space.sattle"] = editedSpace };
-        return new SpaceHost([.. files.Select(f => edited.TryGetValue(Path.GetFileName(f.Path), out var t) ? f with { Text = t } : f)], new HostOptions { Projections = Repo.Projections, Cluster = "synth" });
+        return new SpaceHost([.. files.Select(f => edited.TryGetValue(Path.GetFileName(f.Path), out var t) ? f with { Text = t } : f)], new HostOptions { Projections = Repo.Projections});
     }
 
     /// <summary>With `linkFirst` false the authored graph holds the capability before the link names it, so the merge reaches an element of the authored graph.</summary>

@@ -33,7 +33,7 @@ public class SourceProgressTests
 
     static List<SourceFile> Files()
     {
-        var files = Repo.DefinitionFiles(false);
+        var files = Repo.DefinitionFiles();
         var space = files.FindIndex(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal));
         var text = files[space].Text;
         var firstImport = text.IndexOf("import ", StringComparison.Ordinal);
@@ -87,11 +87,11 @@ public class SourceProgressTests
         try
         {
             var store = new InMemoryGraphStore();
-            var options = new HostOptions { Projections = Repo.Projections, Cluster = "synth" };
+            var options = new HostOptions { Projections = Repo.Projections};
             string digest;
             using (var host = SpaceHost.OpenDurable(store, Files(), options))
             {
-                new Replay(host, host.Space, host.Adapters, new ReplayOptions { ChunkRows = 2, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" }).Run(dir);
+                new Replay(host, host.Space, host.Adapters, new ReplayOptions { ChunkRows = 2, AdvanceEveryNs = Min, LatenessNs = Min}).Run(dir);
                 Assert.Equal(new Dictionary<string, string?> { ["a"] = a, ["b"] = b }, States(host));
                 digest = host.StateDigest();
             }

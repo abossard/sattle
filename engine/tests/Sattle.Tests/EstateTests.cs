@@ -5,7 +5,7 @@ using Sattle.Runtime;
 
 namespace Sattle.Tests;
 
-/// <summary>The synthetic capture `estate` (tests/Sattle.Tests/fixtures/estate, written by build-estate.py, invented names only) has data for every operator of the projection language: the workload model with its scenarios, containment and dependency edges for a closure, a Link that merges, a Union of two sources, and node and cluster telemetry for Series, Window, Threshold and Rollup. It is served with the space arguments of estate/space/acme.space.sattle.</summary>
+/// <summary>The synthetic capture `estate` (tests/Sattle.Tests/fixtures/estate, record envelopes, invented names only) has data for every operator of the projection language: the workload model with its scenarios, containment and dependency edges for a closure, a Link that merges, a Union of two sources, and node and cluster telemetry for Series, Window, Threshold and Rollup. It is served with the space arguments of estate/space/acme.space.sattle.</summary>
 public class EstateTests
 {
     const long Min = 60_000_000_000;
@@ -110,7 +110,7 @@ public class EstateTests
 
     /// <summary>The estate as the tests read it: the scenario run the assembly shares, and one more replay with the demo module. The tests read the graphs as they are served.</summary>
     static readonly Lazy<ReplayTests.Run> Plain = new(() => Scenarios.Run(Repo.Estate));
-    static readonly Lazy<ReplayTests.Run> WithDemo = new(() => ReplayTests.Replay(Estate, 50, "synth", o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 3 }, cat: LoadCatalog(demo: true)));
+    static readonly Lazy<ReplayTests.Run> WithDemo = new(() => ReplayTests.Replay(Estate, 50, o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 3 }, cat: LoadCatalog(demo: true)));
 
     [Theory]
     [InlineData("master")] [InlineData("serviceTree")] [InlineData("capabilities")] [InlineData("workloadStructure")] [InlineData("workload")] [InlineData("deploymentHealth")] [InlineData("deploymentReport")]
@@ -176,7 +176,7 @@ public class EstateTests
     [Fact]
     public void The_ontology_endpoint_serves_the_label_of_each_entity_type_and_the_kind_of_each_relationship_type_and_the_space_describes_each_graph()
     {
-        using var h = new SpaceHost(Files(demo: false), new HostOptions { Projections = Repo.Projections, Cluster = "synth" });
+        using var h = new SpaceHost(Files(demo: false), new HostOptions { Projections = Repo.Projections});
         var onto = h.Ontology("workload");
         string? Of(string list, string type, string field, bool id) => onto[list]!.AsArray().Single(t => t!["id"]!["value"]!.GetValue<string>().Split('.')[^1] == type)![field] is { } v ? (id ? v["value"] : v)!.GetValue<string>() : null;
         Assert.Equal("name", Of("entityTypes", "WorkloadService", "label", true)!.Split('.')[^1]);                          // the label of the supertype Component
@@ -226,8 +226,8 @@ public class EstateTests
     [Fact]
     public void A_preview_of_the_estate_shows_the_identity_merge_of_its_Link_so_a_walkthrough_can_assert_it()
     {
-        using var h = new SpaceHost(Files(demo: false), new HostOptions { Projections = Repo.Projections, Cluster = "synth" });
-        new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 40, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" }).Run(Estate);
+        using var h = new SpaceHost(Files(demo: false), new HostOptions { Projections = Repo.Projections});
+        new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 40, AdvanceEveryNs = Min, LatenessNs = Min}).Run(Estate);
         var d = h.CreateDraft(null)["draft"]!.GetValue<string>();
         var p = h.Preview(d, new System.Text.Json.Nodes.JsonObject { ["graphs"] = new System.Text.Json.Nodes.JsonArray("serviceTree") });
         var merged = long.Parse(p["identity"]!["preview"]!["merged"]!.GetValue<string>());

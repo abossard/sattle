@@ -1,6 +1,7 @@
 using Sattle.Core;
+using Sattle.Runtime;
 
-namespace Sattle.Runtime;
+namespace Sattle.Cli;
 
 /// <summary>A deterministic synthetic estate in the row contracts of the examples: pods, services, endpoints and Hubble flows. For tests and the Q14 benchmark; carries no real identifiers.</summary>
 public sealed class SyntheticWorld(IEngineInput engine, int pods, int services, int seed = 1, string cluster = "synth")

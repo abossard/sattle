@@ -7,9 +7,6 @@
     <Project Path="src/Sattle.Language/Sattle.Language.csproj" />
     <Project Path="src/Sattle.Runtime/Sattle.Runtime.csproj" />
   </Folder>
-  <Folder Name="/experiments/">
-    <Project Path="experiments/X12-picture-c/X12-picture-c.csproj" />
-  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Sattle.Differential/Sattle.Differential.csproj" />
     <Project Path="tests/Sattle.Kql.Tests/Sattle.Kql.Tests.csproj" />

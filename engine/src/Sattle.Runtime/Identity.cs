@@ -122,7 +122,7 @@ public sealed class IdentityCatalog(string tenant, Interner it)
             OnMerge?.Invoke(loser, survivor);
             return BindOutcome.Merged;
         }
-        // The identity of an entity is the smallest id minted for any key that denotes it, whether or not that key was ever resolved before: the key's own id counts as a candidate even when nothing used it yet. Then the final ids do not depend on the order in which keys are bound (a flow naming the pod first, or the pod row first).
+        // The identity of an entity is the smallest id minted for any key that denotes it, whether or not that key was ever resolved before: the key's own id counts as a candidate even when nothing used it yet. Then the final ids do not depend on the order in which keys are bound (a row that names an element first, or the element's own row first).
         Span<char> ownId = stackalloc char[KeyText.IdLength];
         Id(d, canon, ownId);
         if (((ReadOnlySpan<char>)ownId).SequenceCompareTo(it.Get(entity)) < 0)

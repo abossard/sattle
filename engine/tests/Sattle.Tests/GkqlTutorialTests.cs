@@ -103,8 +103,8 @@ public class GkqlTutorialTests
         host.StartLive(new ReplayOptions { LatenessNs = 0 });
         void Send(string name, string type, string id, int seq)
         {
-            var line = JsonSerializer.Serialize(new { v = 1, source = "arg", capturedAt = "2026-11-01T10:00:00Z", seq, key = id,
-                meta = new { query = "resources" }, payload = new { name, type, id, subscriptionId = "sub", resourceGroup = "rg", location = "test" } });
+            var line = JsonSerializer.Serialize(new { v = 1, source = "records:ResourceRow", capturedAt = "2026-11-01T10:00:00Z", seq, key = $"records:ResourceRow/{seq}",
+                meta = (object?)null, payload = new { key = id, values = new { id, name, type, location = "test", resourceGroup = "rg", subscriptionId = "sub" } } });
             host.LiveEnvelope("local", line, JsonSerializer.Serialize(new { seq }));
         }
         const string group = "/subscriptions/sub/resourcegroups/rg";
@@ -113,54 +113,5 @@ public class GkqlTutorialTests
         Send(miss, "example/apps", group + "/providers/example/apps/" + miss, 3);
         host.LiveFlush();
         Assert.Equal(hit, Assert.Single(host.Entities("inventory", "Cluster")).Prop("name"));
-    }
-
-    [Fact]
-    public void Resource_Graph_updates_and_deletes_retract_network_evidence()
-    {
-        using var host = new SpaceHost(Definitions(), new HostOptions { SpaceName = "azureTutorial", Projections = Sattle.Cli.Program.Projections });
-        host.StartLive(new ReplayOptions { AdvanceEveryNs = 60_000_000_000, LatenessNs = 0 });
-        const string nic = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/networkInterfaces/nic";
-        string Network(string id, string value, int minute) => JsonSerializer.Serialize(new
-        {
-            v = 1, source = "arg", seq = minute, key = "arg/resources/nic", capturedAt = $"2026-01-01T10:0{minute}:00Z",
-            meta = new { query = "resources" },
-            payload = new
-            {
-                id, name = "nic", type = "microsoft.network/networkinterfaces",
-                properties = new
-                {
-                    ipConfigurations = new[] { new { properties = new
-                    {
-                        privateIPAddress = value,
-                        privateLinkConnectionProperties = new { fqdns = new[] { "storage.example.invalid" } },
-                    } } },
-                },
-            },
-        });
-        string? Address() => Assert.Single(host.Entities("master", "IpAddress")).Prop("address");
-        var master = host.Engine.Graph("master").State;
-        Assert.Equal(SpaceHost.LiveResult.Consumed, host.LiveEnvelope("local", Network(nic, "192.0.2.1", 1), "{\"n\":1}"));
-        host.LiveFlush();
-        Assert.Equal("192.0.2.1", Address());
-        Assert.Single(master.Rels, r => Sattle.Core.Ids.Name(r.Type) == "ConfiguredAddress");
-
-        Assert.Equal(SpaceHost.LiveResult.Duplicate, host.LiveEnvelope("local", Network(nic, "192.0.2.1", 2), "{\"n\":2}"));
-        Assert.Equal(SpaceHost.LiveResult.Consumed, host.LiveEnvelope("local", Network(nic, "192.0.2.2", 3), "{\"n\":3}"));
-        Assert.Equal(SpaceHost.LiveResult.Consumed, host.LiveEnvelope("local", Network(nic.ToUpperInvariant(), "192.0.2.2", 4), "{\"n\":4}"));
-        host.LiveFlush();
-        Assert.Equal("192.0.2.2", Address());
-        Assert.Single(master.Rels, r => Sattle.Core.Ids.Name(r.Type) == "ConfiguredAddress");
-
-        var delete = JsonSerializer.Serialize(new
-        {
-            v = 1, source = "arg", seq = 5, key = "arg/changes/5", capturedAt = "2026-01-01T10:05:00Z",
-            meta = new { query = "resourcechanges" },
-            payload = new { id = nic + "/changes/5", properties = new { changeType = "Delete", targetResourceId = nic } },
-        });
-        Assert.Equal(SpaceHost.LiveResult.Consumed, host.LiveEnvelope("local", delete, "{\"n\":5}"));
-        host.LiveFlush();
-        Assert.Empty(master.Rels);
-        Assert.Empty(master.Entities);
     }
 }

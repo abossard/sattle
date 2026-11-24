@@ -16,8 +16,8 @@ public class KqlLineageTests
     /// <summary>The estate served with the projections of the `.kql` files.</summary>
     static readonly Lazy<SpaceHost> Host = new(() =>
     {
-        var h = new SpaceHost(Catalog.ReadDirectory(Definitions), new HostOptions { Cluster = "synth", LateHorizonWindows = 1_000_000, Projections = new KqlSource() });
-        new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 200, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000, Cluster = "synth" }).Run(Estate);
+        var h = new SpaceHost(Catalog.ReadDirectory(Definitions), new HostOptions { LateHorizonWindows = 1_000_000, Projections = new KqlSource() });
+        new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 200, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000}).Run(Estate);
         h.Finish();
         return h;
     });

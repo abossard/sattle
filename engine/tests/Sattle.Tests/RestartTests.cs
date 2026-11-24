@@ -11,7 +11,7 @@ public class RestartTests
     const long Min = 60_000_000_000;
     static string Fixture => Path.Combine(Repo.Root, "engine", "tests", "Sattle.Tests", "fixtures", "deploy-health");
     static IReadOnlyList<Sattle.Language.SourceFile> Files => Sattle.Language.Catalog.ReadDirectory(Repo.Definitions);
-    static HostOptions Options => new() { Projections = Repo.Projections, Cluster = "synth" };
+    static HostOptions Options => new() { Projections = Repo.Projections};
 
     public static IEnumerable<object[]> Stores() => StoreConformanceTests.CosmosEndpoint is null ? [["memory"], ["sqlite"]] : [["memory"], ["sqlite"], ["cosmos"]];
 
@@ -59,7 +59,7 @@ public class RestartTests
         return bound;
     }
 
-    static void Feed(SpaceHost h) => new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 1, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" }).Run(Fixture);
+    static void Feed(SpaceHost h) => new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 1, AdvanceEveryNs = Min, LatenessNs = Min}).Run(Fixture);
 
     static string Space(SpaceHost h) => h.SpaceInfo().ToJsonString();
 
@@ -212,14 +212,14 @@ public class RestartTests
             "progress" => new Entry.Progress("flows", 2 * Min, 8),
             "loss" => new Entry.Loss(2 * Min, 5, "sourceLoss"),
             "finish" => new Entry.Finish(),
-            "liveStart" => new Entry.LiveStart(new ReplayOptions { ChunkRows = 40, AdvanceEveryNs = Min, LatenessNs = Min, FlushAtEnd = false, Cluster = "synth" }),
+            "liveStart" => new Entry.LiveStart(new ReplayOptions { ChunkRows = 40, AdvanceEveryNs = Min, LatenessNs = Min, FlushAtEnd = false}),
             "envelope" => new Entry.Envelope("hub", "{}", "{\"n\":3}"),
             "skipped" => new Entry.Skipped("hub", "{\"n\":4}"),
             "flush" => new Entry.Flush(),
             "sequenceStep" => new Entry.SequenceStep(),
             "commit" => new Entry.Commit(12, new Dictionary<string, string?> { ["acme.svc"] = "module acme.svc @ 1.0.0;", ["acme.svc.serviceDeps.kql"] = null }),
             "commitRefused" => new Entry.CommitRefused(),
-            _ => new Entry.Header("lab", null, "synth", "operations", "replay", [new Sattle.Language.SourceFile("a.sattle", "module a @ 1.0.0;")]),
+            _ => new Entry.Header("lab", null, "operations", "replay", [new Sattle.Language.SourceFile("a.sattle", "module a @ 1.0.0;")]),
         };
         var it = new Interner();
         Assert.Equal(stored, entry.Text(it));
@@ -238,7 +238,7 @@ public class RestartTests
         {
             Feed(h);
             h.Commit(SpaceModule, BoundTo(h, 1), h.CatalogRevision);
-            h.StartLive(new ReplayOptions { ChunkRows = 40, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth", FlushAtEnd = false });
+            h.StartLive(new ReplayOptions { ChunkRows = 40, AdvanceEveryNs = Min, LatenessNs = Min, FlushAtEnd = false });
             var envelope = File.ReadLines(Directory.EnumerateFiles(Fixture, "*.ndjson", SearchOption.AllDirectories).Order(StringComparer.Ordinal).First()).First();
             h.LiveEnvelope("hub", envelope, "{\"n\":0}");
             h.LiveEnvelope("hub", envelope, "{\"n\":1}");                 // the same key again: skipped

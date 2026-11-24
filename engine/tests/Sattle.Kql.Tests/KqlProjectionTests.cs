@@ -186,7 +186,7 @@ public class KqlProjectionTests
         identity stat for Stat version "1" { name: Text by exact; }
         rows ItemRow { key: Text; group: Text; score: Integer; }
         space s {
-          source a adapter "sattle.authoring" rows ItemRow;
+          source a adapter "record" rows ItemRow;
           master graph master = ingest(a: a);
         }
         """;
