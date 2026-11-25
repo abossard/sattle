@@ -118,14 +118,14 @@ case "${1:-serve}" in
     require_capture
     build_engine
     copy_definitions
-    exec dotnet "$dll" serve "$data" --defs "$local_defs" --space azureTutorial --write-definitions --port 5080 --speed 30 --lateness 0s
+    exec dotnet "$dll" serve "$data" --defs "$local_defs" --space azureTutorial --write-definitions --port 5080 --speed 30 --lateness 0s --late-horizon 3
     ;;
   verify)
     require_capture
     build_engine
     work="$(mktemp -d)"
     trap 'rm -rf "$work"' EXIT
-    dotnet "$dll" replay "$data" --defs "$source_defs" --space azureTutorial --lateness 0s --out "$work"
+    dotnet "$dll" replay "$data" --defs "$source_defs" --space azureTutorial --lateness 0s --late-horizon 3 --out "$work"
     node "$root/scripts/verify-tutorial.mjs" "$data" "$work" "$dll" "$source_defs"
     ;;
   compare-health)
