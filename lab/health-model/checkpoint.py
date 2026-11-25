@@ -15,6 +15,7 @@ A record enters the engine when Azure could first see it: a log row at its inges
 a metric minute when it ends. The engine's clock is the capture time, so `replay --until <cut> --advance-every 1s
 --lateness 0s --no-flush` stops with the clock at the cut. Azure evaluates each signal at its own time (reportedAt),
 so each signal is read from the replay cut at that time, and the entities from the one cut at the capture time.
+That holds only for a settled checkpoint: no signal changes state between its evaluation and the capture.
 Names are scrubbed as export-model.py --scrub does, so rows and reference keep their joins.
 """
 from datetime import datetime, timedelta, timezone
@@ -116,6 +117,11 @@ def mismatches(expected, snapshots):
         elif (value is None) != (want["value"] is None) or (value is not None and abs(value - want["value"]) > TOLERANCE * max(1, abs(value))):
             out.append(f"signal {key} at {want['cut']}: value {value} != {want['value']}")
     at = snapshots[expected["capturedAt"]]
+    # Azure rolls up each signal as last evaluated; a checkpoint is settled when no signal changed state since then
+    for key, want in sorted(expected["signals"].items()):
+        then, now = (nodes(snapshots[c], "Signal").get(key, {}).get("state") for c in (want["cut"], expected["capturedAt"]))
+        if then != now:
+            out.append(f"not settled: signal {key} is {then} at {want['cut']} and {now} at {expected['capturedAt']}")
     if contains(at) != expected["edges"]:
         out.append(f"edges at {expected['capturedAt']}: {len(contains(at))} Contains, not the model's {len(expected['edges'])}")
     entities = nodes(at, "Entity")
