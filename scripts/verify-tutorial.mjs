@@ -50,7 +50,7 @@ for (const row of samples) {
   streak = extendsStreak ? streak + 1 : 0;
   if (streak === (state === 'Healthy' ? 2 : 3)) {
     const next = state === 'Healthy' ? 'Degraded' : 'Healthy';
-    changes.push({ capturedAt: row.capturedAt, before: state, after: next });
+    changes.push({ measuredAt: point.timeStamp, before: state, after: next });
     state = next;
     expected.push(state);
     streak = 0;
@@ -404,14 +404,17 @@ console.log('✓ Report blocks follow the same transitions and render to matchin
 verifyKubernetes(capture, extent);
 
 if (engine && definitions) {
-  const checkpoints = changes.slice(0, 2).flatMap(({ capturedAt, before, after }) => [
-    { cutoff: new Date(Date.parse(capturedAt) - 1).toISOString(), state: before },
-    { cutoff: capturedAt, state: after },
+  // The fold steps a minute window when the clock reaches its close: end plus the late horizon of 3 windows (Def. 6.4).
+  // --no-flush keeps the clock at the cutoff instead of advancing it past the last record.
+  const close = (measuredAt) => Date.parse(measuredAt) + 60_000 * (1 + 3);
+  const checkpoints = changes.slice(0, 2).flatMap(({ measuredAt, before, after }) => [
+    { cutoff: new Date(close(measuredAt) - 1).toISOString(), state: before },
+    { cutoff: new Date(close(measuredAt)).toISOString(), state: after },
   ]);
   for (const [index, checkpoint] of checkpoints.entries()) {
     const dir = join(output, `checkpoint-${index}`);
     const replay = spawnSync('dotnet', [engine, 'replay', capture, '--defs', definitions, '--space', 'azureTutorial',
-      '--lateness', '0s', '--until', checkpoint.cutoff, '--out', dir], { encoding: 'utf8' });
+      '--lateness', '0s', '--late-horizon', '3', '--no-flush', '--until', checkpoint.cutoff, '--out', dir], { encoding: 'utf8' });
     assert.equal(replay.status, 0, 'Checkpoint replay succeeded');
     const atCheckpoint = extent('health', dir);
     const observed = healthTargets.map(([type, id]) => property(exactNode(atCheckpoint, type, id), 'state'));
