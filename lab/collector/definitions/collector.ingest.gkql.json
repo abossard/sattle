@@ -12,7 +12,7 @@
       "name": "metrics",
       "rows": "collector.MetricRow",
       "time": "at",
-      "lateness": "3m"
+      "lateness": "25m"
     }
   ],
   "parameters": [],
