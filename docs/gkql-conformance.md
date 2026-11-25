@@ -108,4 +108,4 @@ Found by this note (second pass, listed on #159 before code):
 | G5 | decimals in `min`, `max`, `arg_max`, `arg_min`, keys, `distinct` | the output kept the digits of the first equal value that arrived | R1 | fixed with #161 (D7) |
 | G6 | `series` with `fill` | the progress of a source looked like a second time | R8 | not a gap: progress is a recorded input (D7); see time |
 | G7 | `series` no-data record | it sat at a window made from the clock | R8 | fixed (D8); no output changed, the window is not observable |
-| G8 | windowed `summarize`, `hysteresis` without a declared lateness | the state is dropped at a host horizon, not at a lateness of the program | R1 | with a declared lateness: `hysteresis` to use it, open (D5); without one: moved to #142 (D1 (b), D5) |
+| G8 | windowed `summarize`, `hysteresis` without a declared lateness | the state is dropped at a host horizon, not at a lateness of the program | R1 | moved to #142 (D1 (b), D10): a lateness is declared only on rows inputs, and a `hysteresis` reads telemetry, which has none |
