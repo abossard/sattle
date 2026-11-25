@@ -410,10 +410,10 @@ for (const [name, kind, value] of [
     assert.notEqual(aliasesOf('salt-b', [[kind, value]])[0], lower);
   });
 }
-test('no lab file but scrub/core.mjs computes an HMAC, so every alias comes from it', () => {
+test('no lab file but scrub/core.mjs computes an HMAC or a kind-<hash> alias, so every alias comes from it', () => {
   const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.name === 'node_modules' || e.name.startsWith('.') ? []
     : e.isDirectory() ? walk(join(d, e.name)) : /\.(py|mjs|js|sh)$/.test(e.name) ? [join(d, e.name)] : []));
-  const makers = walk(LAB).filter((f) => !f.endsWith(join('tests', 'scrub.test.mjs')) && /createHmac|\bimport hmac\b|hmac\.new/.test(readFileSync(f, 'utf8')));
+  const makers = walk(LAB).filter((f) => !f.endsWith(join('tests', 'scrub.test.mjs')) && /createHmac|\bhmac\b|['"`][a-z]+-['"`]\s*\+\s*(?:hashlib|createHash)/.test(readFileSync(f, 'utf8')));
   assert.deepEqual(makers, [join(FIXTURES_DIR, 'scrub', 'core.mjs')]);
 });
 test('two recordings of one resource scrubbed into one directory give it one alias, wherever each was recorded', () => {

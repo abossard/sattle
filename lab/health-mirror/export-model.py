@@ -36,7 +36,7 @@ def alias(salt, kind, name):
         scrubber = _scrubbers[salt] = subprocess.Popen(["node", str(SCRUB), "aliases"], stdin=subprocess.PIPE,
                                                        stdout=subprocess.PIPE, text=True)
         scrubber.stdin.write(salt + "\n")
-    scrubber.stdin.write(json.dumps([kind, name]) + "\n")
+    scrubber.stdin.write(json.dumps([kind, name.casefold()]) + "\n")  # case folded as before, not only lower-cased
     scrubber.stdin.flush()
     return json.loads(scrubber.stdout.readline())
 

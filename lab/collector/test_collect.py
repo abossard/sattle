@@ -306,24 +306,33 @@ class MeanTests(unittest.TestCase):
             verb = self.VERBS[self.FEEDS[verb["id"]]]
         return expr
 
-    def test_the_metric_properties_read_the_source_fields(self):
-        def total(field):
-            return {"fn": "sum", "args": [{"ref": field}]}
-        cases = [("name", {"ref": "metric"}),
-                 ("average", {"fn": "/", "args": [total("total"), total("count")]})]
-        [prop] = [n["props"] for n in self.VERBS["showMetric"]["target"]["nodes"]]
-        for name, expected in cases:
-            with self.subTest(name):
-                self.assertEqual(self.source("showMetric", prop[name]), expected)
+    def chain(self, verb):
+        """The verbs a verb reads from, nearest first, down to the source rows."""
+        out = []
+        while verb in self.FEEDS:
+            verb = self.FEEDS[verb]
+            out.append(self.VERBS[verb])
+        return out
 
-    def test_a_bucket_without_samples_is_not_counted(self):
-        chain, at = [], "showMetric"
-        while at in self.FEEDS:
-            at = self.FEEDS[at]
-            chain.append(self.VERBS[at])
-        conditions = [v["condition"] for v in chain if v["verb"] == "where"]
-        self.assertIn({"fn": ">", "args": [{"fn": "coalesce", "args": [{"ref": "count"}, {"lit": 0.0}]}, {"lit": 0.0}]},
-                      conditions)
+    def test_the_metric_properties_read_the_source_fields(self):
+        def total(expr):
+            return {"fn": "sum", "args": [expr]}
+        counted = {"fn": "iff", "args": [{"fn": "isnotnull", "args": [{"ref": "total"}]},
+                                         {"fn": "coalesce", "args": [{"ref": "count"}, {"lit": 0.0}]}, {"lit": 0.0}]}
+        cases = [("name", "showMetric", {"ref": "metric"}),
+                 ("average", "showAverage", {"fn": "/", "args": [
+                     {"fn": "coalesce", "args": [total({"ref": "total"}), {"lit": 0.0}]}, total(counted)]})]
+        for name, verb, expected in cases:
+            with self.subTest(name):
+                [prop] = [n["props"] for n in self.VERBS[verb]["target"]["nodes"]]
+                self.assertEqual(self.source(verb, prop[name]), expected)
+
+    def test_a_metric_without_samples_keeps_its_node_and_edge_and_has_no_mean(self):
+        sampled = {"fn": ">", "args": [{"ref": "samples"}, {"lit": 0.0}]}
+        cases = [("Reports edge", "reports", []), ("Metric name", "showMetric", []), ("Metric average", "showAverage", [sampled])]
+        for name, verb, conditions in cases:
+            with self.subTest(name):
+                self.assertEqual([v["condition"] for v in self.chain(verb) if v["verb"] == "where"], conditions)
 
 
 class OnePlaceTests(unittest.TestCase):

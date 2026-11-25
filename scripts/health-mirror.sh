@@ -7,6 +7,15 @@ fixture="${MIRROR_FIXTURE:-$mirror/fixture}"
 work="${MIRROR_WORK:-$mirror/state}"
 dll="$root/engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll"
 port="${HEALTH_ENGINE_PORT:-5083}"
+key="$work/flow-alias.key"
+
+# The same local alias key each time, so addresses and names stay joinable between captures.
+alias_key() {
+  python3 -c 'import pathlib,secrets,sys
+try:
+ with pathlib.Path(sys.argv[1]).open("x") as file: file.write(secrets.token_hex(32))
+except FileExistsError: pass' "$key"
+}
 
 case "${1:-help}" in
   capture)
@@ -46,19 +55,16 @@ case "${1:-help}" in
     ;;
   capture-network)
     : "${2:?Pass a private raw checkpoint directory from capture}"
-    python3 -B "$mirror/collect-network.py" "$2" --hours "${3:-72}" --output "$fixture/dependencies.ndjson"
+    mkdir -p "$work"
+    alias_key
+    python3 -B "$mirror/collect-network.py" "$2" --hours "${3:-72}" --output "$fixture/dependencies.ndjson" --scrub "$key"
     ;;
   import-flows)
     : "${2:?Pass the VNet ARM resource ID}" "${3:?Pass one or more downloaded flow-log blobs}"
     vnet="$2"
     shift 2
     mkdir -p "$work" "$fixture"
-    # Use the same local alias key each time so addresses remain joinable between captures.
-    key="$work/flow-alias.key"
-    python3 -c 'import pathlib,secrets,sys
-try:
- with pathlib.Path(sys.argv[1]).open("x") as file: file.write(secrets.token_hex(32))
-except FileExistsError: pass' "$key"
+    alias_key
     exec node "$mirror/collect-flow-blobs.mjs" --vnet "$vnet" --output "$fixture/network.ndjson" --scrub-key-file "$key" "$@"
     ;;
   prepare|prepare-project)

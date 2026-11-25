@@ -262,6 +262,7 @@ async function recording(recordingDir, outDir) {
   const ids = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
   let records = 0;
   let found = 0;
+  const outputs = [];
   for (const file of walkFiles(recordingDir)) {
     const rows = [];
     for await (const line of lines(file)) {
@@ -271,13 +272,13 @@ async function recording(recordingDir, outDir) {
     const text = rows.join('\n').toLowerCase();
     found += [...deny].filter((d) => text.includes(d)).length;
     found += (text.match(/(?<![\d.])\d{1,3}(?:\.\d{1,3}){3}(?![\d.])/g) ?? []).filter((ip) => !/^(10\.|127\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|198\.1[89]\.|0\.)/.test(ip)).length;
-    const out = join(outDir, relative(recordingDir, file));
-    mkdirSync(dirname(out), { recursive: true });
-    writeFileSync(out, rows.map((r) => `${r}\n`).join(''));
+    outputs.push([join(outDir, relative(recordingDir, file)), rows.map((r) => `${r}\n`).join('')]);
     records += rows.length;
   }
   console.log(`${records} records scrubbed, ${deny.size} names and ids checked`);
-  if (found) { console.error(`FAIL: ${found} names, ids or public addresses survive`); process.exit(1); }
+  // nothing is written when anything survives: the output directory is committed
+  if (found) { console.error(`FAIL: ${found} names, ids or public addresses survive, nothing written`); process.exit(1); }
+  for (const [out, text] of outputs) { mkdirSync(dirname(out), { recursive: true }); writeFileSync(out, text); }
 }
 
 // Run as a program, also from a path with spaces or through a link
