@@ -249,8 +249,8 @@
   "flow-view-health-model": "Healthy",
   "foundry-account": "Healthy",
   "hosted-agent": "Healthy",
-  "id-5cfa67aeab88": "Unknown",
-  "id-92ab8cd23685": "Unknown",
+  "id-b812be26d034": "Unknown",
+  "id-2c10613f5a99": "Unknown",
   "mcp-server": "Healthy",
   "model-root": "Degraded",
   "platform-context": "Unhealthy",
@@ -314,8 +314,8 @@
    "system-model-read"
   ],
   [
-   "id-92ab8cd23685",
-   "id-5cfa67aeab88"
+   "id-2c10613f5a99",
+   "id-b812be26d034"
   ],
   [
    "model-root",

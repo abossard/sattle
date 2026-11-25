@@ -358,7 +358,7 @@
         "displayName": "Application Insights topology",
         "entityName": "discover-app-insights",
         "specification": {
-          "applicationInsightsResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.Insights/components/resource-7efdd53da454",
+          "applicationInsightsResourceId": "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.Insights/components/resource-8ba061825930",
           "kind": "ApplicationInsightsTopology"
         }
       }
@@ -372,12 +372,12 @@
           "x": 20.0,
           "y": 520.0
         },
-        "displayName": "Container App: resource-2f29e0a92d45 / View",
+        "displayName": "Container App: resource-7e9ee431b545 / View",
         "impact": "Standard",
         "signalGroups": {
           "azureLogAnalytics": {
             "authenticationSetting": "auth-system",
-            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.OperationalInsights/workspaces/resource-7581b4ac8a18",
             "signals": [
               {
                 "dataUnit": "Percent",
@@ -393,7 +393,7 @@
                   }
                 },
                 "name": "availability-test",
-                "queryText": "AppAvailabilityResults | where TimeGenerated > ago(15m) | where Name == \"Health Pulse home page\" | summarize Value = round(100.0 * countif(Success) / count(), 2) | where not(isnan(Value))",
+                "queryText": "AppAvailabilityResults | where TimeGenerated > ago(15m) | where Name == \"test-f0205069f4a4\" | summarize Value = round(100.0 * countif(Success) / count(), 2) | where not(isnan(Value))",
                 "refreshInterval": "PT5M",
                 "signalKind": "LogAnalyticsQuery",
                 "timeGrain": "PT15M",
@@ -403,11 +403,11 @@
           },
           "azureResource": {
             "authenticationSetting": "auth-system",
-            "azureResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.App/containerApps/resource-2f29e0a92d45",
+            "azureResourceId": "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.App/containerApps/resource-7e9ee431b545",
             "azureResourceKind": "ContainerApp",
             "resourceHealth": {
               "enabled": "Disabled",
-              "signalName": "ResourceHealth-id-336ab67940f7"
+              "signalName": "ResourceHealth-id-c94a52b29687"
             },
             "signals": [
               {
@@ -506,12 +506,12 @@
           "x": 2020.0,
           "y": 520.0
         },
-        "displayName": "Container App: resource-2f29e0a92d45 / Apply",
+        "displayName": "Container App: resource-7e9ee431b545 / Apply",
         "impact": "Standard",
         "signalGroups": {
           "azureLogAnalytics": {
             "authenticationSetting": "auth-system",
-            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.OperationalInsights/workspaces/resource-7581b4ac8a18",
             "signals": [
               {
                 "dataUnit": "Percent",
@@ -527,7 +527,7 @@
                   }
                 },
                 "name": "availability-test",
-                "queryText": "AppAvailabilityResults | where TimeGenerated > ago(15m) | where Name == \"Health Pulse home page\" | summarize Value = round(100.0 * countif(Success) / count(), 2) | where not(isnan(Value))",
+                "queryText": "AppAvailabilityResults | where TimeGenerated > ago(15m) | where Name == \"test-f0205069f4a4\" | summarize Value = round(100.0 * countif(Success) / count(), 2) | where not(isnan(Value))",
                 "refreshInterval": "PT5M",
                 "signalKind": "LogAnalyticsQuery",
                 "timeGrain": "PT15M",
@@ -537,11 +537,11 @@
           },
           "azureResource": {
             "authenticationSetting": "auth-system",
-            "azureResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.App/containerApps/resource-2f29e0a92d45",
+            "azureResourceId": "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.App/containerApps/resource-7e9ee431b545",
             "azureResourceKind": "ContainerApp",
             "resourceHealth": {
               "enabled": "Disabled",
-              "signalName": "ResourceHealth-id-ed3f70e073e9"
+              "signalName": "ResourceHealth-id-65b4477c7674"
             },
             "signals": [
               {
@@ -640,12 +640,12 @@
           "x": 420.0,
           "y": 520.0
         },
-        "displayName": "Container App: resource-2f29e0a92d45 / Report",
+        "displayName": "Container App: resource-7e9ee431b545 / Report",
         "impact": "Standard",
         "signalGroups": {
           "azureLogAnalytics": {
             "authenticationSetting": "auth-system",
-            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.OperationalInsights/workspaces/resource-7581b4ac8a18",
             "signals": [
               {
                 "dataUnit": "Percent",
@@ -661,7 +661,7 @@
                   }
                 },
                 "name": "availability-test",
-                "queryText": "AppAvailabilityResults | where TimeGenerated > ago(15m) | where Name == \"Health Pulse home page\" | summarize Value = round(100.0 * countif(Success) / count(), 2) | where not(isnan(Value))",
+                "queryText": "AppAvailabilityResults | where TimeGenerated > ago(15m) | where Name == \"test-f0205069f4a4\" | summarize Value = round(100.0 * countif(Success) / count(), 2) | where not(isnan(Value))",
                 "refreshInterval": "PT5M",
                 "signalKind": "LogAnalyticsQuery",
                 "timeGrain": "PT15M",
@@ -671,11 +671,11 @@
           },
           "azureResource": {
             "authenticationSetting": "auth-system",
-            "azureResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.App/containerApps/resource-2f29e0a92d45",
+            "azureResourceId": "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.App/containerApps/resource-7e9ee431b545",
             "azureResourceKind": "ContainerApp",
             "resourceHealth": {
               "enabled": "Disabled",
-              "signalName": "ResourceHealth-id-fbc04c18bd30"
+              "signalName": "ResourceHealth-id-25f11e66eff0"
             },
             "signals": [
               {
@@ -774,12 +774,12 @@
           "x": 820.0,
           "y": 520.0
         },
-        "displayName": "Container App: resource-2f29e0a92d45 / Tasks",
+        "displayName": "Container App: resource-7e9ee431b545 / Tasks",
         "impact": "Standard",
         "signalGroups": {
           "azureLogAnalytics": {
             "authenticationSetting": "auth-system",
-            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.OperationalInsights/workspaces/resource-7581b4ac8a18",
             "signals": [
               {
                 "dataUnit": "Percent",
@@ -795,7 +795,7 @@
                   }
                 },
                 "name": "availability-test",
-                "queryText": "AppAvailabilityResults | where TimeGenerated > ago(15m) | where Name == \"Health Pulse home page\" | summarize Value = round(100.0 * countif(Success) / count(), 2) | where not(isnan(Value))",
+                "queryText": "AppAvailabilityResults | where TimeGenerated > ago(15m) | where Name == \"test-f0205069f4a4\" | summarize Value = round(100.0 * countif(Success) / count(), 2) | where not(isnan(Value))",
                 "refreshInterval": "PT5M",
                 "signalKind": "LogAnalyticsQuery",
                 "timeGrain": "PT15M",
@@ -805,11 +805,11 @@
           },
           "azureResource": {
             "authenticationSetting": "auth-system",
-            "azureResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.App/containerApps/resource-2f29e0a92d45",
+            "azureResourceId": "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.App/containerApps/resource-7e9ee431b545",
             "azureResourceKind": "ContainerApp",
             "resourceHealth": {
               "enabled": "Disabled",
-              "signalName": "ResourceHealth-id-388a94fdd00a"
+              "signalName": "ResourceHealth-id-a97c9ddc5876"
             },
             "signals": [
               {
@@ -1009,12 +1009,12 @@
           "x": 1620.0,
           "y": 520.0
         },
-        "displayName": "Foundry account: resource-5a09f7bf4e6f / gpt-54-mini",
+        "displayName": "Foundry account: resource-2526920dd780 / gpt-54-mini",
         "impact": "Standard",
         "signalGroups": {
           "azureResource": {
             "authenticationSetting": "auth-system",
-            "azureResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.CognitiveServices/accounts/resource-5a09f7bf4e6f",
+            "azureResourceId": "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.CognitiveServices/accounts/resource-2526920dd780",
             "azureResourceKind": "CognitiveServicesAccount",
             "resourceHealth": {
               "enabled": "Enabled",
@@ -1071,12 +1071,12 @@
           "x": 1220.0,
           "y": 520.0
         },
-        "displayName": "Foundry project: resource-3cee86f9820a / health-model-agent",
+        "displayName": "Foundry project: resource-0872fcc5c031 / health-model-agent",
         "impact": "Standard",
         "signalGroups": {
           "azureLogAnalytics": {
             "authenticationSetting": "auth-system",
-            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.OperationalInsights/workspaces/resource-7581b4ac8a18",
             "signals": [
               {
                 "dataUnit": "Count",
@@ -1122,35 +1122,18 @@
           },
           "azureResource": {
             "authenticationSetting": "auth-system",
-            "azureResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.CognitiveServices/accounts/resource-5a09f7bf4e6f/projects/resource-3cee86f9820a",
+            "azureResourceId": "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.CognitiveServices/accounts/resource-2526920dd780/projects/resource-0872fcc5c031",
             "azureResourceKind": "CognitiveServicesAccount",
             "resourceHealth": {
               "enabled": "Disabled",
-              "signalName": "ResourceHealth-id-03098bebb502"
+              "signalName": "ResourceHealth-id-69af4bff22cb"
             }
           }
         }
       }
     },
     {
-      "name": "id-5cfa67aeab88",
-      "properties": {
-        "discoveredBy": "discover-app-insights",
-        "displayName": "resource-1b50ca9061b0",
-        "icon": {
-          "iconName": "Resource"
-        },
-        "impact": "Standard",
-        "signalGroups": {
-          "azureResource": {
-            "authenticationSetting": "auth-system",
-            "azureResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourcegroups/group-66bdbf2ad096/providers/microsoft.storage/storageaccounts/resource-1b50ca9061b0"
-          }
-        }
-      }
-    },
-    {
-      "name": "id-92ab8cd23685",
+      "name": "id-2c10613f5a99",
       "properties": {
         "discoveredBy": "discover-app-insights",
         "displayName": "demo-workload",
@@ -1161,7 +1144,24 @@
         "signalGroups": {
           "azureLogAnalytics": {
             "authenticationSetting": "auth-system",
-            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3"
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.OperationalInsights/workspaces/resource-7581b4ac8a18"
+          }
+        }
+      }
+    },
+    {
+      "name": "id-b812be26d034",
+      "properties": {
+        "discoveredBy": "discover-app-insights",
+        "displayName": "resource-a6b84a0ecc44",
+        "icon": {
+          "iconName": "Resource"
+        },
+        "impact": "Standard",
+        "signalGroups": {
+          "azureResource": {
+            "authenticationSetting": "auth-system",
+            "azureResourceId": "/subscriptions/subscription-2198f811fc53/resourcegroups/group-c3f73788d44d/providers/microsoft.storage/storageaccounts/resource-a6b84a0ecc44"
           }
         }
       }
@@ -1173,12 +1173,12 @@
           "x": 1420.0,
           "y": 520.0
         },
-        "displayName": "Container App: resource-2904904b5c4b",
+        "displayName": "Container App: resource-3e8daac032dd",
         "impact": "Standard",
         "signalGroups": {
           "azureLogAnalytics": {
             "authenticationSetting": "auth-system",
-            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.OperationalInsights/workspaces/resource-7581b4ac8a18",
             "signals": [
               {
                 "dataUnit": "Percent",
@@ -1194,7 +1194,7 @@
                   }
                 },
                 "name": "availability-test",
-                "queryText": "AppAvailabilityResults | where TimeGenerated > ago(15m) | where Name == \"Azure MCP health\" | summarize Value = round(100.0 * countif(Success) / count(), 2) | where not(isnan(Value))",
+                "queryText": "AppAvailabilityResults | where TimeGenerated > ago(15m) | where Name == \"test-0aee66981f38\" | summarize Value = round(100.0 * countif(Success) / count(), 2) | where not(isnan(Value))",
                 "refreshInterval": "PT5M",
                 "signalKind": "LogAnalyticsQuery",
                 "timeGrain": "PT15M",
@@ -1204,11 +1204,11 @@
           },
           "azureResource": {
             "authenticationSetting": "auth-system",
-            "azureResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.App/containerApps/resource-2904904b5c4b",
+            "azureResourceId": "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.App/containerApps/resource-3e8daac032dd",
             "azureResourceKind": "ContainerApp",
             "resourceHealth": {
               "enabled": "Disabled",
-              "signalName": "ResourceHealth-id-61367846caa5"
+              "signalName": "ResourceHealth-id-5cdc92697e63"
             },
             "signals": [
               {
@@ -1306,7 +1306,7 @@
         "alerts": {
           "unhealthy": {
             "actionGroupIds": [
-              "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.Insights/actionGroups/resource-8b7887dd969a"
+              "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.Insights/actionGroups/resource-05552a5f810f"
             ],
             "description": "CORE is unhealthy.",
             "severity": "Sev2"
@@ -1339,7 +1339,7 @@
         "signalGroups": {
           "azureLogAnalytics": {
             "authenticationSetting": "auth-system",
-            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.OperationalInsights/workspaces/resource-7581b4ac8a18",
             "signals": [
               {
                 "dataUnit": "Count",
@@ -1367,7 +1367,7 @@
                   }
                 },
                 "name": "failed-arm-operations",
-                "queryText": "AzureActivity | where TimeGenerated > ago(15m) | where CategoryValue == \"Administrative\" | where ResourceGroup =~ \"group-66bdbf2ad096\" | summarize Value = countif(ActivityStatusValue in (\"Failed\", \"Failure\"))",
+                "queryText": "AzureActivity | where TimeGenerated > ago(15m) | where CategoryValue == \"Administrative\" | where ResourceGroup =~ \"group-c3f73788d44d\" | summarize Value = countif(ActivityStatusValue in (\"Failed\", \"Failure\"))",
                 "refreshInterval": "PT5M",
                 "signalKind": "LogAnalyticsQuery",
                 "timeGrain": "PT15M",
@@ -1401,16 +1401,16 @@
           "x": 1020.0,
           "y": 520.0
         },
-        "displayName": "Blob Storage: resource-1b50ca9061b0 / sessions, Tasks",
+        "displayName": "Blob Storage: resource-a6b84a0ecc44 / sessions, Tasks",
         "impact": "Standard",
         "signalGroups": {
           "azureResource": {
             "authenticationSetting": "auth-system",
-            "azureResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.Storage/storageAccounts/resource-1b50ca9061b0",
+            "azureResourceId": "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.Storage/storageAccounts/resource-a6b84a0ecc44",
             "azureResourceKind": "StorageAccount",
             "resourceHealth": {
               "enabled": "Disabled",
-              "signalName": "ResourceHealth-id-dbc1d081d0dc"
+              "signalName": "ResourceHealth-id-3b9ba89123a4"
             },
             "signals": [
               {
@@ -1467,16 +1467,16 @@
           "x": 2420.0,
           "y": 520.0
         },
-        "displayName": "Blob Storage: resource-1b50ca9061b0 / sessions, Apply",
+        "displayName": "Blob Storage: resource-a6b84a0ecc44 / sessions, Apply",
         "impact": "Standard",
         "signalGroups": {
           "azureResource": {
             "authenticationSetting": "auth-system",
-            "azureResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.Storage/storageAccounts/resource-1b50ca9061b0",
+            "azureResourceId": "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.Storage/storageAccounts/resource-a6b84a0ecc44",
             "azureResourceKind": "StorageAccount",
             "resourceHealth": {
               "enabled": "Disabled",
-              "signalName": "ResourceHealth-id-567ee835f2f5"
+              "signalName": "ResourceHealth-id-72a1ed7246d9"
             },
             "signals": [
               {
@@ -1581,7 +1581,7 @@
         "signalGroups": {
           "azureLogAnalytics": {
             "authenticationSetting": "auth-system",
-            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.OperationalInsights/workspaces/resource-7581b4ac8a18",
             "signals": [
               {
                 "dataUnit": "Count",
@@ -1647,7 +1647,7 @@
         "signalGroups": {
           "azureLogAnalytics": {
             "authenticationSetting": "auth-system",
-            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.OperationalInsights/workspaces/resource-7581b4ac8a18",
             "signals": [
               {
                 "dataUnit": "Count",
@@ -1693,7 +1693,7 @@
         "signalGroups": {
           "azureLogAnalytics": {
             "authenticationSetting": "auth-system",
-            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.OperationalInsights/workspaces/resource-7581b4ac8a18",
             "signals": [
               {
                 "dataUnit": "Count",
@@ -1739,7 +1739,7 @@
         "signalGroups": {
           "azureLogAnalytics": {
             "authenticationSetting": "auth-system",
-            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.OperationalInsights/workspaces/resource-7581b4ac8a18",
             "signals": [
               {
                 "dataUnit": "Count",
@@ -1805,7 +1805,7 @@
         "signalGroups": {
           "azureLogAnalytics": {
             "authenticationSetting": "auth-system",
-            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.OperationalInsights/workspaces/resource-7581b4ac8a18",
             "signals": [
               {
                 "dataUnit": "Count",
@@ -1867,7 +1867,7 @@
         "signalGroups": {
           "azureLogAnalytics": {
             "authenticationSetting": "auth-system",
-            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.OperationalInsights/workspaces/resource-7581b4ac8a18",
             "signals": [
               {
                 "dataUnit": "Count",
@@ -1909,7 +1909,7 @@
         "signalGroups": {
           "azureLogAnalytics": {
             "authenticationSetting": "auth-system",
-            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.OperationalInsights/workspaces/resource-7581b4ac8a18",
             "signals": [
               {
                 "dataUnit": "Count",
@@ -1951,7 +1951,7 @@
         "signalGroups": {
           "azureLogAnalytics": {
             "authenticationSetting": "auth-system",
-            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.OperationalInsights/workspaces/resource-7581b4ac8a18",
             "signals": [
               {
                 "dataUnit": "Count",
@@ -2008,7 +2008,7 @@
     "location": "swedencentral",
     "name": "model-root",
     "properties": {},
-    "sourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.CloudHealth/healthmodels/model-root",
+    "sourceId": "/subscriptions/subscription-2198f811fc53/resourceGroups/group-c3f73788d44d/providers/Microsoft.CloudHealth/healthmodels/model-root",
     "tags": {
       "azd-env-name": "demo-workload",
       "workload": "azure-health-model-demo"
@@ -2017,11 +2017,11 @@
   },
   "relationships": [
     {
-      "name": "id-9ec7eeb35678",
+      "name": "id-225833da16e5",
       "properties": {
-        "childEntityName": "id-5cfa67aeab88",
+        "childEntityName": "id-b812be26d034",
         "discoveredBy": "discover-app-insights",
-        "parentEntityName": "id-92ab8cd23685"
+        "parentEntityName": "id-2c10613f5a99"
       }
     },
     {

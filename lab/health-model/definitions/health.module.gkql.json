@@ -43,16 +43,16 @@
           "activity": "activity",
           "metrics": "metrics",
           "webTest": {
-            "lit": "Health Pulse home page"
+            "lit": "test-f0205069f4a4"
           },
           "mcpTest": {
-            "lit": "Azure MCP health"
+            "lit": "test-0aee66981f38"
           },
           "appRole": {
             "lit": "demo-workload"
           },
           "modelResourceGroup": {
-            "lit": "group-66bdbf2ad096"
+            "lit": "group-c3f73788d44d"
           }
         }
       }

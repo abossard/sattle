@@ -2523,10 +2523,10 @@
       "entity": "hosted-agent"
      },
      {
-      "entity": "id-5cfa67aeab88"
+      "entity": "id-b812be26d034"
      },
      {
-      "entity": "id-92ab8cd23685"
+      "entity": "id-2c10613f5a99"
      },
      {
       "entity": "mcp-server"
@@ -2645,8 +2645,8 @@
       "impact": "Standard"
      },
      {
-      "parent": "id-92ab8cd23685",
-      "child": "id-5cfa67aeab88",
+      "parent": "id-2c10613f5a99",
+      "child": "id-b812be26d034",
       "impact": "Standard"
      },
      {

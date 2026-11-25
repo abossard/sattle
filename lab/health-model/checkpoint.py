@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Compare the rebuilt health model with Azure at one reference checkpoint.
 
-  prepare RAW REFERENCE OUT APP_ROLE
-                              collector output, a reference file (lab/health-mirror/export-model.py --scrub) and
-                              the app role name -> OUT/capture/rows.ndjson, OUT/checkpoint.json, OUT/cuts.txt
+  prepare RAW REFERENCE OUT APP_ROLE LOCAL_SALT
+                              collector output, a reference file (lab/health-mirror/export-model.py --scrub LOCAL_SALT),
+                              the app role name and the same salt -> OUT/capture/rows.ndjson, OUT/checkpoint.json,
+                              OUT/cuts.txt
   compare OUT                 OUT/replays/<cut>/master.final.snapshot.json -> one line per mismatch, exit 1 on any
   mutate OUT                  OUT/mutants/<name>: the definitions with one binding dropped, one edge reversed, one
                               threshold crossed, each with the cuts that show it
@@ -16,21 +17,23 @@ a metric minute when it ends. The engine's clock is the capture time, so `replay
 --lateness 0s --no-flush` stops with the clock at the cut. Azure evaluates each signal at its own time (reportedAt),
 so each signal is read from the replay cut at that time, and the entities from the one cut at the capture time.
 That holds only for a settled checkpoint: no signal changes state between its evaluation and the capture.
-Names are scrubbed as export-model.py --scrub does, so rows and reference keep their joins.
+Names are scrubbed by the alias of export-model.py under the same salt, so rows and reference keep their joins.
 """
 from datetime import datetime, timedelta, timezone
-import hashlib
+import importlib.util
 import json
 from pathlib import Path
+import re
 import sys
 
 TOLERANCE = 1e-6
 ENTRY_DELAY = {"MetricRow": timedelta(minutes=1)}
 SOURCE_IDS = {"resourceId", "_ItemId", "EventDataId"}  # the source's own record ids: the program reads none of them
-
-
-def digest(name):
-    return hashlib.sha256(name.casefold().encode()).hexdigest()[:12]
+_spec = importlib.util.spec_from_file_location("export_model", Path(__file__).parents[1] / "health-mirror" / "export-model.py")
+_export_model = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_export_model)
+alias = _export_model.alias
+SELECTS = re.compile(r'\bName\s+(==|in|startswith)\s+(\([^)]*\)|"[^"]*")')
 
 
 def instant(text):
@@ -41,14 +44,33 @@ def iso(moment):
     return moment.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
-def scrub(values, app_role):
-    """The row as the scrubbed reference names it: app role and resource groups by alias, no ids of the source."""
-    out = {k: v for k, v in values.items() if k not in SOURCE_IDS}
-    if out.get("AppRoleName") == app_role:
-        out["AppRoleName"] = "demo-workload"
-    if out.get("ResourceGroup"):
-        out["ResourceGroup"] = "group-" + digest(out["ResourceGroup"])
-    return out
+def vocabulary(model):
+    """The names the model's queries select by == or in, and the prefixes they select by startswith (lower case)."""
+    exact, prefixes = set(), set()
+    for entity in model["entities"]:
+        for signal in ((entity["properties"].get("signalGroups") or {}).get("azureLogAnalytics") or {}).get("signals", []):
+            for op, arg in SELECTS.findall(signal["queryText"]):
+                words = re.findall(r'"([^"]*)"', arg)
+                (prefixes if op == "startswith" else exact).update(w.lower() if op == "startswith" else w for w in words)
+    return exact, tuple(prefixes)
+
+
+def scrubber(app_role, salt, model):
+    """The row as the scrubbed reference names it, with no ids of the source. Kept: the names the model selects. By
+    alias: test names, resource groups, other roles and every other name (a dependency's name can hold resource ids)."""
+    exact, prefixes = vocabulary(model)
+    def scrub(rows, values):
+        out = {k: v for k, v in values.items() if k not in SOURCE_IDS}
+        if out.get("AppRoleName"):
+            out["AppRoleName"] = "demo-workload" if out["AppRoleName"] == app_role else alias(salt, "role", out["AppRoleName"])
+        if rows == "AvailabilityRow":
+            out["Name"] = alias(salt, "test", out["Name"])
+        elif out.get("Name") and out["Name"] not in exact and not out["Name"].lower().startswith(prefixes):
+            out["Name"] = alias(salt, "name", out["Name"])
+        if out.get("ResourceGroup"):
+            out["ResourceGroup"] = alias(salt, "group", out["ResourceGroup"])
+        return out
+    return scrub
 
 
 def entry(envelope):
@@ -60,16 +82,16 @@ def entry(envelope):
     return instant(envelope["meta"]["position"])
 
 
-def capture(raw_lines, cuts, app_role):
+def capture(raw_lines, cuts, scrub, salt):
     """Records at their entry time and a heartbeat at every cut, in capture order."""
     records = []
     for line in raw_lines:
         e = json.loads(line)
         if "values" not in e["payload"]:
             continue
-        key = e["source"] + "/" + digest(e["key"])
-        records.append((entry(e), {"v": 1, "source": e["source"], "key": key,
-                                   "payload": {"key": key, "values": scrub(e["payload"]["values"], app_role)}}))
+        key = e["source"] + "/" + alias(salt, "key", e["key"])
+        values = scrub(e["source"].split(":", 1)[1], e["payload"]["values"])
+        records.append((entry(e), {"v": 1, "source": e["source"], "key": key, "payload": {"key": key, "values": values}}))
     sources = sorted({r["source"] for _, r in records}) or ["records:MetricRow"]
     for cut in cuts:
         records.append((cut, {"v": 1, "source": sources[0], "key": "heartbeat/" + iso(cut), "payload": {}}))
@@ -132,14 +154,17 @@ def mismatches(expected, snapshots):
     return out
 
 
-def prepare(raw, reference, out, app_role):
-    expected = {**checkpoint(json.loads(Path(reference).read_text())),
-                "edges": edges(json.loads(Path(reference).with_name("model.json").read_text()))}
+def prepare(raw, reference, out, app_role, salt_file):
+    salt = Path(salt_file).read_text().strip()
+    if not salt:
+        raise ValueError("The scrub key file is empty")
+    model = json.loads(Path(reference).with_name("model.json").read_text())
+    expected = {**checkpoint(json.loads(Path(reference).read_text())), "edges": edges(model)}
     cuts = sorted({instant(s["cut"]) for s in expected["signals"].values()} | {instant(expected["capturedAt"])})
     out = Path(out)
     (out / "capture").mkdir(parents=True, exist_ok=True)
     lines = Path(raw).read_text().splitlines()
-    (out / "capture" / "rows.ndjson").write_text("".join(json.dumps(e) + "\n" for e in capture(lines, cuts, app_role)))
+    (out / "capture" / "rows.ndjson").write_text("".join(json.dumps(e) + "\n" for e in capture(lines, cuts, scrubber(app_role, salt, model), salt)))
     (out / "checkpoint.json").write_text(json.dumps(expected, indent=1) + "\n")
     (out / "cuts.txt").write_text("".join(iso(c) + "\n" for c in cuts))
 
@@ -211,8 +236,8 @@ def verify(out):
 
 
 if __name__ == "__main__":
-    if sys.argv[1:2] == ["prepare"] and len(sys.argv) == 6:
-        prepare(*sys.argv[2:6])
+    if sys.argv[1:2] == ["prepare"] and len(sys.argv) == 7:
+        prepare(*sys.argv[2:7])
     elif sys.argv[1:2] == ["compare"] and len(sys.argv) == 3:
         sys.exit(compare(sys.argv[2]))
     elif sys.argv[1:2] == ["mutate"] and len(sys.argv) == 3:

@@ -3,6 +3,7 @@
 import argparse
 import fcntl
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -21,10 +22,13 @@ UUID = re.compile(r"(?<![\da-f])[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}(?![\da-
 SENSITIVE = re.compile(r"(?:AccountKey|SharedAccessSignature|SharedAccessKey|client_secret|password|sig)\s*="
                        r"|-----BEGIN (?:\w+ )*PRIVATE KEY-----|\bBearer [A-Za-z0-9_-]{16,}", re.I)
 SECRET_FIELD = re.compile(r"(?:apiKey|accountKey|password|clientSecret|secretValue|accessToken|refreshToken|privateKey)", re.I)
+# an availability test's name is a deployment name, read from the queries that select it
+AVAILABILITY_TEST = re.compile(r'AppAvailabilityResults\b.*?\bName\s*==\s*"([^"]+)"', re.S)
 
 
-def digest(name):
-    return hashlib.sha256(name.casefold().encode()).hexdigest()[:12]
+def alias(salt, kind, name):
+    """kind-<12 hex>: an HMAC under a local secret salt, so a guessed name cannot be confirmed from the alias."""
+    return kind + "-" + hmac.new(salt.encode(), f"{kind}:{name.casefold()}".encode(), hashlib.sha256).hexdigest()[:12]
 
 
 def read_json(path):
@@ -86,10 +90,11 @@ def strings(value):
 
 class Names:
     """Keep native names locally. Optional aliases join the same IDs in labels, KQL, and bindings."""
-    def __init__(self, raw, scrub):
+    def __init__(self, raw, salt):
         self.match = None
-        if not scrub:
+        if not salt:
             return
+        self.salt = salt
         self.names = {}
         model = raw["model"]
         environment = model.get("tags", {}).get("azd-env-name")
@@ -108,14 +113,17 @@ class Names:
                     continue
                 if parent in ("entities", "relationships", "signaldefinitions", "authenticationsettings", "discoveryrules"):
                     continue  # children are logical model names; the corresponding collection owns the key
-                self.names[item.lower()] = ("subscription" if parent == "subscriptions" else
-                                            "group" if parent == "resourcegroups" else "resource") + "-" + digest(item)
+                self.names[item.lower()] = alias(salt, "subscription" if parent == "subscriptions" else
+                                                 "group" if parent == "resourcegroups" else "resource", item)
+        for value in strings(raw):
+            for test in AVAILABILITY_TEST.findall(value):
+                self.names[test.lower()] = alias(salt, "test", test)
         self.names[model["name"].lower()] = "model-root"
         for entity in raw["entities"]:
             if entity["properties"].get("discoveredBy"):
                 label = entity["properties"].get("displayName", "")
                 if label and not re.search(r"\s", label):
-                    self.names.setdefault(label.lower(), "resource-" + digest(label))
+                    self.names.setdefault(label.lower(), alias(salt, "resource", label))
         pattern = "|".join(re.escape(v) for v in sorted(self.names, key=len, reverse=True))
         self.match = re.compile(r"(?<![a-z0-9])(?:" + pattern + r")(?![a-z0-9])", re.I)
 
@@ -125,7 +133,7 @@ class Names:
         if not self.match:
             return value
         value = self.match.sub(lambda m: self.names[m.group().lower()], value)
-        return UUID.sub(lambda m: "id-" + digest(m.group()), value)
+        return UUID.sub(lambda m: alias(self.salt, "id", m.group()), value)
 
     def clean(self, value):
         if isinstance(value, dict):
@@ -138,22 +146,22 @@ class Names:
 
 
 def split_export(raw, timestamp, scrub):
-    alias = Names(raw, scrub)
+    names = Names(raw, scrub)
     model = raw["model"]
     config = {"schemaVersion": 1, "model": {
-        "name": alias.text(model["name"]), "sourceId": alias.text(model["id"]),
+        "name": names.text(model["name"]), "sourceId": names.text(model["id"]),
         "location": model["location"], "type": model["type"],
-        "properties": alias.clean(model.get("properties", {})),
-        "identityType": model.get("identity", {}).get("type"), "tags": alias.clean(model.get("tags", {})),
+        "properties": names.clean(model.get("properties", {})),
+        "identityType": model.get("identity", {}).get("type"), "tags": names.clean(model.get("tags", {})),
     }}
     for kind in COLLECTIONS:
         config[kind] = sorted((
-            {"name": alias.text(r["name"]), "properties": alias.clean(r["properties"])} for r in raw[kind]
+            {"name": names.text(r["name"]), "properties": names.clean(r["properties"])} for r in raw[kind]
         ), key=lambda r: r["name"])
     held_out = {"capturedAt": timestamp, "entities": [], "signals": []}
     bindings, private_map = [], []
     definitions = {r["name"] for r in config["signalDefinitions"]}
-    raw_entities = {alias.text(r["name"]): r for r in raw["entities"]}
+    raw_entities = {names.text(r["name"]): r for r in raw["entities"]}
 
     def binding(entity, group, name, status, raw_name, definition=None):
         key = "/".join((entity, group, name))
@@ -187,7 +195,7 @@ def split_export(raw, timestamp, scrub):
                 held_out.setdefault("aggregationGroups", []).append({"entityId": eid, "name": group["name"], **observed})
         for group, data in props.get("signalGroups", {}).items():
             raw_group = raw_entities[eid]["properties"]["signalGroups"][group]
-            raw_signals = {alias.text(s["name"]): s for s in raw_group.get("signals", [])}
+            raw_signals = {names.text(s["name"]): s for s in raw_group.get("signals", [])}
             for signal in data.get("signals", []):
                 name = signal["name"]
                 binding(eid, group, name, signal.pop("status", {}), raw_signals[name]["name"],
@@ -257,16 +265,20 @@ if __name__ == "__main__":
     args.add_argument("--from-raw", type=Path, help="Previously captured private ARM bundle")
     parser.add_argument("--raw-out", type=Path, help="Keep private source IDs for the telemetry collector")
     parser.add_argument("--out", type=Path, required=True, help="Local fixture directory")
-    parser.add_argument("--scrub", action="store_true", help="Replace Azure identifiers with deterministic aliases")
+    parser.add_argument("--scrub", type=Path, metavar="LOCAL_SALT",
+                        help="Replace Azure identifiers and deployment names with aliases salted by this local key file")
     parser.add_argument("--phase", choices=("warmup", "comparison"), default="comparison",
                         help="Label a separately observed deployment warmup in the reference history")
     options = parser.parse_args()
+    salt = options.scrub and options.scrub.read_text().strip()
+    if options.scrub and not salt:
+        parser.error("The scrub key file is empty")
     if options.from_raw:
         if options.raw_out:
             parser.error("--raw-out applies to an Azure capture")
-        export(options.from_raw, options.out, options.phase, options.scrub)
+        export(options.from_raw, options.out, options.phase, salt)
     else:
         with tempfile.TemporaryDirectory() as tmp:
             directory = options.raw_out or Path(tmp)
             capture(options.model_id, directory)
-            export(directory, options.out, options.phase, options.scrub)
+            export(directory, options.out, options.phase, salt)
