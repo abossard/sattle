@@ -234,7 +234,7 @@ Since the kernel is the only part of the program that knows about definitions, t
 | E6 | the only recursion is reach with a fixed bound; there is no recursion over rows and no cycle of graphs | proved, tested |
 | E7 | reachability without a bound is not expressible | sketch; that the bound is the limit: proved, tested |
 | E8 | tumbling and sliding windows, shifted times, recorded watermarks, revisions, time to live, hysteresis, roll-up, fill and no data | tested |
-| E9 | sessions, counters sampled at irregular times, ranks of measurements, percentiles that combine the windows of a measurement and histograms are not expressible; the percentile of a numeric data value per group, at nearest rank, is | each refusal tested; the percentile tested (`A_percentile_is_the_value_of_nearest_rank`, and `The_engine_equals_the_reference_however_the_log_is_cut` on the world "group percentile") |
+| E9 | sessions, counters sampled at irregular times, ranks of measurements, percentiles that combine the windows of a measurement and histograms are not expressible; the percentile of a numeric data value per group, at nearest rank, is | each refusal tested; the percentile at nearest rank tested, and the engine equals the reference on a group percentile however the log is cut |
 | E10 | quotients of a graph by a map of its nodes, edges included | proved, tested |
 | E11 | one step of graph rewriting, and no rewriting to a normal form | sketch |
 
