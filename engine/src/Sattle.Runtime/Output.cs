@@ -445,6 +445,9 @@ sealed class ConflictSet
         changed.Add(subject);
     }
 
+    /// <summary>Whether a conflict about the element `id` or one of its properties holds.</summary>
+    public bool About(string id) => now.ContainsKey("element " + id) || now.Keys.Any(k => k.StartsWith("property " + id + " ", StringComparison.Ordinal));
+
     /// <summary>Clears the conflicts about an element and about its properties.</summary>
     public void EndOf(string id)
     {
@@ -481,7 +484,9 @@ public sealed class OutputBuilder
     /// <summary>A row says something about an element: its type, endpoints and properties, with the row's weight.</summary>
     public void Contribute(int elem, bool isRel, int sink, bool update, string type, string? source, string? target, Props props, long weight) => elements.Contribute(elem, isRel, sink, update, type, source, target, props, weight);
     /// <summary>The same for a row of an emit, read from its evaluated columns at `row` in the order of `shape`; endpoints are text numbers, -1 for none. An update that sets no property says nothing and gives false.</summary>
-    public bool Contribute(FragmentShape shape, int elem, int source, int target, Column[] cols, int row, long weight) => elements.Contribute(shape, elem, source, target, cols, row, weight);
+    public bool Contribute(FragmentShape shape, int elem, int source, int target, Column[] cols, int row, long weight) => elements.Contribute(shape, elem, source, target, cols, row, weight, shape.IsRel ? source : elem, shape.IsRel ? target : -1);
+    /// <summary>The same for a row whose keys have the own ids `ownA` (an entity's key, or a relationship's source) and `ownB` (a relationship's target, else -1): a split of a class moves the rows of the part that leaves by them.</summary>
+    public bool Contribute(FragmentShape shape, int elem, int source, int target, Column[] cols, int row, long weight, int ownA, int ownB) => elements.Contribute(shape, elem, source, target, cols, row, weight, ownA, ownB);
     /// <summary>The relationship id function of a sink (the id hashes its endpoints), needed to re-key relationships when an identity merges.</summary>
     public void RegisterRelSink(int sink, Func<string, string, string> idOf) => elements.RegisterRelSink(sink, idOf);
     /// <summary>A telemetry row of the step: the window it writes, its value and weight, and the id it was written under before any link (`own`, Law 7.5 item 3); `combine` is the property's combine rule.</summary>
@@ -495,15 +500,22 @@ public sealed class OutputBuilder
     /// <summary>Two identities merged: the rows and the lineage of the loser move to the survivor; `g` is the graph as the last flush left it. Gives the elements whose telemetry must follow, old and new: the entity itself, whether or not this graph emitted it, and every relationship that got a new id.</summary>
     public IReadOnlyList<(int From, int To)> Remap(int loser, int survivor, Graph g)
     {
-        var moved = elements.Move(loser, survivor, g);
-        foreach (var (from, to) in moved) Lineage.Move(from, to);
+        var moved = elements.Move(loser, survivor, g).Select(m => { Lineage.Move(m.From, m.To, m.Implied); return (m.From, m.To); }).ToList();
         return moved.Contains((loser, survivor)) ? moved : [(loser, survivor), .. moved];
     }
 
-    /// <summary>The telemetry windows of a merged element follow it, in the support and in the store; the samples that set each moved window to what its rows give are appended to the store.</summary>
-    public void MoveTelemetry(ITelemetryStore store, GraphKey g, int from, int to, Func<int, string?> combine, long inputId)
+    /// <summary>A class split (Ch. 2, Def. 2.5): what was written under own ids of the part that leaves (`inPart`) moves from `r` to the part's representative `n`, in the rows and in the lineage; `g` is the graph as the last flush left it. Gives the elements whose telemetry must follow, old and new, with which rows go by their own ids: the entity itself, whether or not this graph holds it, and each relationship re-keyed.</summary>
+    public IReadOnlyList<(int From, int To, Func<long, bool> Which)> Split(int r, int n, Func<int, bool> inPart, Graph g)
     {
-        var corrections = windows.Move(store, g, from, to, combine, inputId);
+        var moved = elements.Split(r, n, inPart, g);
+        foreach (var (from, to, which) in moved) Lineage.Split(from, to, which);
+        return moved.Any(m => m.From == r) ? moved : [(r, n, o => inPart((int)o)), .. moved];
+    }
+
+    /// <summary>The telemetry windows of a merged element follow it, in the support and in the store; with `which`, only the rows whose own id it holds (a split). The samples that set each moved window to what its rows give are appended to the store.</summary>
+    public void MoveTelemetry(ITelemetryStore store, GraphKey g, int from, int to, Func<int, string?> combine, long inputId, Func<long, bool>? which = null)
+    {
+        var corrections = which is null ? windows.Move(store, g, from, to, combine, inputId) : windows.Move(store, g, from, to, which, inputId);
         if (corrections.Count > 0) store.Append(g, [.. corrections]);
     }
 
@@ -546,7 +558,7 @@ sealed class EmitEntityOp : SinkOp
         shape = new(it, sink, false, t.Update, t.TypeId, GraphProps(t.Sets));
         cx.Out.Lineage.Register(sink, origin);
         ws = inLayout.Has("windowStart") ? inLayout.Index("windowStart") : -1;
-        if (id is VId v && t.Sets.Any(s => s.Telemetry)) v.TrackOwn = true;
+        if (id is VId v) v.TrackOwn = true;
         pairs = PairColumns(t.Sets, inLayout);
     }
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
@@ -565,8 +577,9 @@ sealed class EmitEntityOp : SinkOp
                 if (set.Telemetry && col.Present(row))
                     cx.Out.Telemetry(new WindowKey(elem, it.Intern(set.PropId), b.Cols[ws].L[row]), ValueOf(col, row, b, pairs[s]), w, set.Period, owns is null ? elem : owns.L[row], set.Combine);
             }
-            if (!cx.Out.Contribute(shape, elem, -1, -1, cols, row, w)) continue;
-            cx.Out.Lineage.Support(shape.Sink, elem, b, row, w);
+            var own = owns is null ? elem : (int)owns.L[row];
+            if (!cx.Out.Contribute(shape, elem, -1, -1, cols, row, w, own, -1)) continue;
+            cx.Out.Lineage.Support(shape.Sink, elem, own == elem ? -1 : own, b, row, w);
         }
         return null;
     }
@@ -585,7 +598,7 @@ sealed class EmitRelOp : SinkOp
         shape = new(it, sink, true, t.Update, t.TypeId, GraphProps(t.Sets));
         cx.Out.Lineage.Register(sink, origin);
         ws = inLayout.Has("windowStart") ? inLayout.Index("windowStart") : -1;
-        if (t.Sets.Any(s => s.Telemetry)) foreach (var e in new[] { src, tgt }.OfType<VId>()) e.TrackOwn = true;
+        foreach (var e in new[] { src, tgt }.OfType<VId>()) e.TrackOwn = true;
         pairs = PairColumns(t.Sets, inLayout);
         cx.Out.RegisterRelSink(sink, (s, d) => IdentityCatalog.RelationshipId(cx.Tenant, cx.ProjectionId, t.Key, s, d));
     }
@@ -605,14 +618,15 @@ sealed class EmitRelOp : SinkOp
                 IdentityCatalog.RelationshipId(cx.Tenant, cx.ProjectionId, t.Key, it.Get(s), it.Get(d), id);
                 relIds[(s, d)] = rel = it.Intern(id);         // a known id is found from its characters: no string is made
             }
+            var (os, od) = (so is null ? s : (int)so.L[row], to is null ? d : (int)to.L[row]);
             for (var i = 0; i < sets.Length; i++)
             {
                 var set = sets[i].Set; var col = cols[i];
                 if (set.Telemetry && col.Present(row)) cx.Out.Telemetry(new WindowKey(rel, it.Intern(set.PropId), b.Cols[ws].L[row]), ValueOf(col, row, b, pairs[i]), w, set.Period,
-                    ((so is null ? s : so.L[row]) << 32) | (uint)(to is null ? d : to.L[row]), set.Combine);          // a relationship is written under the own ids of its two endpoints
+                    ((long)os << 32) | (uint)od, set.Combine);          // a relationship is written under the own ids of its two endpoints
             }
-            if (!cx.Out.Contribute(shape, rel, s, d, cols, row, w)) continue;
-            cx.Out.Lineage.Support(shape.Sink, rel, b, row, w);
+            if (!cx.Out.Contribute(shape, rel, s, d, cols, row, w, os, od)) continue;
+            cx.Out.Lineage.Support(shape.Sink, rel, (os, od) == (s, d) ? -1 : ((long)os << 32) | (uint)od, b, row, w);
         }
         return null;
     }
@@ -621,21 +635,23 @@ sealed class EmitRelOp : SinkOp
 /// <summary>Link: an equivalence between two identity keys. An asserted policy with confidence at or above its threshold binds the right key to the left identity (rule B2).</summary>
 sealed class LinkOp : SinkOp
 {
-    readonly TLink t; readonly VId left, right; readonly IdentityCatalog cat; readonly long[] buf;
-    public LinkOp(TLink t, VId left, VId right, IdentityCatalog cat) : base(t) { this.t = t; this.left = left; this.right = right; this.cat = cat; buf = new long[right.Components]; }
+    readonly TLink t; readonly VId left, right; readonly IdentityCatalog cat; readonly long[] lbuf, rbuf;
+    public LinkOp(TLink t, VId left, VId right, IdentityCatalog cat) : base(t) { this.t = t; this.left = left; this.right = right; this.cat = cat; lbuf = new long[left.Components]; rbuf = new long[right.Components]; }
+    /// <summary>Each row adds its weight to the link of its two keys (Ch. 2, Def. 2.5). The insertions of the batch go first, so a link that a row replaces within the batch does not split its class on the way.</summary>
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
     {
         var b = In(inputs, "in"); if (b is null || b.Rows == 0) return null;
         if (t.Mode != "assert" || t.Confidence < t.Threshold) return null;
-        var lc = left.Eval(b);
+        var lcols = left.EvalComponents(b, [], out _);
         var rcols = right.EvalComponents(b, [], out _);
-        for (var k = 0; k < b.Rows; k++)
-        {
-            var row = b.RowAt(k);
-            if (b.Weight(row) <= 0 || (lc.P is not null && !lc.P[row])) continue;
-            if (!right.CanonicalComponents(rcols, row, buf)) continue;
-            cat.Bind(right.Domain, buf, (int)lc.L[row], left.Domain);
-        }
+        foreach (var insertions in (ReadOnlySpan<bool>)[true, false])
+            for (var k = 0; k < b.Rows; k++)
+            {
+                var row = b.RowAt(k); var w = b.Weight(row);
+                if (w == 0 || w > 0 != insertions) continue;
+                if (!left.CanonicalComponents(lcols, row, lbuf) || !right.CanonicalComponents(rcols, row, rbuf)) continue;
+                cat.Link(left.Domain, lbuf, right.Domain, rbuf, w);
+            }
         return null;
     }
 }

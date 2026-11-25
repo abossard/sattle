@@ -119,6 +119,49 @@ public class DifferentialTests
         Assert.Equal([expected ?? ""], seen);
     }
 
+    /// <summary>#159 G1 (Ch. 2, Def. 2.5): the class of a key is a function of the links present now. A link whose rows are all retracted is withdrawn; the class may split, and the part without the old id gets the smallest id among its keys. What was written under a key of that part (rows, relationships at it, telemetry windows) moves to the part's id.
+    /// A change is `+A=Web` (a row linking uid A to the name Web, `/g1` for a second row of the same link), `-A=Web` its retraction, `~web>api` a call, `A:1` or `Web:2` a load by uid or by name at 10 s (`-Web:2` retracts it), `@90` an advance. A, B are the uids of the smallest and the next own id, smaller than the names' (checked); Y, Z the uids of the largest, larger than the names' (checked). `splits`: the withdrawal changes the ids (else another link holds the class).</summary>
+    [Theory]
+    [InlineData("+A=Web +B=Web ~web>api A:1 Web:2 B:4 @90 -A=Web @150", true)]                // a chain A-web-B split at A: web and B, its relationship and their windows move to the smaller of their ids
+    [InlineData("+A=Web +B=Web ~web>api A:1 Web:2 B:4 @90 -A=Web -Web:2 @150", true)]         // and a row written before the split is retracted after it
+    [InlineData("+A=Web +B=Web A:1 Web:2 -A=Web @90", true)]                                    // split before the window closes
+    [InlineData("+A=Web +B=Web @30 -A=Web Web:2 A:1 @90", true)]                                // rows after the split
+    [InlineData("+Y=Web +Z=Web/g1 ~web>api -Y=Web -Z=Web/g1 @90", false)]                       // the name's id names the class; both rows that disagreed on its properties leave in one batch, so the conflict ends (no key is left to move)
+    [InlineData("+A=Web Web:2 A:1 @90 -A=Web @150", true)]                                      // the last link of a class of two
+    [InlineData("+A=Web +A=api +B=Web +B=api ~web>api A:1 Web:2 @90 -A=Web @150", false)]      // a link on a cycle: no split
+    [InlineData("+A=Web +A=Web/g1 ~web>api Web:2 @90 -A=Web @150", false)]                      // another row still holds the link
+    [InlineData("+A=Web ~web>api Web:2 @90 -A=Web +A=Web @150", false)]                          // withdrawn and asserted again
+    public void A_withdrawn_link_splits_a_class(string changes, bool splits)
+    {
+        var w = Worlds.All.Single(x => x.Name.EndsWith("(a link withdrawn)", StringComparison.Ordinal));
+        static string Own(string domain, string key) => Sattle.Reference.Identities.Allocate("lab", new Sattle.Reference.IdentityKey("d:w/identity:" + domain, [key]));
+        var uids = Enumerable.Range(0, 10).Select(i => "u" + i).OrderBy(u => Own("instanceUid", u), StringComparer.Ordinal).ToArray();
+        var (a, b, y, z) = (uids[0], uids[1], uids[^2], uids[^1]);
+        Assert.True(string.CompareOrdinal(Own("instanceUid", a), Own("instanceName", "web")) < 0 && string.CompareOrdinal(Own("instanceUid", a), Own("instanceName", "api")) < 0, "A is the id of the class");
+        Assert.True(string.CompareOrdinal(Own("instanceName", "web"), Own("instanceUid", y)) < 0 && string.CompareOrdinal(Own("instanceName", "api"), Own("instanceUid", y)) < 0, "Y and Z are not the id of a class with a name");
+        string U(string x) => x switch { "A" => a, "B" => b, "Y" => y, "Z" => z, _ => x };
+        Sattle.Reference.Input Change(string c)
+        {
+            if (c[0] == '@') return new Sattle.Reference.AdvanceInput(Logs.Origin + long.Parse(c[1..]) * Logs.Second);
+            var weight = c[0] == '-' ? -1 : 1; var body = c[0] is '+' or '-' ? c[1..] : c;
+            if (body.Split('=') is [var uid, var rest])
+            {
+                var (name, g) = rest.Split('/') is [var n, var gg] ? (n, gg) : (rest, "g0");
+                return new Sattle.Reference.RowInput("instances", Logs.Row(("uid", Value.Text(U(uid))), ("name", Value.Text(name)), ("g", Value.Text(g))), weight);
+            }
+            if (body[0] == '~') return new Sattle.Reference.RowInput("flows", Logs.Row(("src", Value.Text(body[1..].Split('>')[0])), ("dst", Value.Text(body.Split('>')[1]))), weight);
+            var (key, load) = (body.Split(':')[0], long.Parse(body.Split(':')[1]));
+            var byUid = key is "A" or "B" or "Y" or "Z";
+            return new Sattle.Reference.RowInput("loads", Logs.Row(("uid", byUid ? Value.Text(U(key)) : Value.Null), ("name", byUid ? Value.Null : Value.Text(key)), ("n", Value.Integer(load)), ("t", Value.Instant(Logs.Origin + 10 * Logs.Second))), weight);
+        }
+        var log = changes.Split(' ').Select(Change).ToArray();
+        var kept = changes.Split(' ').Where(c => !(c[0] == '-' && c.Contains('='))).Select(Change).ToArray();
+        string Ids(Sattle.Reference.Input[] l) => string.Join(" ", Sattle.Reference.ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), l).Graphs.Values.SelectMany(g => g.Entities.Keys.Concat(g.Rels.Keys)));
+        Assert.Equal(splits, Ids(log) != Ids(kept));                                          // the case reaches what it says: the withdrawal changes the ids
+        foreach (var reordered in new[] { false, true })
+            Assert.Null(Differential.FirstMismatch(w, log, 0, reordered)?.ToString());
+    }
+
     /// <summary>T-B3 (Theorem 6.2 premise B3, Proposition 1.8): instances named by uid and by name, links that join random sets of them into classes, the first uses and the links in 20 random orders, each cut three ways. A uid named twice links two names, so a link can join two classes that already hold several keys. Every key resolves to the smallest own id of its class, every forwarding record points to a smaller id, and the state is the same for every order and cut. On the first order, the views that group by the merged pod (a count, and a sum through a union and joins) end equal to the reference under the three cuts: one group over all keys of a class.</summary>
     [Theory]
     [InlineData(1)] [InlineData(2)] [InlineData(3)] [InlineData(4)] [InlineData(5)]
@@ -150,8 +193,8 @@ public class DifferentialTests
                 }
                 foreach (var (domain, id, components) in engine.Identities.Bindings())
                     Assert.Equal(expected.IdOf(new Sattle.Reference.IdentityKey(domain.Id, [.. components])), id);          // the smallest own id of the class
-                foreach (var (loser, survivor) in engine.Identities.Forwarding)
-                    Assert.True(string.CompareOrdinal(engine.Interner.Get(survivor), engine.Interner.Get(loser)) < 0, "a forwarding record points to a greater id");
+                foreach (var (rep, members) in engine.Identities.Classes)
+                    Assert.All(members, m => Assert.True(string.CompareOrdinal(engine.Interner.Get(rep), engine.Interner.Get(m)) <= 0, "a class is named by an id greater than one of its members"));
                 digests.Add(engine.StateDigest());
             }
             if (order == 0)
@@ -168,7 +211,7 @@ public class DifferentialTests
         Assert.Single(digests);
     }
 
-    /// <summary>Code review 2, defect 22: an entity that a link forwards to another id keeps its lineage, since what was known about the id that lost is then known about the survivor. Before, the survivor of a merge had no lineage.</summary>
+    /// <summary>Code review 2, defect 22: an entity that a link names by another id keeps its lineage, since what was known about the id that lost is then known about the survivor. Before, the survivor of a merge had no lineage.</summary>
     [Theory]
     [InlineData(false)] [InlineData(true)]
     public void An_entity_that_a_link_forwards_to_another_id_keeps_its_lineage(bool rowByRow)
@@ -178,7 +221,7 @@ public class DifferentialTests
         var rows = new[] { ("u0", "Web"), ("u1", "api"), ("u2", "DB"), ("u3", "cache") }
             .Select(p => new Sattle.Reference.RowInput("instances", Logs.Row(("uid", Value.Text(p.Item1)), ("name", Value.Text(p.Item2)), ("g", Value.Text("g0"))), 1)).ToList();
         if (rowByRow) { var seq = 0L; foreach (var r in rows) EngineRun.Ingest(engine, [r], ++seq); } else EngineRun.Ingest(engine, [.. rows], 1);
-        Assert.NotEmpty(engine.Identities.Forwarding);
+        Assert.NotEmpty(engine.Identities.Classes);
         Assert.NotEmpty(engine.Master.State.Entities);
         var lineage = new LineageReader(engine);
         Assert.All(engine.Master.State.Entities, e => Assert.Equal("observed", lineage.Forward("master", e.Id)["rule"]?.GetValue<string>()));

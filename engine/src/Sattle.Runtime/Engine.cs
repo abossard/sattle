@@ -420,7 +420,7 @@ public sealed class Engine : IDisposable, IEngineInput
                 if (st.Reads.Select((r, i) => (r, i)).FirstOrDefault(x => x.r.Fill is not null && series.Feeding[x.i].Length == 0) is { r: not null } unfed)
                     throw new InvalidOperationException($"graph {g.Name}: {st.Name} fills '{unfed.r.OutName}', and no source feeds that property: a window cannot be known to be covered (Def. 7.15)");
             }
-        // the rows of a graph that ingests are not evaluated again: each one's sink follows a merge
+        // the rows of a graph that ingests are not evaluated again: each one's sink follows a merge or a split
         var ingesting = graphs.Where(g => g.Ingests).Select(g => (Graph: g, Properties: catalog.OntologyOf(g.Typed.OutputModule).Props)).ToList();      // a function of the catalog, which an engine never changes: built once, not per merge
         Identities.OnMerge = (loser, survivor) =>
         {
@@ -429,6 +429,12 @@ public sealed class Engine : IDisposable, IEngineInput
                 foreach (var (from, to) in g.Out.Remap(loser, survivor, g.State))
                     g.Out.MoveTelemetry(Telemetry, g.Key, from, to, prop => properties.TryGetValue(Interner.Get(prop), out var p) ? p.Combine : null, epochId);
             }
+        };
+        Identities.OnSplit = (r, n, inPart) =>
+        {
+            foreach (var (g, _) in ingesting)
+                foreach (var (from, to, which) in g.Out.Split(r, n, inPart, g.State))
+                    g.Out.MoveTelemetry(Telemetry, g.Key, from, to, _ => null, epochId, which);
         };
     }
 

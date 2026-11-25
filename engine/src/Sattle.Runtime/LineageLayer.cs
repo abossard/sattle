@@ -11,12 +11,12 @@ sealed record ElementLineage(string? Sink, string? Rule, IReadOnlyList<LineageSo
 /// <summary>Where the elements of a projection come from. The emits tell it per row (`Support`), a `Group` tells it the rows of each of its groups (`Member`), a merge moves what is known about one element to another (`Move`), and `Of` answers for one element. It keeps only the rows that hold something up, as Z-sets of handles (#40): per emit a table of (element, group key, the handle of each element column) arranged by element, per `Group` a table of (group key, member handles) arranged by key. A handle is an interner code in 4 bytes, -1 when its column is absent; a group key part takes 8. A row at weight zero is gone, so nothing outlives what it supports. The sink and rule of an element are read from the element layer when asked. Nothing outside reads its state.</summary>
 sealed class LineageLayer(ElementLayer elements)
 {
-    /// <summary>The support rows of one emit: its origin, its table and the table's arrangement by element (column 0).</summary>
+    /// <summary>The support rows of one emit: its origin, its table and the table's arrangement by element (column 0). The last column is the own ids of the row's keys when they differ from what the element implies (packed as a telemetry row's own), else -1: a split moves the rows of the part that leaves by it.</summary>
     sealed class SinkRows(LineageOrigin origin)
     {
         public readonly LineageOrigin Origin = origin;
         public readonly int KeyWidth = origin.Group?.KeyCols.Length ?? 0;
-        public readonly Table Rows = new(Widths(1, origin.Group?.KeyCols.Length ?? 0, origin.Cols.Length), 1 + (origin.Group?.KeyCols.Length ?? 0) + origin.Cols.Length);
+        public readonly Table Rows = new([.. Widths(1, origin.Group?.KeyCols.Length ?? 0, origin.Cols.Length), 8], 2 + (origin.Group?.KeyCols.Length ?? 0) + origin.Cols.Length);
         public Arrangement? byElem;
         public Arrangement ByElem => byElem ??= Rows.Arrange(0);
     }
@@ -76,18 +76,24 @@ sealed class LineageLayer(ElementLayer elements)
     }
 
     /// <summary>A row of an emit that says `elem` exists, with its weight. An update emit refines an element and holds nothing up.</summary>
-    public void Support(int sink, int elem, Batch b, int row, long w)
+    public void Support(int sink, int elem, long own, Batch b, int row, long w)
     {
         var s = sinks[sink]!;
         if (s.Origin.Update || w == 0) return;
         Span<long> key = stackalloc long[s.Rows.Columns]; key.Clear();
         key[0] = elem;
         if (s.Origin.Group is { } gr) for (var i = 0; i < gr.KeyCols.Length; i++) key[1 + i] = b.Cols[gr.KeyCols[i]].L[row];
+        key[^1] = own;
         if (Handles(s.Origin.Cols, b, row, key, 1 + s.KeyWidth) || s.Origin.Group is not null) s.Rows.Add(key, w);
     }
 
-    /// <summary>What is known about `from` is now known about `to`: its rows add to those of `to`. A merge of two identities calls this for every element whose rows moved, so the survivor has the lineage of the element that lost.</summary>
-    public void Move(int from, int to)
+    /// <summary>What is known about `from` is now known about `to`: its rows add to those of `to`, a row under the own ids `from` implies now under `implied`. A merge of two identities calls this for every element whose rows moved, so the survivor has the lineage of the element that lost.</summary>
+    public void Move(int from, int to, long implied) => Move(from, to, _ => true, implied);
+
+    /// <summary>A split: the rows of `from` whose own ids `which` holds move to `to`. A row under the ids `from` implies stays: the representative stays with them.</summary>
+    public void Split(int from, int to, Func<long, bool> which) => Move(from, to, o => o != -1 && which(o), -1);
+
+    void Move(int from, int to, Func<long, bool> which, long implied)
     {
         if (from == to) return;
         foreach (var s in sinks)
@@ -99,9 +105,11 @@ sealed class LineageLayer(ElementLayer elements)
             foreach (var r in rows)
             {
                 for (var c = 0; c < key.Length; c++) key[c] = s.Rows.Get(r, c);
+                if (!which(key[^1])) continue;
                 var w = s.Rows.Weight(r);
                 s.Rows.Add(key, -w);
                 key[0] = to;
+                if (key[^1] == -1) key[^1] = implied;
                 s.Rows.Add(key, w);
             }
         }

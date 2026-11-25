@@ -97,7 +97,7 @@ public sealed class CanvasExport(Engine engine, Catalog catalog, bool plain = fa
     (long Version, Dictionary<string, (IdDomain Domain, string[] Components)> Map) identityIndex = (-1, []);
     Dictionary<string, (IdDomain Domain, string[] Components)> IdentityIndex()
     {
-        var version = (long)engine.Identities.Count * 1_000_003 + engine.Identities.Forwarding.Count;
+        var version = engine.Identities.Version;
         if (identityIndex.Version == version) return identityIndex.Map;
         var map = new Dictionary<string, (IdDomain, string[])>(StringComparer.Ordinal);
         foreach (var (d, id, comps) in engine.Identities.Bindings()) if (!map.TryGetValue(id, out var old) || (old.Item1.IdentifiesType is null && d.IdentifiesType is not null)) map[id] = (d, comps);

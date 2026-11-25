@@ -106,6 +106,8 @@ public static class Worlds
 
     static readonly string[] InstanceNames = ["Web", "api", "DB", "cache"];
     static readonly SourceSpec Instances = new("instances", (r, _) => { var i = r.Next(4); return Row(("uid", Value.Text("u" + i)), ("name", Value.Text(InstanceNames[i])), ("g", Text(r, "g", 2))); }, f => ((TextValue)f["uid"]).S);
+    /// <summary>Instances whose name a later row of the same uid may change: the row that replaces it withdraws the old link, so a class can split (Ch. 2, Def. 2.5).</summary>
+    static readonly SourceSpec Renamed = new("instances", (r, _) => Row(("uid", Value.Text("u" + r.Next(4))), ("name", Value.Text(InstanceNames[r.Next(4)])), ("g", Text(r, "g", 2))), f => ((TextValue)f["uid"]).S);
     static readonly SourceSpec Flows = new("flows", (r, _) => Row(("src", Value.Text(InstanceNames[r.Next(4)].ToLowerInvariant())), ("dst", Value.Text(InstanceNames[r.Next(4)]))));
 
     /// <summary>A view over the master of the linked instances: instances by their uid, instances named by flows, the calls between them, and the link of an instance's uid to its name.</summary>
@@ -118,6 +120,8 @@ public static class Worlds
     public static readonly World LinkedUnionJoin = LinkedWith("a view that unions, groups and joins by an instance that a link merges", "Link, Match, Union, Group, Join, EmitEntity, EmitRelationship in a view") with { Witnesses = ["d:w.view/prop:calls=", "d:w.view/prop:name=", "rel "] };
 
     public static readonly World LinkedLoads = LinkedLoadsUnder("delta sum");
+    /// <summary>The instances and calls of `link`, with names that change: a withdrawn link splits a class, and what was written under a key of the part without the old id moves to the part's id.</summary>
+    public static readonly World LinkWithdrawn = new World("a link withdrawn", "Link withdrawn, EmitRelationship", Files("link"), [Renamed, Flows]) with { Witnesses = ["rel "] };
 
     /// <summary>A view reads the load windows of the instances through a series. A link merges two identities of one instance and moves their windows; the view has the survivor's window in the step of the merge (code review 2, defect 22).</summary>
     public static readonly World LinkedSeries = new("a view's series over an instance that a link merges", "Link, Series, Rollup in a view", Files("a view's series over an instance that a link merges"), LinkedLoads.Sources, LinkedLoads.AdvanceShare) { Witnesses = ["d:w.view/prop:load "] };
@@ -258,6 +262,8 @@ public static class Worlds
         Shifted with { Witnesses = ["window "] },
         new World("link", "Link, EmitRelationship", Files("link"), [Instances, Flows]) with { Witnesses = ["prop:name=t:web,d:w/prop:uid=t:u0", "rel "] },
         LinkedLoads,
+        LinkWithdrawn,
+        LinkedLoads with { Name = LoadsWorld + " (a link withdrawn)", Sources = [Renamed, .. LinkedLoads.Sources.Skip(1)] },
         LinkedSeries,
         LinkedView,
         LinkedUnionJoin,

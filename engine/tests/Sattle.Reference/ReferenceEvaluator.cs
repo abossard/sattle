@@ -26,9 +26,8 @@ public sealed record SpaceFacts(ImmutableSortedDictionary<string, GraphFacts> Gr
 
 /// <summary>
 /// The meaning of a graph space on an input log, computed from scratch (Def. 6.4): after each input every graph is evaluated in batch from the integrated inputs.
-/// Four things are functions of the log and not of the integrated state, and are carried from one input to the next as plain sets:
+/// Three things are functions of the log and not of the integrated state, and are carried from one input to the next as plain sets:
 /// the rows a windowed Group accepted (lateness is judged against the frontier at the row's position, premise B2),
-/// the identity links ever asserted (bindings are timeless, Theorem 1.5),
 /// the state of a Threshold key after the windows that left its look-back (Def. 7.10, D33),
 /// and, to find what an input added to or took from such an operator, its integrated input after the previous input.
 /// Two more are recorded facts (Def. 7.14): how far each source has reported, and since which clock (the arrival of its row, kept while it has a row at the end of each clock) an element has had a row in the structural input of a Series that fills or has a time to live.
@@ -54,7 +53,7 @@ public static class ReferenceEvaluator
         ImmutableSortedDictionary<string, ZSet> Sources,
         ImmutableSortedDictionary<string, ZSet> SeenInput,
         ImmutableSortedDictionary<string, ZSet> Accepted,
-        ImmutableSortedDictionary<string, LinkFact> Links,
+        ImmutableSortedDictionary<string, ImmutableArray<LinkFact>> Links,
         ImmutableSortedDictionary<string, ImmutableSortedDictionary<string, Denotation.Carried>> Carried,
         ImmutableSortedDictionary<string, long> Covered,
         ImmutableSortedDictionary<string, ImmutableSortedDictionary<string, long>> Since,
@@ -62,7 +61,7 @@ public static class ReferenceEvaluator
         SpaceFacts Facts)
     {
         static readonly ImmutableSortedDictionary<string, ZSet> None = ImmutableSortedDictionary.Create<string, ZSet>(StringComparer.Ordinal);
-        public static readonly Position Start = new(None, None, None, ImmutableSortedDictionary.Create<string, LinkFact>(StringComparer.Ordinal),
+        public static readonly Position Start = new(None, None, None, ImmutableSortedDictionary.Create<string, ImmutableArray<LinkFact>>(StringComparer.Ordinal),
             ImmutableSortedDictionary.Create<string, ImmutableSortedDictionary<string, Denotation.Carried>>(StringComparer.Ordinal),
             ImmutableSortedDictionary.Create<string, long>(StringComparer.Ordinal), ImmutableSortedDictionary.Create<string, ImmutableSortedDictionary<string, long>>(StringComparer.Ordinal),
             ImmutableSortedSet<long>.Empty,
@@ -147,12 +146,12 @@ public static class ReferenceEvaluator
                 case TEmitEntity or TEmitRel: break;
                 case TLink link:
                     {
+                        // the links of the step are those of its rows now (Ch. 2, Def. 2.5): a link whose rows are all retracted is withdrawn
                         var rows = In("in");
-                        var added = rows.Rows.Minus(p.SeenInput.GetValueOrDefault(slot, ZSet.Empty)).Where(r => r.Weight > 0);
-                        var asserted = link.Mode == "assert" && link.Confidence >= link.Threshold
-                            ? added.Select(r => (Left: Expressions.KeyOf(link.Left, rows.Reader(r.Row)), Right: Expressions.KeyOf(link.Right, rows.Reader(r.Row)))).Where(k => k.Left is not null && k.Right is not null).Select(k => new LinkFact(k.Left!, k.Right!))
+                        var live = link.Mode == "assert" && link.Confidence >= link.Threshold
+                            ? rows.Rows.Where(r => r.Weight > 0).Select(r => (Left: Expressions.KeyOf(link.Left, rows.Reader(r.Row)), Right: Expressions.KeyOf(link.Right, rows.Reader(r.Row)))).Where(k => k.Left is not null && k.Right is not null).Select(k => new LinkFact(k.Left!, k.Right!)).DistinctBy(f => f.Text).ToImmutableArray()
                             : [];
-                        p = p with { SeenInput = p.SeenInput.SetItem(slot, rows.Rows), Links = asserted.Aggregate(p.Links, (l, f) => l.SetItem(f.Text, f)) };
+                        p = p with { Links = p.Links.SetItem(slot, live) };
                         break;
                     }
                 case TGroup { ClosesWindows: true } group:
@@ -201,7 +200,7 @@ public static class ReferenceEvaluator
             }
         }
 
-        var ids = new Identities(settings.Tenant, p.Links.Values);
+        var ids = new Identities(settings.Tenant, p.Links.Values.SelectMany(l => l));
         Relation SinkInput(TOp sink) => sink.Inputs["in"] is { IsPort: true } s ? rowPorts[s.Name] : outs[sink.Inputs["in"].Name];
         var facts = Materialization.Of(plan.Ops.SelectMany(op => Materialization.Fragments(op, SinkInput, ids, settings.Tenant, plan.OutputModule)), frontier, settings.TelemetryRetentionNs);
         return p with { Facts = p.Facts with { Graphs = p.Facts.Graphs.SetItem(graph.Name, facts) } };

@@ -62,6 +62,36 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
         return res;
     }
 
+    /// <summary>A split: the rows of `from` whose own id `which` holds move to `to`, and the rest stay. Both sides keep their support per own id, so each window of either is set to what its rows give (Law 7.5 item 3).</summary>
+    public List<Sample> Move(ITelemetryStore store, GraphKey g, int from, int to, Func<long, bool> which, long inputId)
+    {
+        for (var i = 0; i < tele.Count; i++) if (tele[i].Key.Element == from && which(tele[i].Own)) tele[i] = tele[i] with { Key = tele[i].Key with { Element = to } };
+        var touched = new List<WindowKey>();
+        foreach (var p in soleOwn.Keys.Concat(multiOwn).Where(ep => ep.Elem == from).Select(ep => ep.Prop).Distinct().ToList())
+        {
+            (int, int) f = (from, p), t = (to, p);
+            if (soleOwn.TryGetValue(f, out var sole)) { if (!which(sole)) continue; BecomeMulti(store, g, f, sole); }
+            if (!multiOwn.Contains(t)) { if (soleOwn.TryGetValue(t, out var other)) BecomeMulti(store, g, t, other); else multiOwn.Add(t); }
+            foreach (var (k, owns) in byOwn.Where(w => w.Key.Element == from && w.Key.Prop == p).ToList())
+            {
+                var leave = owns.Keys.Where(which).ToList();
+                if (leave.Count == 0) continue;
+                var nk = k with { Element = to };
+                if (!byOwn.TryGetValue(nk, out var into)) byOwn[nk] = into = [];
+                foreach (var o in leave)
+                {
+                    if (!into.TryGetValue(o, out var sup)) into[o] = sup = [];
+                    foreach (var (v, w) in owns[o]) { var n = sup.GetValueOrDefault(v) + w; if (n == 0) sup.Remove(v); else sup[v] = n; }
+                    owns.Remove(o);
+                }
+                touched.Add(k); touched.Add(nk);
+            }
+        }
+        var res = new List<Sample>(); List<(long Own, TVal Value, long Weight)> none = []; List<(TVal Value, long Weight)> scratch = [];
+        foreach (var key in touched.Distinct()) Settle(store, g, key, none, periodOf.GetValueOrDefault(key.Prop), inputId, res, moved: true, scratch);
+        return res;
+    }
+
     List<WindowKey> MoveSupport(ITelemetryStore store, GraphKey g, int from, int to)
     {
         var moved = new List<WindowKey>();

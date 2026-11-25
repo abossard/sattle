@@ -24,45 +24,101 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
     /// <summary>The relationship id function of a sink (the id hashes its endpoints), needed to re-key relationships when an identity merges.</summary>
     public void RegisterRelSink(int sink, Func<string, string, string> idOf) => relSinks[sink] = idOf;
 
-    /// <summary>Two identities merged: what was emitted under the loser moves to the survivor (an entity's rows as they are; a relationship with the loser as an endpoint gets the id of its new endpoints). `g` is the graph as the last flush left it. Gives the elements whose rows moved, old and new. The old elements resolve to nothing and are removed by the next flush.</summary>
-    public List<(int From, int To)> Move(int loser, int survivor, Graph g)
+    /// <summary>Two identities merged: what was emitted under the loser moves to the survivor (an entity's rows as they are; a relationship with the loser as an endpoint gets the id of its new endpoints). `g` is the graph as the last flush left it. Gives each element whose rows moved, where they went, and the own ids its rows had in it (`Implied`, packed as a telemetry row's own).</summary>
+    public List<(int From, int To, long Implied)> Move(int loser, int survivor, Graph g)
     {
-        var moved = new List<(int From, int To)>();
-        var lid = it.Get(loser); var sid = it.Get(survivor);
-        Materialize(g, loser);
-        if (known.Has(loser) && !rels.Has(loser) && (ByElement.First([loser]) >= 0 || dirty.Has(loser)))
+        var moved = new List<(int From, int To, long Implied)>();
+        foreach (var (from, to, isRel, s, t, _, _) in Relocate(loser, g, (elem, sink, s, t, a, b) => elem == loser ? (survivor, -1, -1) : (Moved(s), Moved(t)) is var (ns, nt) ? (RelId(sink, ns, nt), ns, nt) : null))
+            moved.Add((from, to, isRel ? Pack(s, t) : from));
+        return moved;
+        int Moved(int end) => end == loser ? survivor : end;
+    }
+
+    /// <summary>A class split: the rows written under own ids of the part that leaves (`inPart`) move from `r` to `n`, the part's representative; a relationship whose endpoint `r` such a row names gets the id of its new endpoints. Rows under ids that stay, and rows whose own id is the element (no link touched them), stay. Gives each element whose rows moved, where they went, and which own ids of a row (packed as a telemetry row's own) went there.</summary>
+    public List<(int From, int To, Func<long, bool> Which)> Split(int r, int n, Func<int, bool> inPart, Graph g)
+    {
+        var moved = new List<(int From, int To, Func<long, bool> Which)>();
+        (int S, int T) Ends(int s, int t, int a, int b) => (s == r && inPart(a) ? n : s, t == r && inPart(b) ? n : t);
+        (int Elem, int S, int T)? Dest(int elem, int sink, int s, int t, int a, int b)
         {
-            foreach (var (code, w) in RowsOf(loser))
-            {
-                var fragment = values.Bytes(code).ToArray();                                    // an entity's fragment names no endpoint, so it is the same fragment under the survivor
-                AddFragment(loser, fragment, -w, -1, -1);
-                known.Add(survivor);
-                AddFragment(survivor, fragment, w, -1, -1);
-                Touch(survivor);
-            }
-            moved.Add((loser, survivor));
-            Touch(loser);
+            if (elem == r) return inPart(a) ? (n, -1, -1) : null;
+            var (ns, nt) = Ends(s, t, a, b);
+            return (ns, nt) == (s, t) ? null : (RelId(sink, ns, nt), ns, nt);
         }
-        // the relationships at the loser, by their numbers: the order they were first named in, whatever rows they have now. Those the graph holds at the loser are in its adjacency, the others in `ends`
-        var at = ByEnd.Rows([loser]).Select(r => (int)ends.Get(r, 1)).ToList();
-        foreach (var id in g.OutRels(lid).Concat(g.InRels(lid))) if (it.TryFind(id, out var c)) at.Add(c);
-        foreach (var elem in at.Distinct().Order().ToList())
+        foreach (var (from, to, isRel, s, t, ns, nt) in Relocate(r, g, Dest))
+            moved.Add((from, to, isRel ? o => Ends(s, t, (int)(o >> 32), (int)o) == (ns, nt) : o => inPart((int)o)));
+        return moved;
+    }
+
+    /// <summary>The own ids of a row as one number: an entity's key's own id, or a relationship's source and target own ids.</summary>
+    static long Pack(int s, int t) => ((long)s << 32) | (uint)t;
+    int RelId(int sink, int s, int t) => it.Intern(relSinks[sink](it.Get(s), it.Get(t)));
+
+    /// <summary>Moves the rows of `at` and of the relationships at it: `dest(element, source, target, a, b)` gives, for a row with own ids (a, b), the element and endpoints it goes to, or null when it stays. A row with no entry in `owned` has the own ids the element implies: an entity's own id, or a relationship's endpoints. Gives each (from, to) with whether it is a relationship.</summary>
+    List<(int From, int To, bool IsRel, int S, int T, int NS, int NT)> Relocate(int at, Graph g, Func<int, int, int, int, int, int, (int Elem, int S, int T)?> dest)
+    {
+        var moved = new List<(int From, int To, bool IsRel, int S, int T, int NS, int NT)>();
+        var lid = it.Get(at);
+        Materialize(g, at);
+        if (known.Has(at) && !rels.Has(at) && (ByElement.First([at]) >= 0 || ByOwner.First([at]) >= 0 || dirty.Has(at))) Relocate(at, false, dest, moved);
+        // the relationships at `at`, by their numbers: the order they were first named in, whatever rows they have now. Those the graph holds at `at` are in its adjacency, the others in `ends`
+        var near = ByEnd.Rows([at]).Select(r => (int)ends.Get(r, 1)).ToList();
+        foreach (var id in g.OutRels(lid).Concat(g.InRels(lid))) if (it.TryFind(id, out var c)) near.Add(c);
+        foreach (var elem in near.Distinct().Order().ToList())
         {
             Materialize(g, elem);
-            var named = RowsOf(elem).Select(x => (Code: x.Code, Weight: x.Weight, F: Decode(x.Code))).Where(x => x.F.Source == lid || x.F.Target == lid).ToList();
-            if (!rels.Has(elem) || named.Count == 0) continue;
-            foreach (var (code, w, f) in named)
-            {
-                AddFragment(elem, values.Bytes(code).ToArray(), -w, Code(f.Source), Code(f.Target));
-                var ns = f.Source == lid ? sid : f.Source; var nt = f.Target == lid ? sid : f.Target;
-                var idOf = relSinks[f.Sink];
-                var ne = it.Intern(idOf(ns!, nt!));
-                Contribute(ne, true, f.Sink, f.Update, f.Type, ns, nt, f.Props, w);
-                if (ne != elem && !moved.Contains((elem, ne))) moved.Add((elem, ne));
-            }
-            Touch(elem);
+            if (!rels.Has(elem) || ByElement.First([elem]) < 0 && ByOwner.First([elem]) < 0) continue;
+            Relocate(elem, true, dest, moved);
         }
         return moved;
+    }
+
+    void Relocate(int elem, bool isRel, Func<int, int, int, int, int, int, (int Elem, int S, int T)?> dest, List<(int From, int To, bool IsRel, int S, int T, int NS, int NT)> moved)
+    {
+        // per fragment: its summed weight, and the rows of it under own ids the element does not imply; the rest of the weight is under the implied ids
+        var rows = new Dictionary<int, (long Total, List<(int A, int B, long W)> Owned)>();
+        foreach (var (code, w) in RowsOf(elem)) rows[code] = (w, []);
+        for (var r = ByOwner.First([elem]); r >= 0; r = ByOwner.Next(r))
+        {
+            var code = (int)owned.Get(r, 1);
+            if (!rows.TryGetValue(code, out var x)) rows[code] = x = (0, []);
+            x.Owned.Add(((int)owned.Get(r, 2), (int)owned.Get(r, 3), owned.Weight(r)));
+        }
+        var any = false;
+        foreach (var (code, (total, own)) in rows.OrderBy(x => x.Key).ToList())
+        {
+            var fragment = values.Bytes(code).ToArray(); var f = Decode(code);
+            var (s, t) = (Code(f.Source), Code(f.Target));
+            var implied = total - own.Sum(x => x.W);
+            foreach (var (a, b, w, explicitly) in own.Select(x => (x.A, x.B, x.W, true)).Append(isRel ? (s, t, implied, false) : (elem, -1, implied, false)))
+            {
+                if (w == 0 || dest(elem, f.Sink, s, t, a, b) is not { } d) continue;
+                if (explicitly) Own(elem, fragment, a, b, -w);
+                AddFragment(elem, fragment, -w, s, t);
+                var into = isRel ? CanonicalFragment(f.Sink, f.Update, f.Type, d.S, d.T, f.Props).ToArray() : fragment;
+                if (known.Add(d.Elem) && isRel) rels.Add(d.Elem);
+                AddFragment(d.Elem, into, w, d.S, d.T);
+                if (isRel ? (a, b) != (d.S, d.T) : a != d.Elem) Own(d.Elem, into, a, b, w);
+                Touch(d.Elem);
+                if (!moved.Contains((elem, d.Elem, isRel, s, t, d.S, d.T))) moved.Add((elem, d.Elem, isRel, s, t, d.S, d.T));
+                any = true;
+            }
+        }
+        if (!isRel && !any && dest(elem, -1, -1, -1, elem, -1) is { } e) moved.Add((elem, e.Elem, false, -1, -1, -1, -1));      // an entity with no row left, touched in this step: what else it holds (telemetry, lineage) follows
+        Touch(elem);
+    }
+
+    /// <summary>Per (element, fragment, own id of the row's key or of its source, own id of its target or -1) the summed weight of the rows whose own ids differ from what the element implies (an entity: its own id; a relationship: its endpoints). Only keys of a class of two or more get here, so a split moves exactly the rows of the part that leaves. Each row holds its fragment in `values`.</summary>
+    readonly Table owned = new([4, 4, 4, 4], keyColumns: 4);
+    Arrangement? byOwner;
+    Arrangement ByOwner => byOwner ??= owned.Arrange(0);
+
+    void Own(int elem, ReadOnlySpan<byte> fragment, int a, int b, long w)
+    {
+        if (w == 0) return;
+        var code = values.Find(fragment);
+        if (code < 0 || owned.Find([elem, code, a, b]) < 0) { owned.Add([elem, values.Hold(fragment), a, b], w); return; }
+        if (owned.Add([elem, code, a, b], w) < 0) values.Release(code);
     }
 
     /// <summary>What one emit says about an element: its sink, create or update, type, endpoints and properties.</summary>
@@ -286,6 +342,7 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
             var sink = (int)ReadVarint(b, ref p);
             if (w <= 0 || b[p] != 0) continue;
             if (contested.Count > 0 && rels.Has(elem) && contestedBy.ContainsKey(it.Get(elem))) continue;
+            if (conflicts.AnyAboutElements && conflicts.About(it.Get(elem))) continue;            // the graph holds it without its conflicting properties: its one row may equal that and still have a conflict to clear
             if (!FromGraph(g, elem, sink, out _, out _) || !values.Bytes(code).SequenceEqual(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(buffer))) continue;
             contributions.Add([elem, code], -w);
             values.Release(code);
@@ -339,8 +396,8 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
         Add(elem, isRel, CanonicalFragment(sink, update, type, s, t, props), weight, s, t);
     }
 
-    /// <summary>A row of an emit, read from its evaluated columns at `row` in the order of `shape`: the same bytes as the properties of the row through `Contribute(..., Props, ...)`. An update that sets no property says nothing and gives false.</summary>
-    public bool Contribute(FragmentShape shape, int elem, int source, int target, Column[] cols, int row, long weight)
+    /// <summary>A row of an emit, read from its evaluated columns at `row` in the order of `shape`: the same bytes as the properties of the row through `Contribute(..., Props, ...)`. An update that sets no property says nothing and gives false. `ownA`, `ownB`: the own ids of the row's key (and -1), or of its source and target keys.</summary>
+    public bool Contribute(FragmentShape shape, int elem, int source, int target, Column[] cols, int row, long weight, int ownA, int ownB)
     {
         var n = 0;
         foreach (var c in shape.Cols) if (cols[c].Present(row)) n++;
@@ -354,7 +411,9 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
             if (shape.Names[i] == last) throw new ArgumentException($"duplicate property {it.Get(last)}");
             Varint(buffer, (ulong)(last = shape.Names[i])); WriteCanonical(col, row, shape.Tags[i]);
         }
-        Add(elem, shape.IsRel, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(buffer), weight, source, target);
+        var fragment = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(buffer);
+        if (shape.IsRel ? (ownA, ownB) != (source, target) : ownA != elem) Own(elem, fragment, ownA, ownB, weight);         // before `Add`, which may write the graph's fragment into `buffer`
+        Add(elem, shape.IsRel, fragment, weight, source, target);
         return true;
     }
 

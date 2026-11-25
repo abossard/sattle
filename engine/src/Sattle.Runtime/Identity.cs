@@ -17,37 +17,46 @@ public sealed class IdDomain(string id, string name, string[] compNames, string[
     public int Index { get; set; }
 }
 
-public enum BindOutcome { Bound, AlreadyBound, Merged, Conflict }
-
-/// <summary>Identity resolution (research 03 section 5): key to identity bindings, append-only. A key resolves to its binding or is minted by hash. Same ordered inputs give the same ids.</summary>
+/// <summary>Identity resolution (Ch. 2, Def. 2.5): a key resolves to the smallest own id of its class under the present links. Own ids are minted by hash, so the ids are a function of the set of present links.</summary>
 public sealed class IdentityCatalog(string tenant, Interner it)
 {
     /// <summary>A key: its domain's index and up to four canonical component codes. A component is a text code of the interner, so it is held in 4 bytes.</summary>
     internal readonly record struct Key(int Dom, int A, int B, int C, int D);
-    /// <summary>Per bound key: the identity it is bound to (`To`), and the key's own id once computed (`Own`, -1 before; `Resolve` with `own`). One lookup gives both.</summary>
-    readonly Dictionary<Key, (int To, int Own)> bound = [];
+    /// <summary>Per key seen: its own id (Def. 1.9), minted when the key is first seen.</summary>
+    readonly Dictionary<Key, int> bound = [];
     readonly List<IdDomain> domains = [];
     public List<IdentityBinding> Pending { get; } = [];
     /// <summary>The store took the pending bindings: the list is emptied, and a list grown past 4,096 by a large step is let go.</summary>
     public void Committed() { Pending.Clear(); if (Pending.Capacity > 4096) Pending.Capacity = 0; }
     public long Minted { get; private set; }
+    /// <summary>Links that became present (their rows reached a positive weight).</summary>
     public long Aliased { get; private set; }
     public long Conflicts { get; private set; }
     public long Merges { get; private set; }
-    /// <summary>Forwarding records of merges (Theorem 1.7): loser handle to survivor handle. Append-only; the survivor is the smaller id, so chains are acyclic and finite. Bindings are never modified: resolution applies Rep.</summary>
-    readonly Dictionary<int, int> forward = [];
-    public IReadOnlyDictionary<int, int> Forwarding => forward;
-    /// <summary>Called when two identities merge (loser, survivor): the engine moves what it has emitted under the loser.</summary>
-    public Action<int, int>? OnMerge { get; set; }
+    /// <summary>Changes the resolution of some key can see: a key seen, a merge or a split. Equal versions resolve every key alike.</summary>
+    public long Version { get; private set; }
 
-    /// <summary>The representative of an identity: follow forwarding records until none applies.</summary>
-    public int Rep(int h) { if (forward.Count == 0) return h; while (forward.TryGetValue(h, out var s)) h = s; return h; }
+    /// <summary>The links (Ch. 2, Def. 2.5) as pairs of own ids, the smaller handle first, with the summed weight of their rows: a link is present while its weight is positive.</summary>
+    readonly Dictionary<(int, int), long> links = [];
+    /// <summary>Per own id, the own ids it has a present link with.</summary>
+    readonly Dictionary<int, List<int>> near = [];
+    /// <summary>The classes of two or more own ids: per member its representative (the smallest id of the class, ordinal), and per representative its members. An id in no class is its own representative and is in neither.</summary>
+    readonly Dictionary<int, int> rep = [];
+    readonly Dictionary<int, List<int>> members = [];
+    public IReadOnlyDictionary<int, List<int>> Classes => members;
+    /// <summary>Called when two classes merge (loser, survivor): the engine moves what it has emitted under the loser.</summary>
+    public Action<int, int>? OnMerge { get; set; }
+    /// <summary>Called when a class splits (its representative, the representative of the part that leaves, whether an own id is in that part): the engine moves what it has emitted from keys of that part.</summary>
+    public Action<int, int, Func<int, bool>>? OnSplit { get; set; }
+
+    /// <summary>The representative of an identity: the smallest own id of its class.</summary>
+    public int Rep(int h) => rep.Count == 0 ? h : rep.GetValueOrDefault(h, h);
     public int Count => bound.Count;
 
-    /// <summary>Every key bound to an identity with its domain and canonical component texts, by the representative id of the identity. Read-only view for explaining an id (a reference to an element that is not in a graph).</summary>
+    /// <summary>Every key seen with its domain and canonical component texts, by the representative id of its class. Read-only view for explaining an id (a reference to an element that is not in a graph).</summary>
     public IEnumerable<(IdDomain Domain, string Id, string[] Components)> Bindings()
     {
-        foreach (var (k, (h, _)) in bound)
+        foreach (var (k, h) in bound)
         {
             var d = domains[k.Dom]; var comps = new string[d.CompNames.Length];
             for (var i = 0; i < comps.Length; i++) comps[i] = it.Get(i switch { 0 => k.A, 1 => k.B, 2 => k.C, _ => k.D });
@@ -80,65 +89,88 @@ public sealed class IdentityCatalog(string tenant, Interner it)
     /// <summary>The canonicalizer leaves every text as it is.</summary>
     public static bool KeepsText(string canon) => canon is not ("LowerInvariant" or "Trim" or "IpCanonical" or "UuidLower");
 
-    public int Resolve(IdDomain d, ReadOnlySpan<long> canon) => Rep(Entry(d, canon).To);
+    public int Resolve(IdDomain d, ReadOnlySpan<long> canon) => Rep(Own(d, canon));
 
-    /// <summary>`Resolve`, and in `own` the id allocated for the key itself, whatever it is bound or forwarded to: a pure function of tenant, domain and components (Def. 1.9). The telemetry sink tells rows written under two ids of one class apart by it (Law 7.5 item 3); computed once per key.</summary>
-    public int Resolve(IdDomain d, ReadOnlySpan<long> canon, out int own)
-    {
-        ref var e = ref Entry(d, canon);
-        if (e.Own < 0) e.Own = Mint(d, canon);
-        own = e.Own;
-        return Rep(e.To);
-    }
+    /// <summary>`Resolve`, and in `own` the key's own id: a pure function of tenant, domain and components (Def. 1.9). A sink keeps it beside a row whose id differs, so a split can tell which rows leave (Law 7.5 item 3).</summary>
+    public int Resolve(IdDomain d, ReadOnlySpan<long> canon, out int own) => Rep(own = Own(d, canon));
 
-    /// <summary>The binding of a key, minted and recorded when the key is not bound yet (its own id is then the identity).</summary>
-    ref (int To, int Own) Entry(IdDomain d, ReadOnlySpan<long> canon)
+    /// <summary>The own id of a key, minted and recorded when the key is first seen.</summary>
+    int Own(IdDomain d, ReadOnlySpan<long> canon)
     {
         var k = K(d, canon);
         ref var e = ref CollectionsMarshal.GetValueRefOrAddDefault(bound, k, out var found);
-        if (found) return ref e;
-        var h = Mint(d, canon);
-        e = (h, h);
-        Minted++;
-        Pending.Add(IdentityBinding.Bound(this, k, h));
-        return ref e;
+        if (found) return e;
+        e = Mint(d, canon);
+        Minted++; Version++;
+        Pending.Add(IdentityBinding.Bound(this, k, e));
+        return e;
     }
 
-    public int? TryResolve(IdDomain d, ReadOnlySpan<long> canon) => bound.TryGetValue(K(d, canon), out var e) ? Rep(e.To) : null;
+    public int? TryResolve(IdDomain d, ReadOnlySpan<long> canon) => bound.TryGetValue(K(d, canon), out var h) ? Rep(h) : null;
 
-    /// <summary>Rule B2 (alias): binds an unbound key to an existing identity. A key already bound to another identity of the same entity type means late evidence that two identities denote one entity: they merge (forwarding record, survivor the smaller id). Identities of different entity types are a conflict and the link is ignored.</summary>
-    public BindOutcome Bind(IdDomain d, ReadOnlySpan<long> canon, int entity, IdDomain? left = null)
+    /// <summary>Rows of a link of two keys (Ch. 2, Def. 2.5) with their summed weight `w`. The link is present while its weight is positive; the classes are the connected parts of the present links, each named by its smallest own id. A link that becomes present between two classes merges them; one that ends may split its class, and the part without the representative gets its own smallest id. Keys of different entity types are a conflict: such a link is never present.</summary>
+    public void Link(IdDomain ld, ReadOnlySpan<long> lc, IdDomain rd, ReadOnlySpan<long> rc, long w)
     {
-        var k = K(d, canon);
-        entity = Rep(entity);
-        if (bound.TryGetValue(k, out var e))
-        {
-            var rh = Rep(e.To);
-            if (rh == entity) return BindOutcome.AlreadyBound;
-            if (left is not null && left.IdentifiesType != d.IdentifiesType && left.IdentifiesType is not null && d.IdentifiesType is not null) { Conflicts++; return BindOutcome.Conflict; }
-            var (survivor, loser) = string.CompareOrdinal(it.Get(entity), it.Get(rh)) <= 0 ? (entity, rh) : (rh, entity);
-            forward[loser] = survivor; Merges++;
-            Pending.Add(IdentityBinding.Forward(this, loser, survivor));
-            OnMerge?.Invoke(loser, survivor);
-            return BindOutcome.Merged;
-        }
-        // The identity of an entity is the smallest id minted for any key that denotes it, whether or not that key was ever resolved before: the key's own id counts as a candidate even when nothing used it yet. Then the final ids do not depend on the order in which keys are bound (a row that names an element first, or the element's own row first).
-        Span<char> ownId = stackalloc char[KeyText.IdLength];
-        Id(d, canon, ownId);
-        if (((ReadOnlySpan<char>)ownId).SequenceCompareTo(it.Get(entity)) < 0)
-        {
-            var own = it.Intern(ownId);
-            bound[k] = (own, own); Aliased++;
-            Pending.Add(IdentityBinding.Bound(this, k, own));
-            forward[entity] = own; Merges++;
-            Pending.Add(IdentityBinding.Forward(this, entity, own));
-            OnMerge?.Invoke(entity, own);
-            return BindOutcome.Merged;
-        }
-        bound[k] = (entity, -1);
-        Aliased++;
-        Pending.Add(IdentityBinding.Bound(this, k, entity));
-        return BindOutcome.Bound;
+        if (w == 0) return;
+        int a = Own(ld, lc), b = Own(rd, rc);
+        if (a == b) return;
+        if (ld.IdentifiesType is not null && rd.IdentifiesType is not null && ld.IdentifiesType != rd.IdentifiesType) { if (w > 0) Conflicts++; return; }
+        var pair = a < b ? (a, b) : (b, a);
+        ref var weight = ref CollectionsMarshal.GetValueRefOrAddDefault(links, pair, out _);
+        var was = weight > 0; weight += w;
+        var now = weight > 0;
+        if (weight == 0) links.Remove(pair);
+        if (was == now) return;
+        if (now) { Near(a).Add(b); Near(b).Add(a); Aliased++; Join(a, b); }
+        else { Near(a).Remove(b); Near(b).Remove(a); Part(a, b); }
+    }
+
+    List<int> Near(int h) { ref var l = ref CollectionsMarshal.GetValueRefOrAddDefault(near, h, out _); return l ??= []; }
+    List<int> MembersOf(int r) => members.TryGetValue(r, out var m) ? m : [r];
+
+    /// <summary>A present link joins the classes of `a` and `b`: the larger representative forwards to the smaller.</summary>
+    void Join(int a, int b)
+    {
+        int ra = Rep(a), rb = Rep(b);
+        if (ra == rb) return;
+        var (survivor, loser) = string.CompareOrdinal(it.Get(ra), it.Get(rb)) <= 0 ? (ra, rb) : (rb, ra);
+        var into = members.TryGetValue(survivor, out var m) ? m : members[survivor] = [survivor];
+        rep[survivor] = survivor;
+        foreach (var x in MembersOf(loser)) { rep[x] = survivor; into.Add(x); }
+        members.Remove(loser);
+        Merges++; Version++;
+        Pending.Add(IdentityBinding.Forward(this, loser, survivor));
+        OnMerge?.Invoke(loser, survivor);
+    }
+
+    /// <summary>The link of `a` and `b` ended: the ids reachable from `a` over present links. When `b` is not among them the class splits in two, and the part without the representative is named by its smallest id.</summary>
+    void Part(int a, int b)
+    {
+        var r = Rep(a);
+        var reach = new HashSet<int> { a }; var todo = new Stack<int>(); todo.Push(a);
+        while (todo.Count > 0)
+            foreach (var x in near.TryGetValue(todo.Pop(), out var l) ? l : [])
+            {
+                if (x == b) return;
+                if (reach.Add(x)) todo.Push(x);
+            }
+        var all = members[r];
+        var leave = reach.Contains(r) ? [.. all.Where(x => !reach.Contains(x))] : reach.ToList();
+        var stay = all.Where(x => !leave.Contains(x)).ToList();
+        var n = leave.MinBy(x => it.Get(x), StringComparer.Ordinal);
+        Place(r, stay); Place(n, leave);
+        Version++;
+        foreach (var x in leave) Pending.Add(IdentityBinding.Forward(this, x, n));         // the part's ids forward to its representative, which forwards to itself: the forwarding to `r` ends
+        var part = leave.ToHashSet();
+        OnSplit?.Invoke(r, n, part.Contains);
+    }
+
+    /// <summary>`ids` are one class with representative `r`: a class of one is in no table.</summary>
+    void Place(int r, List<int> ids)
+    {
+        if (ids.Count == 1) { rep.Remove(r); members.Remove(r); return; }
+        members[r] = ids;
+        foreach (var x in ids) rep[x] = r;
     }
 
     /// <summary>The hash of a key: SHA-256 of its canonical text `[tenant, domain, component trees...]`.</summary>

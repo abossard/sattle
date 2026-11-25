@@ -12,13 +12,13 @@ public sealed record IdentityKey(string Domain, ImmutableArray<string> Component
     public string Text => Domain + "\u001f" + string.Join('\u001f', Components);
 }
 
-/// <summary>An asserted equivalence of two keys (a `Link` row that was once present). Timeless: a later retraction of the row does not withdraw it (Theorem 1.5).</summary>
+/// <summary>An asserted equivalence of two keys: a `Link` row that is present now. When every row of the link is retracted, the link is withdrawn (Ch. 2, Def. 2.5).</summary>
 public sealed record LinkFact(IdentityKey Left, IdentityKey Right)
 {
     public string Text => Left.Text + "\u001e" + Right.Text;
 }
 
-/// <summary>Identity as a function of the set of asserted links (Proposition 1.8): the keys form classes under the links, and the id of a class is the smallest id allocated for any of its keys.</summary>
+/// <summary>Identity as a function of the set of present links (Proposition 1.8): the keys form classes under the links, and the id of a class is the smallest id allocated for any of its keys.</summary>
 public sealed class Identities(string tenant, IEnumerable<LinkFact> links)
 {
     readonly string tenant = tenant;

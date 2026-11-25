@@ -2,7 +2,7 @@ using Sattle.Runtime;
 
 namespace Sattle.Tests;
 
-/// <summary>Theorem 1.7 (paper ch. 1): merge is an additive forwarding record from the larger id to the smaller; chains are acyclic and finite, rep is idempotent, uninvolved keys keep their identity, no binding is modified; the survivor does not depend on the order of merges.</summary>
+/// <summary>Ch. 2, Def. 2.5 and Prop. 2.3: the class of a key is a function of the links present now, named by the smallest own id of its keys. Rep is idempotent, uninvolved keys keep their identity, a merge only appends records, the survivor does not depend on the order of the links, and a withdrawn link splits a class unless another path holds it.</summary>
 public class IdentityMergeTests
 {
     static (IdentityCatalog Cat, IdDomain A, IdDomain B, Interner It) Make()
@@ -20,32 +20,20 @@ public class IdentityMergeTests
     }
 
     static int R(IdentityCatalog c, IdDomain d, Interner it, string key) => c.Resolve(d, [it.Intern(key)]);
-    static BindOutcome B(IdentityCatalog c, IdDomain d, Interner it, string key, int entity, IdDomain? left = null) => c.Bind(d, [it.Intern(key)], entity, left);
+    static void L(IdentityCatalog c, Interner it, IdDomain ld, string left, IdDomain rd, string right, long w = 1) => c.Link(ld, [it.Intern(left)], rd, [it.Intern(right)], w);
 
     [Theory]
     [InlineData(2)] [InlineData(5)] [InlineData(12)]
-    public void Forwarding_chains_are_acyclic_finite_and_decrease_the_id_and_rep_is_idempotent(int n)
+    public void A_class_is_named_by_the_smallest_own_id_of_its_keys_and_rep_is_idempotent(int n)
     {
         var (c, a, b, it) = Make();
         var hs = Enumerable.Range(0, n).Select(i => R(c, a, it, "k" + i)).ToList();
-        var survivor = it.Get(hs[0]);                                                         // the smallest id of the class hs[i-1] is in
-        for (var i = 1; i < n; i++)
-        {
-            var own = OwnId(b, "x" + i);
-            Assert.Equal(string.CompareOrdinal(own, survivor) < 0 ? BindOutcome.Merged : BindOutcome.Bound, B(c, b, it, "x" + i, hs[i - 1]));   // the key x_i denotes hs[i-1]: its own id joins the class if it is smaller
-            Assert.Equal(BindOutcome.Merged, B(c, b, it, "x" + i, hs[i]));                    // ... and late evidence says it denotes hs[i] too
-            survivor = new[] { survivor, own, it.Get(hs[i]) }.Min(StringComparer.Ordinal);
-        }
-        foreach (var h in hs)
-        {
-            var rep = c.Rep(h);
-            Assert.Equal(rep, c.Rep(rep));                                                    // idempotent
-            var steps = 0; var cur = h;
-            while (c.Forwarding.TryGetValue(cur, out var next)) { Assert.True(string.CompareOrdinal(it.Get(next), it.Get(cur)) < 0); cur = next; Assert.True(++steps <= n); }   // decreasing, finite
-        }
-        var candidates = hs.Select(h => it.Get(h)).Concat(Enumerable.Range(1, n - 1).Select(i => OwnId(b, "x" + i)));   // the ids of the entities and the own ids of the keys that denote them
-        Assert.Equal(candidates.Min(StringComparer.Ordinal), it.Get(c.Rep(hs[0])));       // one class, the smallest id survives
+        for (var i = 1; i < n; i++) { L(c, it, a, "k" + (i - 1), b, "x" + i); L(c, it, a, "k" + i, b, "x" + i); }      // the key x_i denotes k_(i-1) and k_i
+        foreach (var h in hs) Assert.Equal(c.Rep(h), c.Rep(c.Rep(h)));                                               // idempotent
+        var candidates = hs.Select(h => it.Get(h)).Concat(Enumerable.Range(1, n - 1).Select(i => OwnId(b, "x" + i)));
+        Assert.Equal(candidates.Min(StringComparer.Ordinal), it.Get(c.Rep(hs[0])));                                  // one class, the smallest id names it
         Assert.All(hs, h => Assert.Equal(c.Rep(hs[0]), c.Rep(h)));
+        Assert.Equal(2 * n - 1, Assert.Single(c.Classes).Value.Count);
     }
 
     [Fact]
@@ -54,11 +42,11 @@ public class IdentityMergeTests
         var (c, a, b, it) = Make();
         var h1 = R(c, a, it, "one"); var h2 = R(c, a, it, "two"); var h3 = R(c, a, it, "three");
         var pendingBefore = c.Pending.ToList();
-        B(c, b, it, "x", h1); Assert.Equal(BindOutcome.Merged, B(c, b, it, "x", h2));
-        Assert.Equal(h3, R(c, a, it, "three"));                                               // not involved
+        L(c, it, a, "one", b, "x"); L(c, it, a, "two", b, "x");
+        Assert.Equal(h3, R(c, a, it, "three"));                                                                       // not involved
         Assert.Equal(c.Rep(h1), R(c, a, it, "one")); Assert.Equal(c.Rep(h2), R(c, a, it, "two"));
         Assert.Equal(c.Rep(h1), c.Rep(h2));
-        Assert.Equal(pendingBefore, c.Pending.Take(pendingBefore.Count));                     // earlier records untouched; the merge only appended
+        Assert.Equal(pendingBefore, c.Pending.Take(pendingBefore.Count));                                             // earlier records untouched; the merge only appended
         Assert.Contains(c.Pending.Skip(pendingBefore.Count), x => x.Domain == "~forward");
     }
 
@@ -68,9 +56,10 @@ public class IdentityMergeTests
     {
         var (c, a, b, it) = Make();
         var h = new[] { R(c, a, it, "p"), R(c, a, it, "q"), R(c, a, it, "r") };
+        string[] keys = ["p", "q", "r"];
         // merges: p~q, q~r, p~r evidence arrives in any order through keys of the second domain
         var links = new (string Key, int E)[] { ("m1", 0), ("m1", 1), ("m2", 1), ("m2", 2), ("m3", 0), ("m3", 2) };
-        foreach (var ch in order) foreach (var (key, e) in links.Where((_, i) => i / 2 == ch - '0')) B(c, b, it, key, h[e]);
+        foreach (var ch in order) foreach (var (key, e) in links.Where((_, i) => i / 2 == ch - '0')) L(c, it, a, keys[e], b, key);
         Assert.All(h, x => Assert.Equal(c.Rep(h[0]), c.Rep(x)));
         var candidates = h.Select(x => it.Get(x)).Concat(new[] { "m1", "m2", "m3" }.Select(k => OwnId(b, k)));
         Assert.Equal(candidates.Min(StringComparer.Ordinal), it.Get(c.Rep(h[0])));        // the same survivor in every order
@@ -82,12 +71,36 @@ public class IdentityMergeTests
         var it = new Interner(); var c = new IdentityCatalog("t", it);
         var a = c.Domain("d:a", "a", ["k"], ["Exact"], "T1"); var b = c.Domain("d:b", "b", ["k"], ["Exact"], "T2");
         var h1 = R(c, a, it, "one"); var h2 = R(c, b, it, "two");
-        var own = OwnId(b, "x");
-        var merged = string.CompareOrdinal(own, it.Get(h2)) < 0;                              // the key's own id is smaller: h2 forwards to it
-        Assert.Equal(merged ? BindOutcome.Merged : BindOutcome.Bound, B(c, b, it, "x", h2));
-        (string, string)[] forwarding = merged ? [(it.Get(h2), own)] : [];
-        Assert.Equal(forwarding, c.Forwarding.Select(f => (it.Get(f.Key), it.Get(f.Value))));
-        Assert.Equal(BindOutcome.Conflict, B(c, b, it, "x", h1, a));
-        Assert.Equal(1, c.Conflicts); Assert.Equal(forwarding, c.Forwarding.Select(f => (it.Get(f.Key), it.Get(f.Value))));
+        L(c, it, b, "two", b, "x");
+        Assert.Equal(c.Rep(h2), R(c, b, it, "x"));
+        L(c, it, a, "one", b, "x");
+        Assert.Equal(1, c.Conflicts);
+        Assert.Equal(h1, c.Rep(h1)); Assert.NotEqual(c.Rep(h1), R(c, b, it, "x"));
+        Assert.Single(c.Classes);
+    }
+
+    /// <summary>Links over the keys p, q, r, s of one domain (`+pq` present, `-pq` one row of it retracted). After them the classes are the connected parts of the present links, named by their smallest own id, whatever the order; a split reports the part that leaves and its id.</summary>
+    [Theory]
+    [InlineData("+pq +qr -pq", "p|qr")]                // a chain split at its first link
+    [InlineData("+pq +qr -qr", "pq|r")]                // ... and at its last
+    [InlineData("+pq +qr +rp -pq", "pqr")]             // a link on a cycle: no split
+    [InlineData("+pq +pq -pq", "pq")]                  // another row still holds the link
+    [InlineData("+pq -pq +pq", "pq")]                  // withdrawn and asserted again
+    [InlineData("+pq +rs +qr -qr", "pq|rs")]           // two classes joined and parted again
+    [InlineData("-pq +pq", "p|q")]                     // a retraction before its insertion: the link is not present
+    public void A_withdrawn_link_splits_a_class_unless_another_path_holds_it(string changes, string classes)
+    {
+        var (c, a, _, it) = Make();
+        var splits = new List<(string Rep, string Part, string[] Members)>();
+        c.OnSplit = (r, n, inPart) => splits.Add((it.Get(r), it.Get(n), [.. "pqrs".Select(k => R(c, a, it, k.ToString())).Where(inPart).Select(it.Get)]));
+        foreach (var ch in changes.Split(' ')) L(c, it, a, ch[1].ToString(), a, ch[2].ToString(), ch[0] == '+' ? 1 : -1);
+        var own = "pqrs".ToDictionary(k => k, k => OwnId(a, k.ToString()));
+        foreach (var part in classes.Split('|'))
+            foreach (var k in part) Assert.Equal(part.Select(x => own[x]).Min(StringComparer.Ordinal), it.Get(R(c, a, it, k.ToString())));
+        foreach (var (rep, n, members) in splits)
+        {
+            Assert.DoesNotContain(rep, members);                                                                     // the representative stays
+            Assert.Equal(members.Min(StringComparer.Ordinal), n);                                                     // the part that leaves is named by its smallest id
+        }
     }
 }

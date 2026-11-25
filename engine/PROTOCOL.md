@@ -668,6 +668,12 @@ The text editor of a projection reads and checks its `.kql` text through these c
 - **Digest per graph.** Each entry of `GET /health` `graphs` has `digest`: the graph's digest at its head (Def. 3.5, the `digest` of a preview's graphs), from the pass that makes the state digest. The catalog's too.
 - **Telemetry port (no wire change).** `ITelemetryStore.ScanGraph` hands every window of a graph in a range to a visitor, also the windows of an element that left; without a visitor it counts them and allocates nothing. `SeriesCount`, `PartialWindows` and `MergeConflicts` are on the port. `InMemoryTelemetryStore.Dump` and `WindowCount` are gone.
 
+## Version 3.63: a withdrawn link splits its class (#159)
+- **Identity.** A link is present while its rows have a positive weight (Ch. 2, Def. 2.5); a key's class is the connected part of the present links, named by its smallest own id, as before. When every row of a link is retracted, its class may split: the part without the representative is named by its own smallest id, and what was written under keys of that part (entities, relationships at them, telemetry windows, lineage) moves to that id. Before, a retracted link row was ignored and a class never split.
+- **Binding records.** A split appends one forwarding record (`Domain` `~forward`) per id of the part that leaves, from the id to the part's representative; the representative's record forwards to itself and ends its forwarding. Records stay history: nothing is restored from them. The record shape is unchanged.
+- **Conflicts.** An element whose rows disagreed is resolved again when one row is left, so its conflict ends.
+- **Kernel and wire.** No change.
+
 ## Version 3.62: exact sums, one reading per window, presence since arrival (#159)
 - **Sums.** A `sum` and an `avg` of a `summarize` are exact: an integer sum is held in 128 bits, a decimal sum in 256 bits at scale 28, so neither depends on the order of the rows (Ch. 7, R1). A sum its type cannot hold (an integer beyond 64 bits, a decimal of more than 96 bits of digits) is no value and counted under `overflow` (`GET /health`); so is an `avg` whose sum is such a sum. A decimal sum has no trailing zeros: `1.50 + 2.50` is `4`. No kernel change.
 - **Hysteresis.** A window that two rows of one key hold (a `by` that does not name the element of the series) has no reading, whichever row came first, until one row holds it again; such a row is counted under `invalidParameter`. Before, the later row replaced the earlier one, so the state depended on the order of arrival.
