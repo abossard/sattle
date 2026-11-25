@@ -1245,6 +1245,8 @@ sealed class FoldOp : PhysOp
 
     readonly TFold t; readonly long width, hop, lambda, lookback;
     readonly VExpr[] keys, observed, starts, nexts; readonly int[] polKey, polZeta;
+    /// <summary>The columns of a policy row (Def. 6.5): those the program defines. A policy batch may carry more behind them, for lineage (`MapOp`).</summary>
+    readonly int polWidth;
     readonly int inWs, inNoData = -1, show;
     readonly int[] outKey, outObs, outZeta, stepZeta, stepState, stepObs; readonly int outWs, outWe, outFrom, outTo, outSince;
     readonly Dictionary<Cell[], KeyState> states = new(new Cells());
@@ -1273,7 +1275,7 @@ sealed class FoldOp : PhysOp
         var step = Layout.Of(t.Step);
         starts = [.. t.States.Select(s => ExprCompiler.Compile(s.Start, step, cx.It, cx.Faults))];
         nexts = [.. t.States.Select(s => ExprCompiler.Compile(s.Next, step, cx.It, cx.Faults))];
-        polKey = [.. t.Keys.Select(k => policyLayout.Index(k.Name))]; polZeta = [.. t.Policy.Select(c => policyLayout.Index(c.Name))];
+        polKey = [.. t.Keys.Select(k => policyLayout.Index(k.Name))]; polZeta = [.. t.Policy.Select(c => policyLayout.Index(c.Name))]; polWidth = policyLayout.Count;
         inWs = inLayout.Index("windowStart");
         if (t.NoData) inNoData = inLayout.Index(TSeries.NoDataColumn);
         show = t.States.Select(s => s.Name).ToList().IndexOf(t.Show);
@@ -1405,7 +1407,7 @@ sealed class FoldOp : PhysOp
                 var row = pb.RowAt(k);
                 var key = polKey.Select(i => Cell.Of(pb.Cols[i], row)).ToArray();
                 if (key.Any(c => !c.P)) continue;
-                var whole = pb.Cols.Select(c => Cell.Of(c, row)).ToArray();
+                var whole = pb.Cols.Take(polWidth).Select(c => Cell.Of(c, row)).ToArray();
                 var st = StateOf(key); var w = pb.Weight(row);
                 var p = st.Policies.Find(x => x.Whole.AsSpan().SequenceEqual(whole));
                 if (p is null)

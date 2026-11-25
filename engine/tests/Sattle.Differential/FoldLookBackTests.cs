@@ -191,6 +191,29 @@ public class FoldLookBackTests
         Assert.Equal(rows, Rows());
     }
 
+    /// <summary>#181: the world of the test above, its policy rows from the edges between items through `project c = s.g`. The edge from k0 to k1 gives g0
+    /// its policy row, k0 has hits in 10 minutes and the clock follows them. Then the edge from k1 to k0 comes and the one from k0 to k1 leaves, in either
+    /// order, one row per step: both edges give g0 the same policy row, the bindings `s`, `t` and `e` the projection dropped do not tell them apart, so g0
+    /// holds one policy row throughout and it keeps its stamp. The reference agrees under every cut.</summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void A_column_the_program_dropped_does_not_tell_policy_rows_apart(bool addFirst)
+    {
+        var w = Worlds.FoldTransitionNodes with
+        {
+            Name = "fold transitions as nodes by key and window, policy by edges",
+            Files = [.. Worlds.FoldTransitionNodes.Files.Select(f => f with { Text = f.Text
+                .Replace("""{"from": "signal_2", "to": "signal_5Policy"},""", """{"from": "pol_1", "to": "pol_2"}, {"from": "pol_2", "to": "signal_5Policy"},""", StringComparison.Ordinal)
+                .Replace("""{"id": "signal_3",""", """{"id": "pol_1", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "s", "label": "Item"}, {"var": "t", "label": "Item"}], "edges": [{"var": "e", "label": "Edge", "from": "s", "to": "t"}]}}, {"id": "pol_2", "verb": "project", "columns": {"c": {"ref": "s.g"}}}, {"id": "signal_3",""", StringComparison.Ordinal) })],
+        };
+        static RowInput Edge(string src, string dst, long weight) => new("edges", Row(("src", Value.Text(src)), ("dst", Value.Text(dst))), weight);
+        RowInput[] swap = addFirst ? [Edge("k1", "k0", 1), Edge("k0", "k1", -1)] : [Edge("k0", "k1", -1), Edge("k1", "k0", 1)];
+        Input[] log = [Item("k0"), Item("k1"), Edge("k0", "k1", 1), .. Enumerable.Range(0, 10).SelectMany(m => new Input[] { Hits("k0", 5, m * 60 + 10), Advance(m * 60 + 65) }), .. swap, Advance(10 * 60 + 65)];
+        Assert.Null(Differential.FirstMismatch(w, log, 1, reordered: false)?.ToString());
+        Run(w, log, (engine, _) => Assert.All(Held(Fold(engine, "view")), st => Assert.True(Field<System.Collections.IList>(st, "Policies").Count <= 1)));
+    }
+
     /// <summary>#175 A4: in `fold over a windowed summarize` k0 has a hit in each of minutes 0 to 5, each closed after its hit, so k0 moves at minute 5. Its policy
     /// row leaves, and the clock jumps `minutes` minutes. With no policy in force the state stays up to the next window a policy row enters, of which there is
     /// none, so the key reaches the newest closed window in one look and does not step window by window. The reference agrees under every cut.</summary>
