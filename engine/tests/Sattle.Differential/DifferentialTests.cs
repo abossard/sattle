@@ -518,6 +518,35 @@ public class DifferentialTests
         }
     }
 
+    /// <summary>#180 (Def. 6.7, Prop. 6.10 (5)): a key is dropped only at the first input with a clock or one that moves it, so how the rows between two moves
+    /// of the clock are cut does not change the seeded fold. `fill and no data`: k1's record at 70 s; by 1920 s its window from 60 s has left the look-back, and
+    /// k1 goes on from its seed, which turns silent at the window from 240 s. Its item is then withdrawn and given again at 1920 s. Cut one row per batch the
+    /// reference sees k1 with no row in between; the largest batch sums to nothing; reversed, the item is there twice in between. The clock does not move in
+    /// between, so k1 keeps its seed and is silent at 2400 s under every cut; dropped in between, it would start again from none and show only its first state,
+    /// off. The reference reads a batch as its sum; the engine runs the log cut so.</summary>
+    [Theory]
+    [InlineData("one row per batch")]
+    [InlineData("largest batches")]
+    [InlineData("largest batches, rows reversed inside each batch")]
+    public void A_key_is_dropped_only_where_the_clock_moves(string cut)
+    {
+        var w = Worlds.All.Single(x => x.Name == "fill and no data");
+        static Sattle.Reference.Input At(long seconds) => new Sattle.Reference.AdvanceInput(Logs.Origin + seconds * Logs.Second);
+        var (withdrawn, given) = (PlainRow("a", -1, "k1", "g0", 1, 0), PlainRow("a", 1, "k1", "g0", 1, 0));
+        Sattle.Reference.Input[] before = [At(60), PlainRow("a", 1, "k1", "g0", 1, 0), PlainRow("b", 1, "k1", "g0", 2, 70), At(300), At(540), At(1920)];
+        Sattle.Reference.Input[] between = cut switch
+        {
+            "one row per batch" => [withdrawn, given],
+            "largest batches" => [],
+            _ => [given, withdrawn],
+        };
+        var chunking = new[] { Chunking.OneByOne, Chunking.Largest, Chunking.Reversed }.Single(c => c.Name == cut);
+        static string States(Sattle.Reference.SpaceFacts f) => string.Join(" ", f.Graphs["view"].Entities.Values.SelectMany(e => e.Props).Where(kv => kv.Key.EndsWith("prop:state", StringComparison.Ordinal)).Select(kv => kv.Value is TextValue t ? t.S : "-").Order(StringComparer.Ordinal));
+        Assert.Equal("silent", States(Sattle.Reference.ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), [.. before, .. between, At(2400)])));
+        var engine = States(EngineRun.Final(w.Catalog, [.. before, withdrawn, given, At(2400)], chunking));
+        Assert.True(engine == "silent", $"{chunking.Name}: engine {engine}, expected silent");
+    }
+
     /// <summary>Theorem 6.11 (2) on the reference: the seeded fold is not a function of the last input state. In `threshold over a short look-back`, k0 has two
     /// windows at 6, from 0 and 60 s; the row at 0 s is withdrawn on time (at 120 s, within its lateness of 3 minutes), withdrawn after its window was dropped
     /// (at 720 s both windows have left), or never there. All three logs end with the same sources, and the fold reads the same rows. A withdrawal on time reaches the fold, which reads k0 from

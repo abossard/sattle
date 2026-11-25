@@ -422,8 +422,8 @@ public static class Denotation
     /// The states of a key from a seed at a window: the seed none waits for the first window from there that is not silent and has a policy, and starts there from
     /// start(ζ); from a state, every window, silent ones too, steps with its policy, and a window without one keeps the state. At each input with a clock, the
     /// windows the clock dropped (from the first window before to the new one) are stepped from the seeds with the rows and policies of the input before (of this
-    /// input, if the fold has none before it), their transitions are kept, and the state after them is the key's new seed; then a key with no policy row and no window row in the
-    /// look-back is dropped. The result is the kept rows and the transitions of the windows in the look-back, stepped from the seeds with this input's rows.
+    /// input, if the fold has none before it), their transitions are kept, and the state after them is the key's new seed; then, at the first input with a clock or one that moves it, a key with no
+    /// policy row and no window row in the look-back is dropped (#180). The result is the kept rows and the transitions of the windows in the look-back, stepped from the seeds with this input's rows.
     /// </summary>
     public static (Relation Result, Carried Carried) Fold(TFold t, Relation rows, Relation policy, long width, long hop, long lateness, long lookback, long? before, long? frontier, Carried carried)
     {
@@ -543,8 +543,9 @@ public static class Denotation
             }
             seeds = stepped.ToImmutable();
         }
-        // Def. 6.7: a key with no policy row and no window row in the look-back is dropped, and holds nothing
-        seeds = seeds.RemoveRange(seeds.Keys.Where(k => !policies.Values.Any(p => p.Key == k) && !windows.Keys.Any(w => w.Key == k && w.Start >= first)).ToList());
+        // Def. 6.7: at the first input with a clock or one that moves it, a key with no policy row and no window row in the look-back is dropped, and holds
+        // nothing; while the clock stands a key keeps its seed, so how the rows between two moves of the clock are cut does not change it (#180)
+        if (advanced) seeds = seeds.RemoveRange(seeds.Keys.Where(k => !policies.Values.Any(p => p.Key == k) && !windows.Keys.Any(w => w.Key == k && w.Start >= first)).ToList());
 
         var last = Floor((Int128)now - width - lateness);       // the newest window closed: close(a) ≤ now
         var selected = kept;
