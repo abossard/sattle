@@ -24,7 +24,7 @@ public sealed record SpaceFacts(ImmutableSortedDictionary<string, GraphFacts> Gr
 /// Three things are functions of the log and not of the integrated state, and are carried from one input to the next as plain sets:
 /// the rows a windowed Group accepted (lateness is judged against the frontier at the row's position, premise B2),
 /// and, to find what an input added to or took from such an operator, its integrated input after the previous input;
-/// and per fold (Def. 6.5) its policy rows with the clock each entered at (#151 D4); the fold itself is recomputed from its present rows (D6).
+/// and per fold its policy rows with the clock each entered at (#151 D4), and its seeds, kept transitions and window rows of the input before (Def. 6.7, #172).
 /// Two more are recorded facts (Def. 7.14): how far each source has reported, and since which clock (the arrival of its row, kept while it has a row at the end of each clock) an element has had a row in the structural input of a Series that fills or has a time to live.
 /// </summary>
 public static class ReferenceEvaluator
@@ -132,6 +132,8 @@ public static class ReferenceEvaluator
         var inputs = new PlanInputs(rowPorts, graphPorts, held, (port, type, of) => views[port].IsSubtype(type, of), frontier, withPairs);
 
         var outs = ImmutableDictionary.Create<string, Relation>(StringComparer.Ordinal);
+        // a windowed Group's windows before its selection by window end, read by a fold straight after it (#172 D2)
+        var open = ImmutableDictionary.Create<string, Relation>(StringComparer.Ordinal);
         foreach (var op in plan.Ops)
         {
             Relation In(string port) => op.Inputs[port] is { IsPort: true } s ? inputs.Rows[s.Name] : outs[op.Inputs[port].Name];
@@ -159,12 +161,19 @@ public static class ReferenceEvaluator
                         p = p with { SeenInput = p.SeenInput.SetItem(slot, rows.Rows), Accepted = p.Accepted.SetItem(slot, accepted) };
                         var closed = ZSet.Of(accepted.Where(r => frontier is not null && ((InstantValue)rows.Reader(r.Row)("windowStart")).Ns + window.WidthNs <= frontier));
                         outs = outs.SetItem(op.Name, Denotation.Of(group, _ => rows with { Rows = closed }, inputs));
+                        open = open.SetItem(op.Name, Denotation.Of(group, _ => rows with { Rows = accepted }, inputs));
                         break;
                     }
                 case TFold fold:
                     {
                         var (width, hop, lateness) = Windows(plan, fold);
-                        var (result, carried) = Denotation.Fold(fold, In("in"), In("policy"), width, hop, lateness, frontierBefore, frontier, p.Carried.GetValueOrDefault(slot, Denotation.Carried.None));
+                        // Def. 6.7 (#172 D1): a window of a Series leaves the look-back when the Series drops it (start + lookback < clock), never before it closes; a
+                        // window of a Window leaves when it closes
+                        var lookback = Math.Max(Upstream<TOp>(plan, fold, o => o is TWindow or TSeries) is TSeries feed ? feed.WithinNs + 1 : 0, width + lateness);
+                        // #172 D2: straight after a windowed Group the fold reads its accepted windows before their end, so a window is in the input before the
+                        // one that drops it; the fold selects a transition only from its close on, after the end, so no selected transition changes
+                        var windowRows = !op.Inputs["in"].IsPort && open.TryGetValue(op.Inputs["in"].Name, out var ungated) ? ungated : In("in");
+                        var (result, carried) = Denotation.Fold(fold, windowRows, In("policy"), width, hop, lateness, lookback, frontierBefore, frontier, p.Carried.GetValueOrDefault(slot, Denotation.Carried.None));
                         p = p with { Carried = p.Carried.SetItem(slot, carried) };
                         outs = outs.SetItem(op.Name, result);
                         break;

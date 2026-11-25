@@ -155,7 +155,7 @@ public static class Worlds
     /// step that moves the clock adds the node. A view folds the hits of each item with its `Busy` nodes as policy rows.</summary>
     public static readonly World AdvancePolicy = View("a policy that an advance makes", "Window, Group, EmitEntity, Series, Fold", 0, Dense);
     public static readonly World OptionalProperty = Rows("optional property", "EmitEntity") with { Witnesses = ["prop:d="] };
-    /// <summary>A fold whose look-back (10 minutes) is shorter than the logs: a window leaves the series six windows after it closes (a window and its late horizon of three take four), and the fold forgets it (#151 D6): the key starts again at its first window still inside the look-back.</summary>
+    /// <summary>A fold whose look-back (10 minutes) is shorter than the logs: a window leaves the series six windows after it closes (a window and its late horizon of three take four), and the fold drops it (Def. 6.7, #172): its transitions stay and the key goes on from its seed.</summary>
     /// <summary>#159 G2 and #151 D1: a fold by the group `g` of the items, straight over their series, so two items of one group give two rows for one key and window.</summary>
     public static readonly World SharedKeyThreshold = View("threshold by a key two items share", "Series, Fold", 0.3, Dense) with { Witnesses = ["state=t:off"] };
     /// <summary>#170: the transitions of a fold go straight to a nodes sink whose identity has the fold key and the window start (an Instant component). A policy row there before the clock first moves is stamped 0 (Def. 6.6).</summary>

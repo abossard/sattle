@@ -486,21 +486,22 @@ public class DifferentialTests
             Assert.Equal(expected, Shown(EngineRun.Final(w.Catalog, log, chunking)));
     }
 
-    /// <summary>#151 D6: a fold is a function of its present rows (Def. 6.5), so a window its Series withdraws for leaving the look-back leaves the fold, and the
-    /// key's transitions change from that window on (Prop. 6.7 (2)): the key starts again at its first window still inside the look-back, and a key with none has
-    /// no state. `fill and no data` (look-back 30 minutes): k1's record at 70 s; the window from 60 s closes at 300 s, three silent windows make k1 silent by
-    /// 540 s, and the window leaves the look-back after 1860 s. `threshold over a short look-back` (10 minutes, a window and its late horizon of three take four):
-    /// two windows at 6, from 0 and 60 s, close at 240 and 300 s and turn k0 on; the first leaves after 600 s, and one window at 6 leaves k0 off; at 720 s both
-    /// have left. The engine gives the reference's state under every cut.</summary>
+    /// <summary>#172 (Def. 6.7, #122 D32, replaces #151 D6): a window that leaves the look-back of its Series is dropped from the fold: its transitions stay and
+    /// the key goes on from its seed, the state after it. `fill and no data` (look-back 30 minutes): k1's record at 70 s; the window from 60 s closes at 300 s,
+    /// three silent windows make k1 silent by 540 s, and the window leaves the look-back after 1860 s, keeping k1 silent. `threshold over a short look-back`
+    /// (10 minutes, a window and its late horizon of three take four): two windows at 6, from 0 and 60 s, close at 240 and 300 s and turn k0 on; the first leaves
+    /// after 600 s and k0 stays on from its seed; at 720 s both have left and their transitions stay. With 660 s as the first clock, the window from 0 s has left
+    /// the series before any input had it, so the fold never reads it, and the window from 60 s alone leaves k0 off. The engine gives the reference's state
+    /// under every cut.</summary>
     [Theory]
     [InlineData("fill and no data", new[] { 120L, 540L }, "silent")]
     [InlineData("fill and no data", new[] { 120L, 300L, 360L, 540L }, "silent")]
-    [InlineData("fill and no data", new[] { 120L, 540L, 1920L }, "")]
+    [InlineData("fill and no data", new[] { 120L, 540L, 1920L }, "silent")]
     [InlineData("threshold over a short look-back", new[] { 120L, 300L }, "on")]
-    [InlineData("threshold over a short look-back", new[] { 120L, 240L, 300L, 660L }, "off")]
+    [InlineData("threshold over a short look-back", new[] { 120L, 240L, 300L, 660L }, "on")]
     [InlineData("threshold over a short look-back", new[] { 660L }, "off")]
-    [InlineData("threshold over a short look-back", new[] { 120L, 300L, 720L }, "")]
-    public void A_window_that_leaves_the_look_back_leaves_the_fold(string world, long[] advances, string expected)
+    [InlineData("threshold over a short look-back", new[] { 120L, 300L, 720L }, "on")]
+    public void A_window_that_leaves_the_look_back_keeps_its_transitions(string world, long[] advances, string expected)
     {
         var w = Worlds.All.Single(x => x.Name == world);
         static Sattle.Reference.Input At(long seconds) => new Sattle.Reference.AdvanceInput(Logs.Origin + seconds * Logs.Second);
@@ -515,6 +516,32 @@ public class DifferentialTests
             var engine = States(EngineRun.Final(w.Catalog, log, chunking));
             Assert.True(engine == expected, $"{world}, advances {string.Join(",", advances)}, {chunking.Name}: engine {engine}, expected {expected}");
         }
+    }
+
+    /// <summary>Theorem 6.11 (2) on the reference: the seeded fold is not a function of the last input state. In `threshold over a short look-back`, k0 has two
+    /// windows at 6, from 0 and 60 s; the row at 0 s is withdrawn on time (at 120 s, within its lateness of 3 minutes), withdrawn after its window was dropped
+    /// (at 720 s both windows have left), or never there. All three logs end with the same sources, and the fold reads the same rows. A withdrawal on time reaches the fold, which reads k0 from
+    /// its present rows, one window at 6: k0 is off, as when the row was never there. A withdrawal after the drop is late, and the rows input leaves it out; the
+    /// fold has kept the transitions of both windows, and k0 stays on.</summary>
+    [Theory]
+    [InlineData("withdrawn on time", "off")]
+    [InlineData("withdrawn after the window was dropped", "on")]
+    [InlineData("never there", "off")]
+    public void Two_logs_that_end_in_one_state_can_give_two_seeded_folds(string when, string expected)
+    {
+        var w = Worlds.All.Single(x => x.Name == "threshold over a short look-back");
+        static Sattle.Reference.Input At(long seconds) => new Sattle.Reference.AdvanceInput(Logs.Origin + seconds * Logs.Second);
+        var early = PlainRow("b", 1, "k0", "g0", 6, 0);
+        var withdrawn = PlainRow("b", -1, "k0", "g0", 6, 0);
+        Sattle.Reference.Input[] rows = [PlainRow("a", 1, "k0", "g0", 1, 0), PlainRow("b", 1, "k0", "g0", 6, 60)];
+        Sattle.Reference.Input[] log = when switch
+        {
+            "withdrawn after the window was dropped" => [.. rows, early, At(120), At(300), At(720), withdrawn],
+            "withdrawn on time" => [.. rows, early, At(120), withdrawn, At(300), At(720)],
+            _ => [.. rows, At(120), At(300), At(720)],
+        };
+        static string States(Sattle.Reference.SpaceFacts f) => string.Join(" ", f.Graphs["view"].Entities.Values.SelectMany(e => e.Props).Where(kv => kv.Key.EndsWith("prop:state", StringComparison.Ordinal)).Select(kv => kv.Value is TextValue t ? t.S : "-").Order(StringComparer.Ordinal));
+        Assert.Equal(expected, States(Sattle.Reference.ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), log)));
     }
 
     /// <summary>A node row of `ranked` (item `k`, rank `n`, none for null) or an edge row `from>to` with its impact after a colon, signed.</summary>
