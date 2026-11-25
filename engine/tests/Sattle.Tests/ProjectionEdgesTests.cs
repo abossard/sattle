@@ -272,8 +272,9 @@ public class ProjectionEdgesTests
         var dir = Copy(["storefront", "ordering", "ordering"], extraWebToDb: true, null);         // web to api (no drops) and web to db (drops in minutes 4 to 7) lift to one edge
         try
         {
-            // a host, for the windows of two graphs by their start: the replay's files number the windows of each graph on their own
-            using var h = HostTests.NewHost(lateHorizon: 1_000_000);
+            // a host, for the windows of two graphs by their start: the replay's files number the windows of each graph on their own. The default late horizon:
+            // the status is folded over the windows, and a window is folded when the clock passes its end plus the horizon (#151 D5)
+            using var h = HostTests.NewHost(lateHorizon: 3);
             h.RunCapture(dir, new ReplayOptions { ChunkRows = 2000, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000});
             var edge = Assert.Single(h.Relationships("capabilities", "DependsOn"))["id"].Id();
             Dictionary<string, decimal> Of(string prop) => h.Windows("capabilities", prop).Where(x => x.Element == edge).ToDictionary(x => x.Window, x => x.Value);

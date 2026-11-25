@@ -9,7 +9,7 @@ public class KernelTests
     public void Kernel_table_has_the_counts_of_section_2_3()
     {
         var concreteDefinition = KernelTable.Types.Take(KernelTable.Types.Length - 5).Where(t => !t.Abstract).ToList();
-        Assert.Equal(53, concreteDefinition.Count);                       // the 50 of section 2.3, ValueRole (presentation roles of property values), the operator Retain (evidence retention), FixpointMap (the image lists of a fixpoint)
+        Assert.Equal(54, concreteDefinition.Count);                       // the 50 of section 2.3, ValueRole (presentation roles of property values), the operator Retain (evidence retention), FixpointMap (the image lists of a fixpoint), FoldState (a state field of a fold, #151)
         Assert.Equal(3, KernelTable.Types.Take(3).Count(t => t.Abstract));
         Assert.Equal(19, KernelTable.OperatorSet.Count);
         Assert.Equal(4, KernelTable.ExprSet.Count);

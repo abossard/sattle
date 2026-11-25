@@ -172,7 +172,7 @@ public class LineageTests
             Assert.Null(manifest["serviceTree"]!["document"]);
             var meters = JsonNode.Parse(File.ReadAllText(Path.Combine(dir, manifest["serviceTree"]!["meters"]!.GetValue<string>())))!;
             Assert.Contains(meters["meters"]!.AsArray(), m => m!["id"]!.GetValue<string>() == "dropRatio" && m["temporality"]!.GetValue<string>() == "gauge" && m["periodSeconds"]!.GetValue<long>() == 60);
-            Assert.Equal("degraded", meters["thresholds"]![0]!["high"]!.GetValue<string>());
+            Assert.Null(meters["thresholds"]);                                                    // a status is folded in gkql, no threshold operator to list (PROTOCOL 3.67, #151)
         }
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }
