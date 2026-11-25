@@ -24,9 +24,9 @@ public class FoldLookBackTests
     static IEnumerable<object> Held(object fold) => Field<System.Collections.IDictionary>(fold, "states").Values.Cast<object>();
 
     /// <summary>Runs the engine one input at a time and calls `look` after each.</summary>
-    static void Run(World w, IReadOnlyList<Input> log, Action<Engine, Input> look)
+    static void Run(World w, IReadOnlyList<Input> log, Action<Engine, Input> look, IReadOnlySet<string>? traced = null)
     {
-        using var engine = new Engine(w.Catalog, w.Catalog.Spaces.Keys.Single(), new EngineOptions { WindowRetentionNs = w.RetentionNs });
+        using var engine = new Engine(w.Catalog, w.Catalog.Spaces.Keys.Single(), new EngineOptions { WindowRetentionNs = w.RetentionNs, TraceGraphs = traced });
         long seq = 0;
         foreach (var input in log)
         {
@@ -83,7 +83,8 @@ public class FoldLookBackTests
 
     /// <summary>A4: in `fold transitions as nodes by key and window` (a look-back of 30 minutes, every transition a node) item k0 of group g0 has 5 hits in each of
     /// `minutes` minutes and the clock moves a minute at a time, so from minute 30 on a window leaves the look-back at every advance. The key turns on at its first
-    /// window and stays on. From then on every advance steps the fold once, for the window that closes, and changes no node: no earlier transition is written again.</summary>
+    /// window and stays on. From then on every advance steps the fold once, for the window that closes, and changes no row of the fold's output, read from a traced
+    /// run: no earlier transition is written again, in any column. Over the whole run the fold's output changes once, by the first transition.</summary>
     [Theory]
     [InlineData(40)]
     [InlineData(90)]
@@ -93,15 +94,18 @@ public class FoldLookBackTests
         Input[] log = [Item("k0"), .. Enumerable.Range(0, minutes).SelectMany(m => new Input[] { Hits("k0", 5, m * 60 + 10), Advance(m * 60 + 65) })];
         Assert.Null(Differential.FirstMismatch(w, log, 1, reordered: false)?.ToString());
         var perAdvance = new List<(long Steps, int Changes)>();
-        var (steps, lines) = (0L, Array.Empty<string>());
+        var (steps, rows) = (0L, new Dictionary<string, long>());
         Run(w, log, (engine, input) =>
         {
             if (input is not AdvanceInput) return;
-            var (nowSteps, nowLines) = (Field<long>(Fold(engine, "view"), "steps"), EngineRun.FactsOf(engine).Graphs["view"].Lines().ToArray());
-            perAdvance.Add((nowSteps - steps, nowLines.Except(lines).Count() + lines.Except(nowLines).Count()));
-            (steps, lines) = (nowSteps, nowLines);
-        });
-        Assert.Contains(lines, l => l.Contains("to=t:on", StringComparison.Ordinal));
+            var fold = Fold(engine, "view");
+            var now = engine.Traced.GetValueOrDefault("view")?.GetValueOrDefault(((PhysOp)fold).Name)?.ToDictionary(r => r.Key, r => r.Value.Weight) ?? [];
+            var changes = now.Count(r => rows.GetValueOrDefault(r.Key) != r.Value) + rows.Keys.Count(k => !now.ContainsKey(k));
+            perAdvance.Add((Field<long>(fold, "steps") - steps, changes));
+            (steps, rows) = (Field<long>(fold, "steps"), now);
+        }, new HashSet<string> { "view" });
+        Assert.Contains(rows.Keys, r => r.Contains("\u001ftoff\u001fton", StringComparison.Ordinal));
+        Assert.Equal(1, perAdvance.Sum(x => x.Changes));        // the first transition, written once
         Assert.All(perAdvance.Skip(30), x => Assert.Equal((1L, 0), x));
     }
 
