@@ -1,0 +1,6 @@
+{"v": 1, "source": "records:PolicyRow", "key": "PolicyRow/0", "payload": {"key": "PolicyRow/0", "values": {"key": "api", "revision": 1, "above": 80, "below": 50, "enterAfter": 2, "exitAfter": 3, "gap": 1000, "missing": "Unknown"}}, "capturedAt": "2025-12-31T23:59:30.000000Z", "seq": 0}
+{"v": 1, "source": "records:Reading", "key": "Reading/1", "payload": {"key": "Reading/1", "values": {"key": "api", "t": "2026-01-01T00:00:10.000000Z", "value": 90}}, "capturedAt": "2026-01-01T00:00:15.000000Z", "seq": 1}
+{"v": 1, "source": "records:Reading", "key": "Reading/2", "payload": {"key": "Reading/2", "values": {"key": "api", "t": "2026-01-01T00:01:10.000000Z", "value": 90}}, "capturedAt": "2026-01-01T00:01:15.000000Z", "seq": 2}
+{"v": 1, "source": "records:Reading", "key": "Reading/3", "payload": {"key": "Reading/3", "values": {"key": "api", "t": "2026-01-01T00:02:10.000000Z", "value": 90}}, "capturedAt": "2026-01-01T00:02:15.000000Z", "seq": 3}
+{"v": 1, "source": "records:Reading", "key": "Reading/4", "payload": {"key": "Reading/4", "values": {"key": "api", "t": "2026-01-01T00:03:10.000000Z", "value": 90}}, "capturedAt": "2026-01-01T00:03:15.000000Z", "seq": 4}
+{"v": 1, "source": "records:Reading", "key": "heartbeat/2026-01-01T00:08:00.000000Z", "payload": {}, "capturedAt": "2026-01-01T00:08:00.000000Z", "seq": 5}

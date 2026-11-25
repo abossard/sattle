@@ -1,0 +1,66 @@
+{
+ "module": "cases",
+ "version": "1.0.0",
+ "imports": [
+  {
+   "module": "policy",
+   "alias": "policy",
+   "version": "1.0.0",
+   "digest": null
+  }
+ ],
+ "space": {
+  "name": "cases",
+  "sources": [
+   {
+    "name": "readings",
+    "adapter": "record",
+    "rows": "policy.Reading"
+   },
+   {
+    "name": "policies",
+    "adapter": "record",
+    "rows": "policy.PolicyRow"
+   },
+   {
+    "name": "depends",
+    "adapter": "record",
+    "rows": "policy.DependsOn"
+   },
+   {
+    "name": "tasks",
+    "adapter": "record",
+    "rows": "policy.TaskEvent"
+   }
+  ],
+  "graphs": [
+   {
+    "name": "master",
+    "projection": "policy.ingest",
+    "master": true,
+    "inputs": {
+     "readings": "readings",
+     "policies": "policies",
+     "depends": "depends",
+     "tasks": "tasks"
+    }
+   },
+   {
+    "name": "health",
+    "projection": "policy.health",
+    "master": false,
+    "inputs": {
+     "master": "master"
+    }
+   },
+   {
+    "name": "completion",
+    "projection": "policy.completion",
+    "master": false,
+    "inputs": {
+     "master": "master"
+    }
+   }
+  ]
+ }
+}

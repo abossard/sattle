@@ -1,0 +1,6 @@
+{"v": 1, "source": "records:TaskEvent", "key": "TaskEvent/0", "payload": {"key": "TaskEvent/0", "values": {"task": "t1", "t": "2026-01-01T00:00:10.000000Z", "phase": "started"}}, "capturedAt": "2026-01-01T00:00:15.000000Z", "seq": 0}
+{"v": 1, "source": "records:TaskEvent", "key": "TaskEvent/1", "payload": {"key": "TaskEvent/1", "values": {"task": "t2", "t": "2026-01-01T00:01:10.000000Z", "phase": "started"}}, "capturedAt": "2026-01-01T00:01:15.000000Z", "seq": 1}
+{"v": 1, "source": "records:TaskEvent", "key": "TaskEvent/2", "payload": {"key": "TaskEvent/2", "values": {"task": "t1", "t": "2026-01-01T00:02:10.000000Z", "phase": "running"}}, "capturedAt": "2026-01-01T00:02:15.000000Z", "seq": 2}
+{"v": 1, "source": "records:TaskEvent", "key": "TaskEvent/3", "payload": {"key": "TaskEvent/3", "values": {"task": "t2", "t": "2026-01-01T00:03:10.000000Z", "phase": "succeeded"}}, "capturedAt": "2026-01-01T00:03:15.000000Z", "seq": 3}
+{"v": 1, "source": "records:TaskEvent", "key": "TaskEvent/4", "payload": {"key": "TaskEvent/4", "values": {"task": "t1", "t": "2026-01-01T00:05:10.000000Z", "phase": "failed"}}, "capturedAt": "2026-01-01T00:05:15.000000Z", "seq": 4}
+{"v": 1, "source": "records:Reading", "key": "heartbeat/2026-01-01T00:09:00.000000Z", "payload": {}, "capturedAt": "2026-01-01T00:09:00.000000Z", "seq": 5}

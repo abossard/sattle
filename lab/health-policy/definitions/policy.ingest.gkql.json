@@ -1,0 +1,483 @@
+{
+ "graph": "ingest",
+ "ontology": "policy",
+ "history": 0,
+ "inputs": [
+  {
+   "name": "readings",
+   "rows": "policy.Reading",
+   "time": "t",
+   "lateness": "1m"
+  },
+  {
+   "name": "policies",
+   "rows": "policy.PolicyRow"
+  },
+  {
+   "name": "depends",
+   "rows": "policy.DependsOn"
+  },
+  {
+   "name": "tasks",
+   "rows": "policy.TaskEvent",
+   "time": "t",
+   "lateness": "1m"
+  }
+ ],
+ "parameters": [],
+ "verbs": [
+  {
+   "id": "policies",
+   "verb": "rows",
+   "source": "policies"
+  },
+  {
+   "id": "signals",
+   "verb": "nodes",
+   "target": {
+    "nodes": [
+     {
+      "var": "n",
+      "label": "Signal",
+      "id": {
+       "identity": "signal",
+       "args": [
+        {
+         "ref": "key"
+        }
+       ]
+      },
+      "props": {
+       "key": {
+        "ref": "key"
+       }
+      }
+     }
+    ]
+   },
+   "rule": "observed"
+  },
+  {
+   "id": "policyNodes",
+   "verb": "nodes",
+   "target": {
+    "nodes": [
+     {
+      "var": "n",
+      "label": "Policy",
+      "id": {
+       "identity": "policy",
+       "args": [
+        {
+         "ref": "key"
+        },
+        {
+         "ref": "revision"
+        }
+       ]
+      },
+      "props": {
+       "key": {
+        "ref": "key"
+       },
+       "revision": {
+        "ref": "revision"
+       },
+       "above": {
+        "ref": "above"
+       },
+       "below": {
+        "ref": "below"
+       },
+       "enterAfter": {
+        "ref": "enterAfter"
+       },
+       "exitAfter": {
+        "ref": "exitAfter"
+       },
+       "gap": {
+        "ref": "gap"
+       },
+       "missing": {
+        "ref": "missing"
+       }
+      }
+     }
+    ]
+   },
+   "rule": "observed"
+  },
+  {
+   "id": "readings",
+   "verb": "rows",
+   "source": "readings"
+  },
+  {
+   "id": "readingWindow",
+   "verb": "window",
+   "window": {
+    "time": "t",
+    "period": "1m"
+   }
+  },
+  {
+   "id": "readingMax",
+   "verb": "summarize",
+   "by": {
+    "key": {
+     "ref": "key"
+    },
+    "windowStart": {
+     "ref": "windowStart"
+    }
+   },
+   "aggregates": {
+    "reading": {
+     "fn": "max",
+     "args": [
+      {
+       "ref": "value"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "readingNodes",
+   "verb": "nodes",
+   "target": {
+    "nodes": [
+     {
+      "var": "n",
+      "label": "Signal",
+      "id": {
+       "identity": "signal",
+       "args": [
+        {
+         "ref": "key"
+        }
+       ]
+      },
+      "extend": true,
+      "props": {
+       "reading": {
+        "ref": "reading"
+       }
+      }
+     }
+    ]
+   },
+   "rule": "observed"
+  },
+  {
+   "id": "depends",
+   "verb": "rows",
+   "source": "depends"
+  },
+  {
+   "id": "required",
+   "verb": "where",
+   "condition": {
+    "fn": "==",
+    "args": [
+     {
+      "ref": "required"
+     },
+     {
+      "lit": true
+     }
+    ]
+   }
+  },
+  {
+   "id": "optional",
+   "verb": "where",
+   "condition": {
+    "fn": "==",
+    "args": [
+     {
+      "ref": "required"
+     },
+     {
+      "lit": false
+     }
+    ]
+   }
+  },
+  {
+   "id": "requires",
+   "verb": "edges",
+   "rule": "observed",
+   "target": {
+    "nodes": [
+     {
+      "var": "s",
+      "label": "Signal",
+      "id": {
+       "identity": "signal",
+       "args": [
+        {
+         "ref": "consumer"
+        }
+       ]
+      }
+     },
+     {
+      "var": "t",
+      "label": "Signal",
+      "id": {
+       "identity": "signal",
+       "args": [
+        {
+         "ref": "dependency"
+        }
+       ]
+      }
+     }
+    ],
+    "edges": [
+     {
+      "var": "e",
+      "label": "Requires",
+      "from": "s",
+      "to": "t"
+     }
+    ]
+   }
+  },
+  {
+   "id": "uses",
+   "verb": "edges",
+   "rule": "observed",
+   "target": {
+    "nodes": [
+     {
+      "var": "s",
+      "label": "Signal",
+      "id": {
+       "identity": "signal",
+       "args": [
+        {
+         "ref": "consumer"
+        }
+       ]
+      }
+     },
+     {
+      "var": "t",
+      "label": "Signal",
+      "id": {
+       "identity": "signal",
+       "args": [
+        {
+         "ref": "dependency"
+        }
+       ]
+      }
+     }
+    ],
+    "edges": [
+     {
+      "var": "e",
+      "label": "Uses",
+      "from": "s",
+      "to": "t"
+     }
+    ]
+   }
+  },
+  {
+   "id": "tasks",
+   "verb": "rows",
+   "source": "tasks"
+  },
+  {
+   "id": "taskNodes",
+   "verb": "nodes",
+   "target": {
+    "nodes": [
+     {
+      "var": "n",
+      "label": "Task",
+      "id": {
+       "identity": "task",
+       "args": [
+        {
+         "ref": "task"
+        }
+       ]
+      },
+      "props": {
+       "key": {
+        "ref": "task"
+       }
+      }
+     }
+    ]
+   },
+   "rule": "observed"
+  },
+  {
+   "id": "taskCode",
+   "verb": "extend",
+   "columns": {
+    "code": {
+     "fn": "iff",
+     "args": [
+      {
+       "fn": "==",
+       "args": [
+        {
+         "ref": "phase"
+        },
+        {
+         "lit": "succeeded"
+        }
+       ]
+      },
+      {
+       "lit": 3
+      },
+      {
+       "fn": "iff",
+       "args": [
+        {
+         "fn": "==",
+         "args": [
+          {
+           "ref": "phase"
+          },
+          {
+           "lit": "failed"
+          }
+         ]
+        },
+        {
+         "lit": 2
+        },
+        {
+         "lit": 1
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "taskWindow",
+   "verb": "window",
+   "window": {
+    "time": "t",
+    "period": "1m"
+   }
+  },
+  {
+   "id": "taskMax",
+   "verb": "summarize",
+   "by": {
+    "task": {
+     "ref": "task"
+    },
+    "windowStart": {
+     "ref": "windowStart"
+    }
+   },
+   "aggregates": {
+    "phase": {
+     "fn": "max",
+     "args": [
+      {
+       "ref": "code"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "phaseNodes",
+   "verb": "nodes",
+   "target": {
+    "nodes": [
+     {
+      "var": "n",
+      "label": "Task",
+      "id": {
+       "identity": "task",
+       "args": [
+        {
+         "ref": "task"
+        }
+       ]
+      },
+      "extend": true,
+      "props": {
+       "phase": {
+        "ref": "phase"
+       }
+      }
+     }
+    ]
+   },
+   "rule": "observed"
+  }
+ ],
+ "wires": [
+  {
+   "from": "policies",
+   "to": "signals"
+  },
+  {
+   "from": "policies",
+   "to": "policyNodes"
+  },
+  {
+   "from": "readings",
+   "to": "readingWindow"
+  },
+  {
+   "from": "readingWindow",
+   "to": "readingMax"
+  },
+  {
+   "from": "readingMax",
+   "to": "readingNodes"
+  },
+  {
+   "from": "depends",
+   "to": "required"
+  },
+  {
+   "from": "depends",
+   "to": "optional"
+  },
+  {
+   "from": "required",
+   "to": "requires"
+  },
+  {
+   "from": "optional",
+   "to": "uses"
+  },
+  {
+   "from": "tasks",
+   "to": "taskNodes"
+  },
+  {
+   "from": "tasks",
+   "to": "taskCode"
+  },
+  {
+   "from": "taskCode",
+   "to": "taskWindow"
+  },
+  {
+   "from": "taskWindow",
+   "to": "taskMax"
+  },
+  {
+   "from": "taskMax",
+   "to": "phaseNodes"
+  }
+ ]
+}

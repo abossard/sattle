@@ -1,0 +1,354 @@
+{
+ "module": "policy",
+ "version": "1.0.0",
+ "imports": [],
+ "entities": [
+  {
+   "name": "Signal",
+   "properties": [
+    {
+     "name": "key",
+     "type": "Text"
+    },
+    {
+     "name": "reading",
+     "type": "Decimal",
+     "optional": true,
+     "events": {
+      "temporality": "gauge",
+      "combine": "max",
+      "period": "1m"
+     }
+    }
+   ]
+  },
+  {
+   "name": "Policy",
+   "properties": [
+    {
+     "name": "key",
+     "type": "Text"
+    },
+    {
+     "name": "revision",
+     "type": "Integer"
+    },
+    {
+     "name": "above",
+     "type": "Decimal"
+    },
+    {
+     "name": "below",
+     "type": "Decimal"
+    },
+    {
+     "name": "enterAfter",
+     "type": "Integer"
+    },
+    {
+     "name": "exitAfter",
+     "type": "Integer"
+    },
+    {
+     "name": "gap",
+     "type": "Integer"
+    },
+    {
+     "name": "missing",
+     "type": "Text"
+    }
+   ]
+  },
+  {
+   "name": "Task",
+   "properties": [
+    {
+     "name": "key",
+     "type": "Text"
+    },
+    {
+     "name": "phase",
+     "type": "Integer",
+     "optional": true,
+     "events": {
+      "temporality": "gauge",
+      "combine": "max",
+      "period": "1m"
+     }
+    }
+   ]
+  },
+  {
+   "name": "Transition",
+   "properties": [
+    {
+     "name": "key",
+     "type": "Text"
+    },
+    {
+     "name": "windowStart",
+     "type": "Instant"
+    },
+    {
+     "name": "windowEnd",
+     "type": "Instant"
+    },
+    {
+     "name": "from",
+     "type": "Text"
+    },
+    {
+     "name": "to",
+     "type": "Text"
+    },
+    {
+     "name": "value",
+     "type": "Decimal",
+     "optional": true
+    },
+    {
+     "name": "revision",
+     "type": "Integer",
+     "optional": true
+    },
+    {
+     "name": "since",
+     "type": "Instant",
+     "optional": true
+    }
+   ]
+  },
+  {
+   "name": "Status",
+   "properties": [
+    {
+     "name": "key",
+     "type": "Text"
+    },
+    {
+     "name": "state",
+     "type": "Text"
+    },
+    {
+     "name": "windowStart",
+     "type": "Instant"
+    },
+    {
+     "name": "value",
+     "type": "Decimal",
+     "optional": true
+    }
+   ]
+  },
+  {
+   "name": "Impact",
+   "properties": [
+    {
+     "name": "consumer",
+     "type": "Text"
+    },
+    {
+     "name": "dependency",
+     "type": "Text"
+    },
+    {
+     "name": "required",
+     "type": "Boolean"
+    },
+    {
+     "name": "dependencyState",
+     "type": "Text"
+    },
+    {
+     "name": "effect",
+     "type": "Text"
+    },
+    {
+     "name": "windowStart",
+     "type": "Instant"
+    },
+    {
+     "name": "value",
+     "type": "Decimal",
+     "optional": true
+    }
+   ]
+  }
+ ],
+ "relationships": [
+  {
+   "name": "Requires",
+   "from": "Signal",
+   "to": "Signal"
+  },
+  {
+   "name": "Uses",
+   "from": "Signal",
+   "to": "Signal"
+  }
+ ],
+ "identities": [
+  {
+   "name": "signal",
+   "type": "Signal",
+   "components": [
+    {
+     "name": "key",
+     "type": "Text"
+    }
+   ]
+  },
+  {
+   "name": "policy",
+   "type": "Policy",
+   "components": [
+    {
+     "name": "key",
+     "type": "Text"
+    },
+    {
+     "name": "revision",
+     "type": "Integer"
+    }
+   ]
+  },
+  {
+   "name": "task",
+   "type": "Task",
+   "components": [
+    {
+     "name": "key",
+     "type": "Text"
+    }
+   ]
+  },
+  {
+   "name": "transition",
+   "type": "Transition",
+   "components": [
+    {
+     "name": "key",
+     "type": "Text"
+    },
+    {
+     "name": "windowStart",
+     "type": "Instant"
+    }
+   ]
+  },
+  {
+   "name": "status",
+   "type": "Status",
+   "components": [
+    {
+     "name": "key",
+     "type": "Text"
+    }
+   ]
+  },
+  {
+   "name": "impact",
+   "type": "Impact",
+   "components": [
+    {
+     "name": "consumer",
+     "type": "Text"
+    },
+    {
+     "name": "dependency",
+     "type": "Text"
+    }
+   ]
+  }
+ ],
+ "rows": [
+  {
+   "name": "Reading",
+   "fields": [
+    {
+     "name": "key",
+     "type": "Text"
+    },
+    {
+     "name": "t",
+     "type": "Instant"
+    },
+    {
+     "name": "value",
+     "type": "Decimal"
+    }
+   ]
+  },
+  {
+   "name": "PolicyRow",
+   "fields": [
+    {
+     "name": "key",
+     "type": "Text"
+    },
+    {
+     "name": "revision",
+     "type": "Integer"
+    },
+    {
+     "name": "above",
+     "type": "Decimal"
+    },
+    {
+     "name": "below",
+     "type": "Decimal"
+    },
+    {
+     "name": "enterAfter",
+     "type": "Integer"
+    },
+    {
+     "name": "exitAfter",
+     "type": "Integer"
+    },
+    {
+     "name": "gap",
+     "type": "Integer"
+    },
+    {
+     "name": "missing",
+     "type": "Text"
+    }
+   ]
+  },
+  {
+   "name": "DependsOn",
+   "fields": [
+    {
+     "name": "consumer",
+     "type": "Text"
+    },
+    {
+     "name": "dependency",
+     "type": "Text"
+    },
+    {
+     "name": "required",
+     "type": "Boolean"
+    }
+   ]
+  },
+  {
+   "name": "TaskEvent",
+   "fields": [
+    {
+     "name": "task",
+     "type": "Text"
+    },
+    {
+     "name": "t",
+     "type": "Instant"
+    },
+    {
+     "name": "phase",
+     "type": "Text"
+    }
+   ]
+  }
+ ]
+}

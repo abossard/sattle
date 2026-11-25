@@ -1,0 +1,1026 @@
+{
+ "graph": "health",
+ "ontology": "policy",
+ "history": 0,
+ "inputs": [
+  {
+   "name": "master",
+   "ontology": "policy"
+  }
+ ],
+ "parameters": [],
+ "verbs": [
+  {
+   "id": "signals",
+   "verb": "graph-match",
+   "graph": "master",
+   "pattern": {
+    "nodes": [
+     {
+      "var": "s",
+      "label": "Signal"
+     }
+    ],
+    "edges": []
+   }
+  },
+  {
+   "id": "signalKey",
+   "verb": "project",
+   "columns": {
+    "s": {
+     "ref": "s"
+    },
+    "key": {
+     "ref": "s.key"
+    }
+   }
+  },
+  {
+   "id": "series",
+   "verb": "series",
+   "graph": "master",
+   "series": {
+    "element": "s",
+    "property": "reading",
+    "lookback": "6h",
+    "lateness": "1m"
+   }
+  },
+  {
+   "id": "windows",
+   "verb": "summarize",
+   "by": {
+    "key": {
+     "ref": "key"
+    },
+    "windowStart": {
+     "ref": "windowStart"
+    }
+   },
+   "aggregates": {
+    "v": {
+     "fn": "max",
+     "args": [
+      {
+       "ref": "reading"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "policies",
+   "verb": "graph-match",
+   "graph": "master",
+   "pattern": {
+    "nodes": [
+     {
+      "var": "p",
+      "label": "Policy"
+     }
+    ],
+    "edges": []
+   }
+  },
+  {
+   "id": "policyRows",
+   "verb": "project",
+   "columns": {
+    "key": {
+     "ref": "p.key"
+    },
+    "revision": {
+     "ref": "p.revision"
+    },
+    "above": {
+     "ref": "p.above"
+    },
+    "below": {
+     "ref": "p.below"
+    },
+    "enterAfter": {
+     "ref": "p.enterAfter"
+    },
+    "exitAfter": {
+     "ref": "p.exitAfter"
+    },
+    "gap": {
+     "ref": "p.gap"
+    },
+    "missing": {
+     "ref": "p.missing"
+    }
+   }
+  },
+  {
+   "id": "fold",
+   "verb": "fold",
+   "fold": {
+    "by": [
+     "key"
+    ],
+    "observe": {
+     "n": {
+      "fn": "count",
+      "args": [
+       {
+        "ref": "v"
+       }
+      ]
+     },
+     "hi": {
+      "fn": "max",
+      "args": [
+       {
+        "ref": "v"
+       }
+      ]
+     }
+    },
+    "policy": [
+     "revision",
+     "above",
+     "below",
+     "enterAfter",
+     "exitAfter",
+     "gap",
+     "missing"
+    ],
+    "state": {
+     "state": {
+      "start": {
+       "lit": "Healthy"
+      },
+      "next": {
+       "fn": "iff",
+       "args": [
+        {
+         "fn": "==",
+         "args": [
+          {
+           "ref": "n"
+          },
+          {
+           "lit": 0
+          }
+         ]
+        },
+        {
+         "fn": "iff",
+         "args": [
+          {
+           "fn": ">=",
+           "args": [
+            {
+             "fn": "+",
+             "args": [
+              {
+               "ref": "quiet"
+              },
+              {
+               "lit": 1
+              }
+             ]
+            },
+            {
+             "ref": "gap"
+            }
+           ]
+          },
+          {
+           "ref": "missing"
+          },
+          {
+           "ref": "state"
+          }
+         ]
+        },
+        {
+         "fn": "iff",
+         "args": [
+          {
+           "fn": "==",
+           "args": [
+            {
+             "ref": "state"
+            },
+            {
+             "ref": "missing"
+            }
+           ]
+          },
+          {
+           "fn": "iff",
+           "args": [
+            {
+             "fn": ">=",
+             "args": [
+              {
+               "fn": "coalesce",
+               "args": [
+                {
+                 "ref": "hi"
+                },
+                {
+                 "lit": 0.0
+                }
+               ]
+              },
+              {
+               "ref": "above"
+              }
+             ]
+            },
+            {
+             "lit": "Unhealthy"
+            },
+            {
+             "lit": "Healthy"
+            }
+           ]
+          },
+          {
+           "fn": "iff",
+           "args": [
+            {
+             "fn": "==",
+             "args": [
+              {
+               "ref": "state"
+              },
+              {
+               "lit": "Healthy"
+              }
+             ]
+            },
+            {
+             "fn": "iff",
+             "args": [
+              {
+               "fn": "and",
+               "args": [
+                {
+                 "fn": ">=",
+                 "args": [
+                  {
+                   "fn": "coalesce",
+                   "args": [
+                    {
+                     "ref": "hi"
+                    },
+                    {
+                     "lit": 0.0
+                    }
+                   ]
+                  },
+                  {
+                   "ref": "above"
+                  }
+                 ]
+                },
+                {
+                 "fn": ">=",
+                 "args": [
+                  {
+                   "fn": "+",
+                   "args": [
+                    {
+                     "ref": "streak"
+                    },
+                    {
+                     "lit": 1
+                    }
+                   ]
+                  },
+                  {
+                   "ref": "enterAfter"
+                  }
+                 ]
+                }
+               ]
+              },
+              {
+               "lit": "Unhealthy"
+              },
+              {
+               "lit": "Healthy"
+              }
+             ]
+            },
+            {
+             "fn": "iff",
+             "args": [
+              {
+               "fn": "and",
+               "args": [
+                {
+                 "fn": "<",
+                 "args": [
+                  {
+                   "fn": "coalesce",
+                   "args": [
+                    {
+                     "ref": "hi"
+                    },
+                    {
+                     "lit": 0.0
+                    }
+                   ]
+                  },
+                  {
+                   "ref": "below"
+                  }
+                 ]
+                },
+                {
+                 "fn": ">=",
+                 "args": [
+                  {
+                   "fn": "+",
+                   "args": [
+                    {
+                     "ref": "streak"
+                    },
+                    {
+                     "lit": 1
+                    }
+                   ]
+                  },
+                  {
+                   "ref": "exitAfter"
+                  }
+                 ]
+                }
+               ]
+              },
+              {
+               "lit": "Healthy"
+              },
+              {
+               "lit": "Unhealthy"
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     },
+     "streak": {
+      "start": {
+       "lit": 0
+      },
+      "next": {
+       "fn": "iff",
+       "args": [
+        {
+         "fn": "==",
+         "args": [
+          {
+           "ref": "n"
+          },
+          {
+           "lit": 0
+          }
+         ]
+        },
+        {
+         "lit": 0
+        },
+        {
+         "fn": "iff",
+         "args": [
+          {
+           "fn": "==",
+           "args": [
+            {
+             "ref": "state"
+            },
+            {
+             "ref": "missing"
+            }
+           ]
+          },
+          {
+           "lit": 0
+          },
+          {
+           "fn": "iff",
+           "args": [
+            {
+             "fn": "==",
+             "args": [
+              {
+               "ref": "state"
+              },
+              {
+               "lit": "Healthy"
+              }
+             ]
+            },
+            {
+             "fn": "iff",
+             "args": [
+              {
+               "fn": ">=",
+               "args": [
+                {
+                 "fn": "coalesce",
+                 "args": [
+                  {
+                   "ref": "hi"
+                  },
+                  {
+                   "lit": 0.0
+                  }
+                 ]
+                },
+                {
+                 "ref": "above"
+                }
+               ]
+              },
+              {
+               "fn": "iff",
+               "args": [
+                {
+                 "fn": "and",
+                 "args": [
+                  {
+                   "fn": ">=",
+                   "args": [
+                    {
+                     "fn": "coalesce",
+                     "args": [
+                      {
+                       "ref": "hi"
+                      },
+                      {
+                       "lit": 0.0
+                      }
+                     ]
+                    },
+                    {
+                     "ref": "above"
+                    }
+                   ]
+                  },
+                  {
+                   "fn": ">=",
+                   "args": [
+                    {
+                     "fn": "+",
+                     "args": [
+                      {
+                       "ref": "streak"
+                      },
+                      {
+                       "lit": 1
+                      }
+                     ]
+                    },
+                    {
+                     "ref": "enterAfter"
+                    }
+                   ]
+                  }
+                 ]
+                },
+                {
+                 "lit": 0
+                },
+                {
+                 "fn": "+",
+                 "args": [
+                  {
+                   "ref": "streak"
+                  },
+                  {
+                   "lit": 1
+                  }
+                 ]
+                }
+               ]
+              },
+              {
+               "lit": 0
+              }
+             ]
+            },
+            {
+             "fn": "iff",
+             "args": [
+              {
+               "fn": "<",
+               "args": [
+                {
+                 "fn": "coalesce",
+                 "args": [
+                  {
+                   "ref": "hi"
+                  },
+                  {
+                   "lit": 0.0
+                  }
+                 ]
+                },
+                {
+                 "ref": "below"
+                }
+               ]
+              },
+              {
+               "fn": "iff",
+               "args": [
+                {
+                 "fn": "and",
+                 "args": [
+                  {
+                   "fn": "<",
+                   "args": [
+                    {
+                     "fn": "coalesce",
+                     "args": [
+                      {
+                       "ref": "hi"
+                      },
+                      {
+                       "lit": 0.0
+                      }
+                     ]
+                    },
+                    {
+                     "ref": "below"
+                    }
+                   ]
+                  },
+                  {
+                   "fn": ">=",
+                   "args": [
+                    {
+                     "fn": "+",
+                     "args": [
+                      {
+                       "ref": "streak"
+                      },
+                      {
+                       "lit": 1
+                      }
+                     ]
+                    },
+                    {
+                     "ref": "exitAfter"
+                    }
+                   ]
+                  }
+                 ]
+                },
+                {
+                 "lit": 0
+                },
+                {
+                 "fn": "+",
+                 "args": [
+                  {
+                   "ref": "streak"
+                  },
+                  {
+                   "lit": 1
+                  }
+                 ]
+                }
+               ]
+              },
+              {
+               "lit": 0
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     },
+     "quiet": {
+      "start": {
+       "lit": 0
+      },
+      "next": {
+       "fn": "iff",
+       "args": [
+        {
+         "fn": "==",
+         "args": [
+          {
+           "ref": "n"
+          },
+          {
+           "lit": 0
+          }
+         ]
+        },
+        {
+         "fn": "+",
+         "args": [
+          {
+           "ref": "quiet"
+          },
+          {
+           "lit": 1
+          }
+         ]
+        },
+        {
+         "lit": 0
+        }
+       ]
+      }
+     }
+    },
+    "show": "state"
+   }
+  },
+  {
+   "id": "transitions",
+   "verb": "nodes",
+   "target": {
+    "nodes": [
+     {
+      "var": "n",
+      "label": "Transition",
+      "id": {
+       "identity": "transition",
+       "args": [
+        {
+         "ref": "key"
+        },
+        {
+         "ref": "windowStart"
+        }
+       ]
+      },
+      "props": {
+       "key": {
+        "ref": "key"
+       },
+       "windowStart": {
+        "ref": "windowStart"
+       },
+       "windowEnd": {
+        "ref": "windowEnd"
+       },
+       "from": {
+        "ref": "from"
+       },
+       "to": {
+        "ref": "to"
+       },
+       "value": {
+        "ref": "hi"
+       },
+       "revision": {
+        "ref": "revision"
+       },
+       "since": {
+        "ref": "since"
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "id": "current",
+   "verb": "summarize",
+   "by": {
+    "key": {
+     "ref": "key"
+    }
+   },
+   "aggregates": {
+    "state": {
+     "fn": "arg_max",
+     "args": [
+      {
+       "ref": "windowStart"
+      },
+      {
+       "ref": "to"
+      }
+     ]
+    },
+    "at": {
+     "fn": "arg_max",
+     "args": [
+      {
+       "ref": "windowStart"
+      },
+      {
+       "ref": "windowStart"
+      }
+     ]
+    },
+    "value": {
+     "fn": "arg_max",
+     "args": [
+      {
+       "ref": "windowStart"
+      },
+      {
+       "ref": "hi"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "status",
+   "verb": "nodes",
+   "target": {
+    "nodes": [
+     {
+      "var": "n",
+      "label": "Status",
+      "id": {
+       "identity": "status",
+       "args": [
+        {
+         "ref": "key"
+        }
+       ]
+      },
+      "props": {
+       "key": {
+        "ref": "key"
+       },
+       "state": {
+        "ref": "state"
+       },
+       "windowStart": {
+        "ref": "at"
+       },
+       "value": {
+        "ref": "value"
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "id": "requires",
+   "verb": "graph-match",
+   "graph": "master",
+   "pattern": {
+    "nodes": [
+     {
+      "var": "c",
+      "label": "Signal"
+     },
+     {
+      "var": "d",
+      "label": "Signal"
+     }
+    ],
+    "edges": [
+     {
+      "var": "e",
+      "label": "Requires",
+      "from": "c",
+      "to": "d"
+     }
+    ]
+   }
+  },
+  {
+   "id": "requiresEnds",
+   "verb": "project",
+   "columns": {
+    "consumer": {
+     "ref": "c.key"
+    },
+    "dependency": {
+     "ref": "d.key"
+    },
+    "required": {
+     "lit": true
+    }
+   }
+  },
+  {
+   "id": "uses",
+   "verb": "graph-match",
+   "graph": "master",
+   "pattern": {
+    "nodes": [
+     {
+      "var": "c",
+      "label": "Signal"
+     },
+     {
+      "var": "d",
+      "label": "Signal"
+     }
+    ],
+    "edges": [
+     {
+      "var": "e",
+      "label": "Uses",
+      "from": "c",
+      "to": "d"
+     }
+    ]
+   }
+  },
+  {
+   "id": "usesEnds",
+   "verb": "project",
+   "columns": {
+    "consumer": {
+     "ref": "c.key"
+    },
+    "dependency": {
+     "ref": "d.key"
+    },
+    "required": {
+     "lit": false
+    }
+   }
+  },
+  {
+   "id": "edges",
+   "verb": "union"
+  },
+  {
+   "id": "impact",
+   "verb": "join",
+   "kind": "inner",
+   "on": [
+    {
+     "left": "dependency",
+     "right": "key"
+    }
+   ]
+  },
+  {
+   "id": "effect",
+   "verb": "extend",
+   "columns": {
+    "effect": {
+     "fn": "iff",
+     "args": [
+      {
+       "fn": "and",
+       "args": [
+        {
+         "ref": "required"
+        },
+        {
+         "fn": "==",
+         "args": [
+          {
+           "ref": "state"
+          },
+          {
+           "lit": "Unhealthy"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "lit": "Degraded"
+      },
+      {
+       "lit": "None"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "impacts",
+   "verb": "nodes",
+   "target": {
+    "nodes": [
+     {
+      "var": "n",
+      "label": "Impact",
+      "id": {
+       "identity": "impact",
+       "args": [
+        {
+         "ref": "consumer"
+        },
+        {
+         "ref": "dependency"
+        }
+       ]
+      },
+      "props": {
+       "consumer": {
+        "ref": "consumer"
+       },
+       "dependency": {
+        "ref": "dependency"
+       },
+       "required": {
+        "ref": "required"
+       },
+       "dependencyState": {
+        "ref": "state"
+       },
+       "effect": {
+        "ref": "effect"
+       },
+       "windowStart": {
+        "ref": "at"
+       },
+       "value": {
+        "ref": "value"
+       }
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "wires": [
+  {
+   "from": "signals",
+   "to": "signalKey"
+  },
+  {
+   "from": "signalKey",
+   "to": "series"
+  },
+  {
+   "from": "series",
+   "to": "windows"
+  },
+  {
+   "from": "windows",
+   "to": "fold"
+  },
+  {
+   "from": "policies",
+   "to": "policyRows"
+  },
+  {
+   "from": "policyRows",
+   "to": "fold",
+   "port": "policy"
+  },
+  {
+   "from": "fold",
+   "to": "transitions"
+  },
+  {
+   "from": "fold",
+   "to": "current"
+  },
+  {
+   "from": "current",
+   "to": "status"
+  },
+  {
+   "from": "requires",
+   "to": "requiresEnds"
+  },
+  {
+   "from": "uses",
+   "to": "usesEnds"
+  },
+  {
+   "from": "requiresEnds",
+   "to": "edges"
+  },
+  {
+   "from": "usesEnds",
+   "to": "edges"
+  },
+  {
+   "from": "edges",
+   "to": "impact",
+   "port": "left"
+  },
+  {
+   "from": "current",
+   "to": "impact",
+   "port": "right"
+  },
+  {
+   "from": "impact",
+   "to": "effect"
+  },
+  {
+   "from": "effect",
+   "to": "impacts"
+  }
+ ]
+}

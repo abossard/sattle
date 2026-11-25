@@ -1,0 +1,283 @@
+{
+ "graph": "completion",
+ "ontology": "policy",
+ "history": 0,
+ "inputs": [
+  {
+   "name": "master",
+   "ontology": "policy"
+  }
+ ],
+ "parameters": [],
+ "verbs": [
+  {
+   "id": "tasks",
+   "verb": "graph-match",
+   "graph": "master",
+   "pattern": {
+    "nodes": [
+     {
+      "var": "t",
+      "label": "Task"
+     }
+    ],
+    "edges": []
+   }
+  },
+  {
+   "id": "taskKey",
+   "verb": "project",
+   "columns": {
+    "t": {
+     "ref": "t"
+    },
+    "key": {
+     "ref": "t.key"
+    }
+   }
+  },
+  {
+   "id": "series",
+   "verb": "series",
+   "graph": "master",
+   "series": {
+    "element": "t",
+    "property": "phase",
+    "lookback": "6h",
+    "lateness": "1m"
+   }
+  },
+  {
+   "id": "windows",
+   "verb": "summarize",
+   "by": {
+    "key": {
+     "ref": "key"
+    },
+    "windowStart": {
+     "ref": "windowStart"
+    }
+   },
+   "aggregates": {
+    "p": {
+     "fn": "max",
+     "args": [
+      {
+       "ref": "phase"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "policyRows",
+   "verb": "project",
+   "columns": {
+    "key": {
+     "ref": "key"
+    },
+    "pending": {
+     "lit": "Unknown"
+    }
+   }
+  },
+  {
+   "id": "fold",
+   "verb": "fold",
+   "fold": {
+    "by": [
+     "key"
+    ],
+    "observe": {
+     "n": {
+      "fn": "count",
+      "args": [
+       {
+        "ref": "p"
+       }
+      ]
+     },
+     "term": {
+      "fn": "max",
+      "args": [
+       {
+        "ref": "p"
+       }
+      ]
+     }
+    },
+    "policy": [
+     "pending"
+    ],
+    "state": {
+     "state": {
+      "start": {
+       "ref": "pending"
+      },
+      "next": {
+       "fn": "iff",
+       "args": [
+        {
+         "fn": "==",
+         "args": [
+          {
+           "fn": "coalesce",
+           "args": [
+            {
+             "ref": "term"
+            },
+            {
+             "lit": 0
+            }
+           ]
+          },
+          {
+           "lit": 3
+          }
+         ]
+        },
+        {
+         "lit": "Succeeded"
+        },
+        {
+         "fn": "iff",
+         "args": [
+          {
+           "fn": "==",
+           "args": [
+            {
+             "fn": "coalesce",
+             "args": [
+              {
+               "ref": "term"
+              },
+              {
+               "lit": 0
+              }
+             ]
+            },
+            {
+             "lit": 2
+            }
+           ]
+          },
+          {
+           "lit": "Failed"
+          },
+          {
+           "ref": "state"
+          }
+         ]
+        }
+       ]
+      }
+     }
+    },
+    "show": "state"
+   }
+  },
+  {
+   "id": "valued",
+   "verb": "extend",
+   "columns": {
+    "value": {
+     "fn": "todecimal",
+     "args": [
+      {
+       "fn": "coalesce",
+       "args": [
+        {
+         "ref": "term"
+        },
+        {
+         "lit": 0
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "transitions",
+   "verb": "nodes",
+   "target": {
+    "nodes": [
+     {
+      "var": "n",
+      "label": "Transition",
+      "id": {
+       "identity": "transition",
+       "args": [
+        {
+         "ref": "key"
+        },
+        {
+         "ref": "windowStart"
+        }
+       ]
+      },
+      "props": {
+       "key": {
+        "ref": "key"
+       },
+       "windowStart": {
+        "ref": "windowStart"
+       },
+       "windowEnd": {
+        "ref": "windowEnd"
+       },
+       "from": {
+        "ref": "from"
+       },
+       "to": {
+        "ref": "to"
+       },
+       "value": {
+        "ref": "value"
+       },
+       "since": {
+        "ref": "since"
+       }
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "wires": [
+  {
+   "from": "tasks",
+   "to": "taskKey"
+  },
+  {
+   "from": "taskKey",
+   "to": "series"
+  },
+  {
+   "from": "series",
+   "to": "windows"
+  },
+  {
+   "from": "windows",
+   "to": "fold"
+  },
+  {
+   "from": "taskKey",
+   "to": "policyRows"
+  },
+  {
+   "from": "policyRows",
+   "to": "fold",
+   "port": "policy"
+  },
+  {
+   "from": "fold",
+   "to": "valued"
+  },
+  {
+   "from": "valued",
+   "to": "transitions"
+  }
+ ]
+}
