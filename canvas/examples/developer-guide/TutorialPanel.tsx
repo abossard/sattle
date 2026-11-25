@@ -3,7 +3,7 @@ import { ArrowLeft16Regular, ArrowRight16Regular, Copy16Regular, Dismiss16Regula
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { labelOf, valueText, type Entity } from "../../src/core/model";
 import { field } from "../../src/editor/coverage-review";
-import { printGkql, readGkql } from "../../src/editor/gkql";
+import { foldPolicy, printGkql, readGkql } from "../../src/editor/gkql";
 import { LESSONS, lessonOf, sourceForLesson, type Lesson, type Step } from "../../src/tutorial/lessons";
 import { colorValueOf } from "../../src/app/color-by";
 import type { Role } from "../../src/source/presentation";
@@ -205,17 +205,19 @@ function ModelParts() {
   </section>;
 }
 
-interface Hysteresis { above: number; below: number; enterAfter: number; exitAfter: number; high: string; low: string }
-
-function Thresholds() {
+/** The fold of the starter projection: its policy columns as the step on its policy input gives them, and the state it starts in. */
+function FoldRules() {
   const s = useStyles();
-  const gate = readGkql(signals).verbs.find((verb) => verb.verb === "hysteresis")?.hysteresis as Hysteresis | undefined;
-  if (!gate) return null;
+  const program = readGkql(signals);
+  const fold = program.verbs.find((verb) => verb.verb === "fold");
+  if (!fold) return null;
+  const { source, columns } = foldPolicy(program, fold);
+  const show = (fold.fold as { show?: string }).show ?? "";
+  const start = (fold.fold as { state?: Record<string, { start?: { lit?: unknown } }> }).state?.[show]?.start?.lit;
   return <>
-    <Text size={200}>Starter thresholds · consecutive one-minute CPU windows</Text>
-    <dl className={s.gates} aria-label="CPU hysteresis in the starter projection">
-      <div><dt><Badge appearance="outline" color="warning">{gate.high}</Badge></dt><dd>≥ {gate.above}% × {gate.enterAfter}</dd></div>
-      <div><dt><Badge appearance="outline" color="success">{gate.low}</Badge></dt><dd>≤ {gate.below}% × {gate.exitAfter}</dd></div>
+    <Text size={200}>Starter fold {fold.id} · one-minute CPU windows, {show} starts {String(start)}, policy from {source?.id}</Text>
+    <dl className={s.gates} aria-label="CPU fold policy in the starter projection">
+      {columns.map(({ name, lit }) => <div key={name}><dt>{name}</dt><dd>{lit ? JSON.stringify(lit.value) : "computed"}</dd></div>)}
     </dl>
   </>;
 }
@@ -753,7 +755,7 @@ export function TutorialPanel({ lesson }: { lesson: Lesson }) {
       {lesson.id === "azure-health" && graph && <><CpuReplay model={lesson.graph} /><HealthEvidence graph={lesson.graph} /></>}
       {lesson.companionFlow ? <div className={s.flowPair}><Flow levels={lesson.flow} label={lesson.flowLabel ?? "Data flow"} /><Flow levels={lesson.companionFlow.levels} label={lesson.companionFlow.label} /></div> : <Flow levels={lesson.flow} label={lesson.flowLabel ?? "Data flow"} />}
       {lesson.id === "start" && <ModelParts />}
-      {lesson.id === "azure-health" && <Thresholds />}
+      {lesson.id === "azure-health" && <FoldRules />}
       <Text block size={200}><strong>Check</strong> {lesson.check}</Text>
       {graph ? <Text size={200}><strong>{replayReady ? "Replay ready" : lesson.build ? `Example ${graph.id}` : graph.id}</strong> · {graph.nodes.toLocaleString()} nodes · {graph.edges.toLocaleString()} links</Text>
         : <Text size={200}>{loaded === "loading" ? "Connecting to the engine…" : startup ? "Start this replay from the repository root." : lesson.id === "start" ? "Waiting for the tutorial engine." : <Link href={href(chapters[0])}>{chapters[0].title}</Link>}</Text>}

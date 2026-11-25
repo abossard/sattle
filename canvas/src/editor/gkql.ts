@@ -78,7 +78,7 @@ const starters: Readonly<Partial<Record<string, Omit<GkqlVerb, "id">>>> = {
   window: { verb: "window", window: { time: "time", period: "60s" } },
   series: { verb: "series", graph: "", series: { element: "", property: "", lookback: "1h" } },
   fixpoint: { verb: "fixpoint", fixpoint: { key: "", value: "", order: [], edges: { from: "from", to: "to" } } },
-  hysteresis: { verb: "hysteresis", hysteresis: { by: [], value: "value", above: 2, enterAfter: 2, below: 0, exitAfter: 2, high: "on", low: "off", initial: "off" } },
+  fold: { verb: "fold", fold: { by: [], observe: { v: { fn: "max", args: [{ ref: "value" }] } }, policy: ["above"], state: { state: { start: { lit: "off" }, next: { fn: "iff", args: [{ fn: ">=", args: [{ ref: "v" }, { ref: "above" }] }, { lit: "on" }, { lit: "off" }] } } }, show: "state" } },
   nodes: { verb: "nodes", target: { nodes: [] } },
   edges: { verb: "edges", target: { nodes: [], edges: [] } },
   link: { verb: "link", link: { policy: "", left: { identity: "", args: [] }, right: { identity: "", args: [] }, confidence: 1 } },
@@ -91,7 +91,7 @@ const outputVerbs = new Set(["nodes", "edges", "link"]);
 export function verbStyle(verb: string): "input" | "transform" | "aggregate" | "output" {
   if (sourceVerbs.has(verb)) return "input";
   if (outputVerbs.has(verb)) return "output";
-  if (["summarize", "join", "union", "fixpoint", "hysteresis", "window", "series"].includes(verb)) return "aggregate";
+  if (["summarize", "join", "union", "fixpoint", "fold", "window", "series"].includes(verb)) return "aggregate";
   return "transform";
 }
 
@@ -119,6 +119,17 @@ export function rewire(program: GkqlProgram, to: string, port: string, from: str
   return { ...program, wires: previous ? program.wires.map((item) => item === previous ? wire : item) : [...program.wires, wire] };
 }
 
+/** A fold's policy: the step on its policy input and the policy columns it names, each with the literal that step gives it (none when computed). */
+export function foldPolicy(program: GkqlProgram, fold: GkqlVerb): { source?: GkqlVerb; columns: { name: string; lit?: { value: unknown } }[] } {
+  const wire = program.wires.find((item) => item.to === fold.id && wirePort(item) === "policy");
+  const source = program.verbs.find((verb) => verb.id === wire?.from);
+  const names = (fold.fold as { policy?: unknown } | undefined)?.policy;
+  const given = (source?.columns ?? {}) as Record<string, { lit?: unknown } | undefined>;
+  const columns = (Array.isArray(names) ? names.filter((name): name is string => typeof name === "string") : [])
+    .map((name) => given[name] && "lit" in given[name] ? { name, lit: { value: given[name].lit } } : { name });
+  return { source, columns };
+}
+
 /** Valid source candidates exclude the destination, sinks and downstream operations. */
 export function sourcesFor(program: GkqlProgram, to: string): GkqlVerb[] {
   const downstream = new Set([to]);
@@ -132,7 +143,7 @@ export function sourcesFor(program: GkqlProgram, to: string): GkqlVerb[] {
   return program.verbs.filter((node) => !downstream.has(node.id) && !outputVerbs.has(node.verb));
 }
 
-export const portsFor = (verb: string) => sourceVerbs.has(verb) ? [] : verb === "join" ? ["left", "right"] : verb === "fixpoint" ? ["in", "edges"] : ["in"];
+export const portsFor = (verb: string) => sourceVerbs.has(verb) ? [] : verb === "join" ? ["left", "right"] : verb === "fixpoint" ? ["in", "edges"] : verb === "fold" ? ["in", "policy"] : ["in"];
 
 /**
  * An element of a program as the engine's diagnostics name it below the projection id: `verb:ID`, `wire:FROM>TO.PORT` or `port:NAME`.

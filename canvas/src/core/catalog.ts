@@ -124,6 +124,7 @@ export class Catalog {
     const t = (x: string) => this.typeLabel(x, mod);
     const ofType = this.targets(id, "ofType")[0];
     const sets = () => this.children(id, "set").map((s) => `${this.name(this.targets(s, "property")[0] ?? s)} = ${this.children(s, "value").map((v) => this.expr(v)).join("")}`);
+    const aggregates = (slot: string) => this.children(id, slot).map((a) => `${text(this.entity(a), "target")} = ${text(this.entity(a), "fn") || "agg"}(${this.children(a, "value").map((v) => this.expr(v)).join("")})`);
     const assigns = (slot: string, prefix = "") => this.children(id, slot).map((a) => `${prefix}${text(this.entity(a), "target")} = ${this.children(a, "value").map((v) => this.expr(v)).join("")}`);
     switch (e.type) {
       case "Match": {
@@ -136,10 +137,7 @@ export class Catalog {
       }
       case "Filter": return this.children(id, "predicate").map((p) => this.expr(p));
       case "Map": return assigns("assign");
-      case "Group": case "Rollup": {
-        const aggs = this.children(id, "agg").map((a) => `${text(this.entity(a), "target")} = ${text(this.entity(a), "fn") || "agg"}(${this.children(a, "value").map((v) => this.expr(v)).join("")})`);
-        return [...assigns("key", "key "), ...aggs];
-      }
+      case "Group": case "Rollup": return [...assigns("key", "key "), ...aggregates("agg")];
       case "Join": return [`on ${this.children(id, "on").map((x) => this.expr(x)).join("")}`];
       case "Union": return ["union of its inputs, by column name"];
       case "Distinct": return ["distinct rows"];
@@ -147,7 +145,8 @@ export class Catalog {
       case "Values": return [`${this.children(id, "row").length} constant rows`];
       case "Window": return [`on ${text(e, "timestampField")}`, `width ${durationText(text(e, "width"))}, late ${text(e, "late")}`];
       case "Series": return [`read ${this.children(id, "read").map((r) => this.expr(r)).join(", ")}`, `within ${durationText(text(e, "within"))}`];
-      case "Threshold": return [`${text(e, "target")} above ${text(e, "above")} for ${text(e, "enterAfter")} then ${text(e, "high")}`, `below ${text(e, "below")} for ${text(e, "exitAfter")} then ${text(e, "low")}`];
+      case "Fold": return [...assigns("key", "key "), ...aggregates("observe"), `policy ${this.children(id, "policy").map((p) => this.expr(p)).join(", ")}`,
+        ...this.children(id, "state").map((st) => `${text(this.entity(st), "target")} from ${this.children(st, "start").map((v) => this.expr(v)).join("")}`), `show ${text(e, "show")}`];
       case "EmitEntity": return [`entity ${ofType ? t(ofType) : "?"} (${text(e, "mode")})`, ...this.children(id, "id").map((i) => this.expr(i)), ...sets()];
       case "EmitRelationship": return [`relationship ${ofType ? t(ofType) : "?"} (${text(e, "mode")}, key ${text(e, "key")})`, `${this.children(id, "source").map((i) => this.expr(i)).join("")} → ${this.children(id, "target").map((i) => this.expr(i)).join("")}`, ...sets()];
       case "Link": return [`${this.children(id, "left").map((i) => this.expr(i)).join("")} ≡ ${this.children(id, "right").map((i) => this.expr(i)).join("")}`];

@@ -66,11 +66,15 @@ describe("developer guide", () => {
     expect(await navigator.clipboard.readText()).toContain("RecordAdapter");
   });
 
-  it("shows threshold rules read from the starter projection", async () => {
+  it("shows the fold of the starter projection: the state it starts in and where its policy comes from", async () => {
     const guide = within(await openWithoutEngine("azure-health"));
-    const gate = await guide.findByLabelText("CPU hysteresis in the starter projection");
-    expect(gate.textContent).toContain("Degraded≥ 8% × 2");
-    expect(gate.textContent).toContain("Healthy≤ 7% × 3");
+    expect(await guide.findByText("Starter fold cpuStateFold · one-minute CPU windows, state starts Healthy, policy from cpuStatePolicy")).toBeTruthy();
+  });
+
+  it.each([["above", "8.0"], ["below", "7.0"], ["enterAfter", "2"], ["exitAfter", "3"]])("shows the fold policy column %s = %s read from the starter projection", async (name, value) => {
+    const guide = within(await openWithoutEngine("azure-health"));
+    const policy = await guide.findByLabelText("CPU fold policy in the starter projection");
+    expect(within(policy).getByText(name).nextElementSibling?.textContent).toBe(value);
   });
 
   it.each([

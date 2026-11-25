@@ -80,11 +80,11 @@ describe("the estate space: inputs, lineage in both directions, documents", () =
 });
 
 describe("the estate output: windows and references", () => {
-  it("serves the declared meters of a graph, with their ranges and the warning threshold", async () => {
+  it("serves the declared meters of a graph, with their ranges and no warning level", async () => {
     const src = new StaticSource("t", url, fetcher());
     const m = (await src.meters("serviceTree"))!;
     const drop = m.meters.find((x) => x.id === "dropRatio")!;
-    expect([drop.target, drop.warn, drop.scale]).toEqual(["edge", 0.05, "sqrt"]);
+    expect([drop.target, drop.warn, drop.scale]).toEqual(["edge", undefined, "sqrt"]);
     expect((await src.meters("capabilities"))!.meters.map((x) => x.id).sort()).toEqual(["callDropRatio", "callDrops", "callFlows"]);
   });
   it("delivers the windows after the patches and before the end, for elements that exist in the graph", async () => {

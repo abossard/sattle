@@ -14,9 +14,10 @@ const base: GkqlProgram = {
     { id: "all", verb: "graph-match", graph: "master", pattern: { nodes: [{ var: "n", label: "Resource" }] } },
     { id: "live", verb: "graph-match", graph: "master", pattern: { nodes: [{ var: "n", label: "Resource", props: { ready: { lit: true } } }] } },
     { id: "choose", verb: "where", condition: { lit: true } },
-    { id: "cpuState", verb: "hysteresis", hysteresis: { by: ["n"], value: "cpu", above: 8, enterAfter: 2, below: 7, exitAfter: 2, high: "Degraded", low: "Healthy", initial: "Healthy" } },
+    { id: "cpuPolicy", verb: "values", values: { columns: { above: "Decimal", below: "Decimal" }, rows: [[8, 7]] } },
+    { id: "cpuState", verb: "fold", fold: { by: ["n"], observe: { v: { fn: "max", args: [{ ref: "cpu" }] } }, policy: ["above", "below"], state: { state: { start: { lit: "Healthy" }, next: { ref: "state" } } }, show: "state" } },
   ],
-  wires: [{ from: "all", to: "choose" }, { from: "choose", to: "cpuState" }],
+  wires: [{ from: "all", to: "choose" }, { from: "choose", to: "cpuState" }, { from: "cpuPolicy", to: "cpuState", port: "policy" }],
 };
 const metadata = { projection: "tutorial.health", language: "gkql", file: "tutorial.health.gkql.json" };
 afterEach(() => { cleanup(); Reflect.deleteProperty(document, "elementFromPoint"); });
@@ -63,7 +64,7 @@ it("draws authored operations and stores a reconnected wire", async () => {
   await user.selectOptions(screen.getByRole("combobox", { name: "Input operation" }), "live");
   await user.click(screen.getByRole("button", { name: "Check & store" }));
   await waitFor(() => expect(save).toHaveBeenCalledOnce());
-  expect(save.mock.calls[0][0].wires).toEqual([{ from: "live", to: "choose" }, { from: "choose", to: "cpuState" }]);
+  expect(save.mock.calls[0][0].wires).toEqual([{ from: "live", to: "choose" }, { from: "choose", to: "cpuState" }, { from: "cpuPolicy", to: "cpuState", port: "policy" }]);
   expect(await screen.findByText("Projection checked")).toBeTruthy();
 });
 
@@ -167,19 +168,37 @@ it.each<[string, Record<string, unknown>]>([
   expect(save.mock.calls[0][0].verbs.at(-1)).toEqual({ id: verb, verb, ...fields });
 });
 
-it("edits the two hysteresis recovery settings through the Canvas fields", async () => {
-  const { save, user } = editor();
-  await user.click(screen.getByRole("button", { name: "hysteresis cpuState" }));
-  const exit = screen.getByRole("textbox", { name: "Exit at or below" });
-  const windows = screen.getByRole("textbox", { name: "Exit after windows" });
-  await user.clear(exit);
-  await user.type(exit, "5");
-  await user.clear(windows);
-  await user.type(windows, "3");
-  await user.click(screen.getByRole("button", { name: "Apply thresholds" }));
-  await user.click(screen.getByRole("button", { name: "Check & store" }));
-  await waitFor(() => expect(save).toHaveBeenCalledOnce());
-  expect(save.mock.calls[0][0].verbs.at(-1).hysteresis).toMatchObject({ above: 8, enterAfter: 2, below: 5, exitAfter: 3 });
+describe("a fold shows its policy where the step on its policy input gives it", () => {
+  const policy = { id: "cpuPolicy", verb: "extend", columns: { above: { lit: 8 }, below: { lit: 7 }, mode: { lit: "strict" }, scale: { ref: "n.scale" } } };
+  const folded: GkqlProgram = {
+    ...base, verbs: [...base.verbs.filter((verb) => verb.id !== "cpuPolicy").slice(0, -1), policy, { ...base.verbs.at(-1)!, fold: { ...base.verbs.at(-1)!.fold as object, policy: ["above", "below", "mode", "scale"] } }],
+    wires: [...base.wires, { from: "choose", to: "cpuPolicy" }],
+  };
+  it("edits the literal columns of the policy step and leaves the computed one", async () => {
+    const { save, user } = editor(folded);
+    await user.click(screen.getByRole("button", { name: "fold cpuState" }));
+    expect(screen.getByText("scale: computed by cpuPolicy")).toBeTruthy();
+    const below = screen.getByRole("textbox", { name: "below" });
+    const mode = screen.getByRole("textbox", { name: "mode" });
+    await user.clear(below);
+    await user.type(below, "5.5");
+    await user.clear(mode);
+    await user.type(mode, "lenient");
+    await user.click(screen.getByRole("button", { name: "Apply policy" }));
+    await user.click(screen.getByRole("button", { name: "Check & store" }));
+    await waitFor(() => expect(save).toHaveBeenCalledOnce());
+    const stored = save.mock.calls[0][0];
+    expect(stored.verbs.find((verb: { id: string }) => verb.id === "cpuPolicy").columns).toEqual({ above: { lit: 8 }, below: { lit: 5.5 }, mode: { lit: "lenient" }, scale: { ref: "n.scale" } });
+    expect(stored.verbs.find((verb: { id: string }) => verb.id === "cpuState")).toEqual(folded.verbs.at(-1));
+  });
+  it.each([["below", "x", "Expected a number."], ["below", "", "Expected a number."]])("%s typed as %j is refused with %s", async (name, typed, message) => {
+    const { user } = editor(folded);
+    await user.click(screen.getByRole("button", { name: "fold cpuState" }));
+    await user.clear(screen.getByRole("textbox", { name }));
+    if (typed) await user.type(screen.getByRole("textbox", { name }), typed);
+    expect(screen.getByText(message)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Apply policy" }) as HTMLButtonElement).disabled).toBe(true);
+  });
 });
 
 describe("every action works from the keyboard and every view follows", () => {
@@ -218,7 +237,7 @@ describe("every action works from the keyboard and every view follows", () => {
     expect(save.mock.calls[0][0].wires).toContainEqual({ from: "live", to: "choose" });
   });
 
-  it.each([["live", "graph-match live"], ["cpuState", "hysteresis cpuState"]])("the caret in the text and the selection of %s follow each other", async (id, name) => {
+  it.each([["live", "graph-match live"], ["cpuState", "fold cpuState"]])("the caret in the text and the selection of %s follow each other", async (id, name) => {
     const { user } = editor();
     await user.click(screen.getByRole("tab", { name: "GKQL" }));
     const area = screen.getByRole("textbox", { name: "GKQL source" }) as HTMLTextAreaElement;
@@ -262,7 +281,7 @@ describe("every action works from the keyboard and every view follows", () => {
     expect(screen.getByRole("button", { name: "cpuState: the input of cpuState is not connected" })).toBeTruthy();
     await user.click(card("Check & store"));
     await waitFor(() => expect(save).toHaveBeenCalledOnce());
-    expect(save.mock.calls[0][0].wires).toEqual([{ from: "all", to: "choose" }]);
+    expect(save.mock.calls[0][0].wires).toEqual([{ from: "all", to: "choose" }, { from: "cpuPolicy", to: "cpuState", port: "policy" }]);
   });
 
   it.each([["{ArrowRight}", "left", 16], ["{ArrowDown}", "top", 16], ["{ArrowLeft}", "left", -16]] as const)("Alt+%s moves the focused card, layout only", async (arrow, side, by) => {
@@ -293,7 +312,7 @@ describe("every action works from the keyboard and every view follows", () => {
     expect(card("where choose")).toBeTruthy();
   });
 
-  it.each([["{ArrowDown}", "live", "graph-match live"], ["{End}", "cpuState", "hysteresis cpuState"]])("%s in the steps selects %s on the graph too", async (press, id, name) => {
+  it.each([["{ArrowDown}", "live", "graph-match live"], ["{End}", "cpuState", "fold cpuState"]])("%s in the steps selects %s on the graph too", async (press, id, name) => {
     const { user } = editor();
     const steps = screen.getByRole("listbox", { name: "Steps" });
     within(steps).getAllByRole("option")[0].focus();

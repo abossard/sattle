@@ -68,7 +68,7 @@ export class Workspace {
         }
       }
     }
-    // live sources declare their meters per graph (ranges, units, thresholds)
+    // live sources declare their meters per graph (ranges, units)
     if (this.source.meters) {
       for (const g of this.info.graphs) {
         const d = await this.source.meters(g.id);

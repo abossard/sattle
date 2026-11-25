@@ -76,7 +76,7 @@ describe("the palette", () => {
     ["where", "transform", ["in"]], ["project", "transform", ["in"]], ["extend", "transform", ["in"]], ["distinct", "transform", ["in"]],
     ["retain", "transform", ["in"]], ["traverse", "transform", ["in"]],
     ["union", "aggregate", ["in"]], ["join", "aggregate", ["left", "right"]], ["summarize", "aggregate", ["in"]], ["window", "aggregate", ["in"]],
-    ["series", "aggregate", ["in"]], ["hysteresis", "aggregate", ["in"]], ["fixpoint", "aggregate", ["in", "edges"]],
+    ["series", "aggregate", ["in"]], ["fold", "aggregate", ["in", "policy"]], ["fixpoint", "aggregate", ["in", "edges"]],
     ["nodes", "output", ["in"]], ["edges", "output", ["in"]], ["link", "output", ["in"]],
   ] as const)("%s is authorable, in %s, with inputs %j", (verb, style, ports) => {
     expect(authorableVerbs).toContain(verb);

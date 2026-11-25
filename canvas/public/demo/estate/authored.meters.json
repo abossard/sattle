@@ -1,1 +1,1 @@
-{"meters":[{"id":"acme.ops.reading","target":"node","label":"reading","unit":"","temporality":"gauge","combine":"max","periodSeconds":60,"min":0,"max":1,"scale":"sqrt","warn":null}],"thresholds":[],"defaults":{}}
+{"meters":[{"id":"acme.ops.reading","target":"node","label":"reading","unit":"","temporality":"gauge","combine":"max","periodSeconds":60,"min":0,"max":1,"scale":"sqrt"}],"defaults":{}}

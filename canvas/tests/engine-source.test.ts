@@ -361,7 +361,10 @@ describe("the engine source opens a space, delivers its history and stream in or
     expect(r.ok && { ids: r.batch.ids, removed: r.batch.removed }).toEqual(want);
   });
   it("a retraction that is not a list of ids is refused", () => expect(batchFromWire({ graph: "g", windowStart: "2026-01-01T00:00:00Z", target: "node", property: "cpu", ids: [], values: [], removed: [1] })).toMatchObject({ ok: false }));
-  it("a meter whose threshold is read from the row has no warning level, and that is not an error", () => {
-    expect(parseMeters({ meters: [{ id: "value", target: "node", warn: null, min: 0, max: 5 }], thresholds: [{ graph: "g", above: null, byRow: { above: "x" } }] }).meters[0].warn).toBeUndefined();
+  it.each([
+    ["a meter of 3.67", { meters: [{ id: "value", target: "node", min: 0, max: 5 }] }],
+    ["a warning level and thresholds of an engine before 3.67", { meters: [{ id: "value", target: "node", warn: 4, min: 0, max: 5 }], thresholds: [{ graph: "g", above: 4 }] }],
+  ])("%s gives no warning level: the engine declares none, the viewer sets it", (_, body) => {
+    expect(parseMeters(body).meters[0]).toEqual({ id: "value", target: "node", label: "value", unit: "", min: 0, max: 5, scale: "linear", auto: true });
   });
 });

@@ -146,7 +146,7 @@ export class StaticSource implements GraphSource {
     const f = this.manifest?.graphs[graph];
     return f?.windows ?? f?.meters?.replace(/\.meters\.json$/, ".windows.ndjson");
   }
-  /** The window declarations of a graph (ranges, units, thresholds) when the output has them. */
+  /** The window declarations of a graph (ranges, units) when the output has them. */
   async meters(graph: string): Promise<{ meters: Meter[]; defaults: Partial<ChannelDefaults> } | null> {
     await this.open();
     const rel = this.manifest?.graphs[graph]?.meters;

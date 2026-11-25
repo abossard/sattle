@@ -86,7 +86,7 @@ export function parseMeters(raw: unknown): { meters: Meter[]; defaults: Partial<
   const o = raw as { meters?: Record<string, unknown>[]; defaults?: Partial<ChannelDefaults> } | null;
   const meters: Meter[] = (o?.meters ?? []).map((m) => ({
     id: String(m.id), target: m.target === "edge" ? "edge" : "node", label: String(m.label ?? m.id), unit: String(m.unit ?? ""),
-    min: Number(m.min ?? 0), max: Number(m.max ?? 1) || 1, warn: typeof m.warn === "number" ? m.warn : undefined,
+    min: Number(m.min ?? 0), max: Number(m.max ?? 1) || 1,
     scale: m.scale === "sqrt" ? "sqrt" : "linear",
     // the engine reports the range observed so far; live values may exceed it
     auto: true,

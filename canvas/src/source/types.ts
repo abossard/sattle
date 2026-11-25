@@ -57,7 +57,7 @@ export interface Meter {
   unit: string;
   min: number;
   max: number;
-  /** values at or above this are in the warning state */
+  /** values at or above this are in the warning state; a level the viewer sets (the engine declares none, 3.67) */
   warn?: number;
   /** "sqrt" spreads heavy tailed rates over the 8-bit range */
   scale?: "linear" | "sqrt";

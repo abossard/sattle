@@ -29,12 +29,14 @@ describe("the catalog graph of the engine definitions lists modules, projections
   });
   it("finds projections with output module and the direction class of their rules", () => {
     const ps = c.projections();
-    expect(ps.map((p) => `${p.module}/${p.name}`)).toEqual(["acme.ops/ingest", "acme.svc/serviceDeps"]);
-    const ingest = ps[0];
-    expect(ingest.outputModule).toBe("acme.ops");
-    expect(ingest.rules.map((r) => r.direction).sort()).toEqual(["bijective", "bijective", "readonly", "readonly", "readonly", "readonly", "readonly", "readonly", "readonly"]);
-    expect(ingest.direction).toBe("bijective");
-    expect(DIRECTION_CLASSES).toContain(ps[1].direction);
+    expect(ps.map((p) => `${p.module}/${p.name}`)).toEqual(["acme.biz/capabilityView", "acme.ops/authored", "acme.ops/ingest", "acme.readiness/readiness", "acme.report/readinessReport", "acme.svc/serviceDeps"]);
+    const by = (name: string) => ps.find((p) => p.name === name)!;
+    expect([by("ingest").outputModule, by("readinessReport").outputModule]).toEqual(["acme.ops", "sattle.doc"]);
+    expect(by("authored").rules.map((r) => r.direction)).toEqual(["bijective", "bijective"]);
+    expect(by("authored").direction).toBe("bijective");
+    expect(new Set(by("ingest").rules.map((r) => r.direction))).toEqual(new Set(["readonly"]));
+    expect(by("ingest").direction).toBe("readonly");
+    for (const p of ps) expect(DIRECTION_CLASSES).toContain(p.direction);
   });
   it.each([["acme.ops/projection:ingest"], ["acme.svc/projection:serviceDeps"]])("projection graph %s is closed: every wire joins two cards through existing ports", (path) => {
     const g = c.projectionGraph(`d:${path}`);
@@ -49,18 +51,17 @@ describe("the catalog graph of the engine definitions lists modules, projections
   it("describes operators from their subtree", () => {
     const svc = c.projectionGraph("d:acme.svc/projection:serviceDeps");
     const by = (n: string) => svc.nodes.find((x) => x.id.endsWith(`/op:${n}`))!;
-    expect(by("deps#0").lines).toEqual(expect.arrayContaining(["a: infra.Pod", "s: infra.Service"]));
-    expect(by("deps#0").lines.some((l) => l.includes("-[c:infra.Calls]->"))).toBe(true);
-    expect(by("health").lines.join(" ")).toContain("above 0.05");
+    expect(by("calls_1_1").lines).toEqual(["a: infra.Instance", "b: infra.Instance", "a -[c:infra.Calls]-> b"]);
+    expect(by("dependsOn_1Fold_1").lines).toEqual(["key dst = dst", "key src = src", "n = count(dropRatio)", "v = max(dropRatio)", "policy above, below, enterAfter, exitAfter", 'state from "ok"', "streak from 0", "show state"]);
     const ops = c.projectionGraph("d:acme.ops/projection:ingest");
-    expect(ops.nodes.find((n) => n.id.endsWith("/op:known"))!.lines[0]).toBe("And(IsPresent(srcNamespace), IsPresent(srcPod), IsPresent(dstNamespace), IsPresent(dstPod))");
+    expect(ops.nodes.find((n) => n.id.endsWith("/op:host_1_1"))!.lines[0]).toBe('Equal(Coalesce(metric, ""), "forward_rate")');
   });
-  it("rule cards carry their direction class and govern emit operators", () => {
-    const g = c.projectionGraph("d:acme.ops/projection:ingest");
+  it.each([["ingest", 23, "readonly", 38], ["authored", 2, "bijective", 3]])("rule cards of %s carry their direction class and govern emit operators", (name, count, direction, governs) => {
+    const g = c.projectionGraph(`d:acme.ops/projection:${name}`);
     const rules = g.nodes.filter((n) => n.kind === "rule");
-    expect(rules.length).toBe(9);
-    expect(new Set(rules.map((r) => r.direction))).toEqual(new Set(["readonly", "bijective"]));
-    expect(g.edges.filter((e) => e.fromPort === "governs").length).toBe(12);
+    expect(rules.length).toBe(count);
+    expect(new Set(rules.map((r) => r.direction))).toEqual(new Set([direction]));
+    expect(g.edges.filter((e) => e.fromPort === "governs").length).toBe(governs);
     for (const cls of DIRECTION_CLASSES) expect(DIRECTION[cls].glyph.length).toBeGreaterThan(0);
   });
   it("lists the ontology of a module", () => {
@@ -68,12 +69,12 @@ describe("the catalog graph of the engine definitions lists modules, projections
     expect(o.entityTypes.map((x) => c.name(x)).sort()).toEqual(["ServiceGroup", "ServiceNode"]);
     expect(o.relationshipTypes.map((x) => c.name(x)).sort()).toEqual(["Contains", "DependsOn"]);
     expect(o.identityDomains.length).toBe(1);
-    expect(o.constraints.length).toBe(2);
+    expect(o.constraints.length).toBe(1);
   });
   it("maps a diagnostic focus deep inside an operator to its card", () => {
     const g = c.projectionGraph("d:acme.ops/projection:ingest");
     const cards = new Set(g.nodes.map((n) => n.id));
-    expect(c.nearest("d:acme.ops/projection:ingest/op:known/predicate:#0/arg:#1/arg:#0", (id) => cards.has(id))).toBe("d:acme.ops/projection:ingest/op:known");
+    expect(c.nearest("d:acme.ops/projection:ingest/op:calls_1_1/predicate:#0/arg:#1/arg:#0", (id) => cards.has(id))).toBe("d:acme.ops/projection:ingest/op:calls_1_1");
     expect(c.nearest("d:nowhere/x", (id) => cards.has(id))).toBeNull();
   });
   it("renders the ontology of a module as a graph, with imported types as nodes of their module", () => {

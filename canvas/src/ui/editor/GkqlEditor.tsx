@@ -2,7 +2,7 @@ import { Badge, Button, Field, Input, Menu, MenuGroup, MenuGroupHeader, MenuItem
 import { Add20Regular, ArrowRedo20Regular, ArrowUndo20Regular } from "@fluentui/react-icons";
 import { useEffect, useMemo, useReducer, useRef, useState, type KeyboardEvent } from "react";
 import {
-  appendVerb, authorableVerbs, canEditGkqlStructure, checkGkql, connect, focusOf, layoutGkql, portsFor, readGkqlJson, rewire, rowsByVerb, sourcesFor, spanOf, verbAt, verbFocus, verbStyle, wirePort,
+  appendVerb, authorableVerbs, canEditGkqlStructure, checkGkql, connect, focusOf, foldPolicy, layoutGkql, portsFor, readGkqlJson, rewire, rowsByVerb, sourcesFor, spanOf, verbAt, verbFocus, verbStyle, wirePort,
   type GkqlDrawing, type GkqlProgram, type GkqlVerb, type GkqlWire,
 } from "../../editor/gkql";
 import { openModel, step } from "../../editor/gkql-editing";
@@ -109,29 +109,39 @@ function Settings({ node, disabled, update }: { node: GkqlVerb; disabled: boolea
   );
 }
 
-const thresholdFields = {
-  above: "Enter at or above",
-  enterAfter: "Enter after windows",
-  below: "Exit at or below",
-  exitAfter: "Exit after windows",
-};
+const NUMBER = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:e[+-]?\d+)?$/i;
 
-function ThresholdControls({ node, readOnly, update }: { node: GkqlVerb; readOnly: boolean; update: (node: GkqlVerb) => void }) {
+/** A literal of the policy as typed: text stays text, a number or a boolean must still be one. Undefined when it is not. */
+function readPolicyValue(was: unknown, text: string): unknown {
+  if (typeof was === "string") return text;
+  if (typeof was === "boolean") return text === "true" ? true : text === "false" ? false : undefined;
+  return NUMBER.test(text) && canEditGkqlStructure(text) ? readGkqlJson(text) : undefined;
+}
+
+/** A fold's policy is the rows on its policy input: the literal columns of that step are edited here, in place. */
+function FoldPolicy({ program, node, readOnly, change }: { program: GkqlProgram; node: GkqlVerb; readOnly: boolean; change: (program: GkqlProgram) => void }) {
   const s = useStyles();
-  const thresholds = node.hysteresis as Record<string, unknown> | undefined;
-  const initial = Object.fromEntries(Object.keys(thresholdFields).map((field) => [field, JSON.stringify(thresholds?.[field]) ?? ""]));
+  const { source, columns } = foldPolicy(program, node);
+  const literals = columns.flatMap(({ name, lit }) => lit ? [{ name, was: lit.value }] : []);
+  const initial = Object.fromEntries(literals.map(({ name, was }) => [name, typeof was === "string" ? was : JSON.stringify(was)]));
   const [values, setValues] = useState(initial);
-  if (!thresholds) return null;
-  const valid = Object.values(values).every((value) => /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:e[+-]?\d+)?$/i.test(value) && canEditGkqlStructure(value))
-    && [values.enterAfter, values.exitAfter].every((value) => /^[1-9]\d*$/.test(value));
+  if (!source || columns.length === 0) return null;
+  const read = Object.fromEntries(literals.map(({ name, was }) => [name, readPolicyValue(was, values[name])]));
+  const valid = literals.every(({ name }) => read[name] !== undefined);
   return (
     <>
-      <div className={s.row}>{Object.entries(thresholdFields).map(([field, label]) => <Field label={label} size="small" key={field}>
-        <Input disabled={readOnly} inputMode={field.endsWith("After") ? "numeric" : "decimal"} value={values[field]} onChange={(_, d) => setValues({ ...values, [field]: d.value })} />
-      </Field>)}</div>
-      <Button size="small" disabled={readOnly || !valid || JSON.stringify(values) === JSON.stringify(initial)} onClick={() => update({
-        ...node, hysteresis: { ...thresholds, ...Object.fromEntries(Object.entries(values).map(([field, value]) => [field, readGkqlJson(value)])) },
-      })}>Apply thresholds</Button>
+      <hr className={s.divider} />
+      <Text weight="semibold">Policy from {source.id}</Text>
+      <div className={s.row}>{columns.map(({ name, lit }) => lit
+        ? <Field label={name} size="small" key={name} validationMessage={read[name] === undefined ? `Expected ${typeof lit.value === "boolean" ? "true or false" : "a number"}.` : undefined}>
+          <Input disabled={readOnly} inputMode={typeof lit.value === "string" || typeof lit.value === "boolean" ? "text" : "decimal"} value={values[name]} onChange={(_, d) => setValues({ ...values, [name]: d.value })} />
+        </Field>
+        : <Text key={name} size={200}>{name}: computed by {source.id}</Text>)}</div>
+      {literals.length > 0 && <Button size="small" disabled={readOnly || !valid || JSON.stringify(values) === JSON.stringify(initial)} onClick={() => change({
+        ...program, verbs: program.verbs.map((verb) => verb.id !== source.id ? verb : {
+          ...source, columns: { ...source.columns as object, ...Object.fromEntries(literals.map(({ name }) => [name, { ...(source.columns as Record<string, object>)[name], lit: read[name] }])) },
+        }),
+      })}>Apply policy</Button>}
     </>
   );
 }
@@ -186,7 +196,7 @@ function Operation({ program, node, readOnly, change, remove }: { program: GkqlP
           <Drawing value={node[kind]!} target={kind === "target"} disabled={readOnly} update={(next, burst) => update({ ...node, [kind]: next }, burst && `${kind}.${burst}`)} />
         </>
       )}
-      {node.verb === "hysteresis" && <ThresholdControls key={JSON.stringify(node.hysteresis)} node={node} readOnly={readOnly} update={update} />}
+      {node.verb === "fold" && <FoldPolicy key={JSON.stringify(foldPolicy(program, node))} program={program} node={node} readOnly={readOnly} change={change} />}
       <Settings key={JSON.stringify(node)} node={node} disabled={readOnly} update={update} />
       <Button appearance="subtle" size="small" disabled={readOnly} onClick={remove}>Remove operation</Button>
     </>
