@@ -63,7 +63,15 @@
       "fn": "==",
       "args": [
        {
-        "ref": "Name"
+        "fn": "coalesce",
+        "args": [
+         {
+          "ref": "Name"
+         },
+         {
+          "lit": ""
+         }
+        ]
        },
        {
         "param": "webTest"
@@ -74,7 +82,15 @@
       "fn": "==",
       "args": [
        {
-        "ref": "Name"
+        "fn": "coalesce",
+        "args": [
+         {
+          "ref": "Name"
+         },
+         {
+          "lit": ""
+         }
+        ]
        },
        {
         "param": "mcpTest"
@@ -95,7 +111,15 @@
        "fn": "==",
        "args": [
         {
-         "ref": "Name"
+         "fn": "coalesce",
+         "args": [
+          {
+           "ref": "Name"
+          },
+          {
+           "lit": ""
+          }
+         ]
         },
         {
          "param": "webTest"
@@ -136,7 +160,15 @@
      "fn": "countif",
      "args": [
       {
-       "ref": "Success"
+       "fn": "coalesce",
+       "args": [
+        {
+         "ref": "Success"
+        },
+        {
+         "lit": false
+        }
+       ]
       }
      ]
     }
@@ -185,7 +217,15 @@
     "fn": "==",
     "args": [
      {
-      "ref": "AppRoleName"
+      "fn": "coalesce",
+      "args": [
+       {
+        "ref": "AppRoleName"
+       },
+       {
+        "lit": ""
+       }
+      ]
      },
      {
       "param": "appRole"
@@ -207,7 +247,15 @@
          "fn": "lower",
          "args": [
           {
-           "ref": "Name"
+           "fn": "coalesce",
+           "args": [
+            {
+             "ref": "Name"
+            },
+            {
+             "lit": ""
+            }
+           ]
           }
          ]
         },
@@ -229,7 +277,15 @@
            "fn": "lower",
            "args": [
             {
-             "ref": "Name"
+             "fn": "coalesce",
+             "args": [
+              {
+               "ref": "Name"
+              },
+              {
+               "lit": ""
+              }
+             ]
             }
            ]
           },
@@ -257,7 +313,15 @@
                  "fn": "==",
                  "args": [
                   {
-                   "ref": "Name"
+                   "fn": "coalesce",
+                   "args": [
+                    {
+                     "ref": "Name"
+                    },
+                    {
+                     "lit": ""
+                    }
+                   ]
                   },
                   {
                    "lit": "healthmodel.catalog"
@@ -268,7 +332,15 @@
                  "fn": "==",
                  "args": [
                   {
-                   "ref": "Name"
+                   "fn": "coalesce",
+                   "args": [
+                    {
+                     "ref": "Name"
+                    },
+                    {
+                     "lit": ""
+                    }
+                   ]
                   },
                   {
                    "lit": "healthmodel.read"
@@ -281,7 +353,15 @@
                "fn": "==",
                "args": [
                 {
-                 "ref": "Name"
+                 "fn": "coalesce",
+                 "args": [
+                  {
+                   "ref": "Name"
+                  },
+                  {
+                   "lit": ""
+                  }
+                 ]
                 },
                 {
                  "lit": "healthmodel.timeline"
@@ -294,7 +374,15 @@
              "fn": "==",
              "args": [
               {
-               "ref": "Name"
+               "fn": "coalesce",
+               "args": [
+                {
+                 "ref": "Name"
+                },
+                {
+                 "lit": ""
+                }
+               ]
               },
               {
                "lit": "healthmodel.history"
@@ -313,7 +401,15 @@
              "fn": "==",
              "args": [
               {
-               "ref": "Name"
+               "fn": "coalesce",
+               "args": [
+                {
+                 "ref": "Name"
+                },
+                {
+                 "lit": ""
+                }
+               ]
               },
               {
                "lit": "healthmodel.report"
@@ -375,7 +471,15 @@
        "fn": "==",
        "args": [
         {
-         "ref": "Success"
+         "fn": "coalesce",
+         "args": [
+          {
+           "ref": "Success"
+          },
+          {
+           "lit": true
+          }
+         ]
         },
         {
          "lit": false
@@ -444,7 +548,15 @@
     "fn": "==",
     "args": [
      {
-      "ref": "AppRoleName"
+      "fn": "coalesce",
+      "args": [
+       {
+        "ref": "AppRoleName"
+       },
+       {
+        "lit": ""
+       }
+      ]
      },
      {
       "param": "appRole"
@@ -463,7 +575,15 @@
        "fn": "==",
        "args": [
         {
-         "ref": "Name"
+         "fn": "coalesce",
+         "args": [
+          {
+           "ref": "Name"
+          },
+          {
+           "lit": ""
+          }
+         ]
         },
         {
          "lit": "POST /api/entities/{entity_name:path}/health-reports"
@@ -480,7 +600,15 @@
          "fn": "==",
          "args": [
           {
-           "ref": "Name"
+           "fn": "coalesce",
+           "args": [
+            {
+             "ref": "Name"
+            },
+            {
+             "lit": ""
+            }
+           ]
           },
           {
            "lit": "POST /api/sessions/{sid}/tasks/{tid}/apply"
@@ -509,7 +637,15 @@
                    "fn": "==",
                    "args": [
                     {
-                     "ref": "Name"
+                     "fn": "coalesce",
+                     "args": [
+                      {
+                       "ref": "Name"
+                      },
+                      {
+                       "lit": ""
+                      }
+                     ]
                     },
                     {
                      "lit": "GET /api/health-models"
@@ -520,7 +656,15 @@
                    "fn": "==",
                    "args": [
                     {
-                     "ref": "Name"
+                     "fn": "coalesce",
+                     "args": [
+                      {
+                       "ref": "Name"
+                      },
+                      {
+                       "lit": ""
+                      }
+                     ]
                     },
                     {
                      "lit": "GET /api/health-model"
@@ -533,7 +677,15 @@
                  "fn": "==",
                  "args": [
                   {
-                   "ref": "Name"
+                   "fn": "coalesce",
+                   "args": [
+                    {
+                     "ref": "Name"
+                    },
+                    {
+                     "lit": ""
+                    }
+                   ]
                   },
                   {
                    "lit": "GET /api/health-model/stream"
@@ -546,7 +698,15 @@
                "fn": "==",
                "args": [
                 {
-                 "ref": "Name"
+                 "fn": "coalesce",
+                 "args": [
+                  {
+                   "ref": "Name"
+                  },
+                  {
+                   "lit": ""
+                  }
+                 ]
                 },
                 {
                  "lit": "GET /api/timeline"
@@ -559,7 +719,15 @@
              "fn": "==",
              "args": [
               {
-               "ref": "Name"
+               "fn": "coalesce",
+               "args": [
+                {
+                 "ref": "Name"
+                },
+                {
+                 "lit": ""
+                }
+               ]
               },
               {
                "lit": "GET /api/entities/{entity_name:path}"
@@ -596,7 +764,15 @@
                          "fn": "==",
                          "args": [
                           {
-                           "ref": "Name"
+                           "fn": "coalesce",
+                           "args": [
+                            {
+                             "ref": "Name"
+                            },
+                            {
+                             "lit": ""
+                            }
+                           ]
                           },
                           {
                            "lit": "GET /api/sessions"
@@ -607,7 +783,15 @@
                          "fn": "==",
                          "args": [
                           {
-                           "ref": "Name"
+                           "fn": "coalesce",
+                           "args": [
+                            {
+                             "ref": "Name"
+                            },
+                            {
+                             "lit": ""
+                            }
+                           ]
                           },
                           {
                            "lit": "POST /api/sessions"
@@ -620,7 +804,15 @@
                        "fn": "==",
                        "args": [
                         {
-                         "ref": "Name"
+                         "fn": "coalesce",
+                         "args": [
+                          {
+                           "ref": "Name"
+                          },
+                          {
+                           "lit": ""
+                          }
+                         ]
                         },
                         {
                          "lit": "GET /api/sessions/{sid}"
@@ -633,7 +825,15 @@
                      "fn": "==",
                      "args": [
                       {
-                       "ref": "Name"
+                       "fn": "coalesce",
+                       "args": [
+                        {
+                         "ref": "Name"
+                        },
+                        {
+                         "lit": ""
+                        }
+                       ]
                       },
                       {
                        "lit": "POST /api/sessions/{sid}/tasks"
@@ -646,7 +846,15 @@
                    "fn": "==",
                    "args": [
                     {
-                     "ref": "Name"
+                     "fn": "coalesce",
+                     "args": [
+                      {
+                       "ref": "Name"
+                      },
+                      {
+                       "lit": ""
+                      }
+                     ]
                     },
                     {
                      "lit": "GET /api/sessions/{sid}/tasks/{tid}"
@@ -659,7 +867,15 @@
                  "fn": "==",
                  "args": [
                   {
-                   "ref": "Name"
+                   "fn": "coalesce",
+                   "args": [
+                    {
+                     "ref": "Name"
+                    },
+                    {
+                     "lit": ""
+                    }
+                   ]
                   },
                   {
                    "lit": "GET /api/sessions/{sid}/tasks/{tid}/events"
@@ -672,7 +888,15 @@
                "fn": "==",
                "args": [
                 {
-                 "ref": "Name"
+                 "fn": "coalesce",
+                 "args": [
+                  {
+                   "ref": "Name"
+                  },
+                  {
+                   "lit": ""
+                  }
+                 ]
                 },
                 {
                  "lit": "GET /api/sessions/{sid}/tasks/{tid}/diff"
@@ -736,10 +960,26 @@
        "fn": ">=",
        "args": [
         {
-         "fn": "todecimal",
+         "fn": "coalesce",
          "args": [
           {
-           "ref": "ResultCode"
+           "fn": "todecimal",
+           "args": [
+            {
+             "fn": "coalesce",
+             "args": [
+              {
+               "ref": "ResultCode"
+              },
+              {
+               "lit": ""
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "lit": 0
           }
          ]
         },
@@ -788,7 +1028,15 @@
        "fn": "==",
        "args": [
         {
-         "ref": "CategoryValue"
+         "fn": "coalesce",
+         "args": [
+          {
+           "ref": "CategoryValue"
+          },
+          {
+           "lit": ""
+          }
+         ]
         },
         {
          "lit": "ServiceHealth"
@@ -808,7 +1056,15 @@
            "fn": "==",
            "args": [
             {
-             "ref": "CategoryValue"
+             "fn": "coalesce",
+             "args": [
+              {
+               "ref": "CategoryValue"
+              },
+              {
+               "lit": ""
+              }
+             ]
             },
             {
              "lit": "Administrative"
@@ -822,7 +1078,15 @@
              "fn": "lower",
              "args": [
               {
-               "ref": "ResourceGroup"
+               "fn": "coalesce",
+               "args": [
+                {
+                 "ref": "ResourceGroup"
+                },
+                {
+                 "lit": ""
+                }
+               ]
               }
              ]
             },
@@ -848,7 +1112,15 @@
            "fn": "==",
            "args": [
             {
-             "ref": "CategoryValue"
+             "fn": "coalesce",
+             "args": [
+              {
+               "ref": "CategoryValue"
+              },
+              {
+               "lit": ""
+              }
+             ]
             },
             {
              "lit": "Alert"
@@ -909,7 +1181,15 @@
          "fn": "==",
          "args": [
           {
-           "ref": "Level"
+           "fn": "coalesce",
+           "args": [
+            {
+             "ref": "Level"
+            },
+            {
+             "lit": ""
+            }
+           ]
           },
           {
            "lit": "Error"
@@ -920,7 +1200,15 @@
          "fn": "==",
          "args": [
           {
-           "ref": "Level"
+           "fn": "coalesce",
+           "args": [
+            {
+             "ref": "Level"
+            },
+            {
+             "lit": ""
+            }
+           ]
           },
           {
            "lit": "Critical"
@@ -950,7 +1238,15 @@
            "fn": "==",
            "args": [
             {
-             "ref": "ActivityStatusValue"
+             "fn": "coalesce",
+             "args": [
+              {
+               "ref": "ActivityStatusValue"
+              },
+              {
+               "lit": ""
+              }
+             ]
             },
             {
              "lit": "Failed"
@@ -961,7 +1257,15 @@
            "fn": "==",
            "args": [
             {
-             "ref": "ActivityStatusValue"
+             "fn": "coalesce",
+             "args": [
+              {
+               "ref": "ActivityStatusValue"
+              },
+              {
+               "lit": ""
+              }
+             ]
             },
             {
              "lit": "Failure"
@@ -1039,7 +1343,15 @@
      "fn": "concat",
      "args": [
       {
-       "ref": "resource"
+       "fn": "coalesce",
+       "args": [
+        {
+         "ref": "resource"
+        },
+        {
+         "lit": ""
+        }
+       ]
       },
       {
        "fn": "concat",
@@ -1063,7 +1375,15 @@
     "fn": "==",
     "args": [
      {
-      "ref": "resource"
+      "fn": "coalesce",
+      "args": [
+       {
+        "ref": "resource"
+       },
+       {
+        "lit": ""
+       }
+      ]
      },
      {
       "lit": "blob"
@@ -1086,7 +1406,15 @@
     "fn": "!=",
     "args": [
      {
-      "ref": "resource"
+      "fn": "coalesce",
+      "args": [
+       {
+        "ref": "resource"
+       },
+       {
+        "lit": ""
+       }
+      ]
      },
      {
       "lit": "blob"
@@ -1163,7 +1491,15 @@
     "fn": ">",
     "args": [
      {
-      "ref": "samples"
+      "fn": "coalesce",
+      "args": [
+       {
+        "ref": "samples"
+       },
+       {
+        "lit": 0
+       }
+      ]
      },
      {
       "lit": 0
@@ -1735,7 +2071,15 @@
          "fn": ">",
          "args": [
           {
-           "ref": "value"
+           "fn": "coalesce",
+           "args": [
+            {
+             "ref": "value"
+            },
+            {
+             "lit": 0
+            }
+           ]
           },
           {
            "ref": "unhealthy"
@@ -1746,7 +2090,15 @@
          "fn": "<",
          "args": [
           {
-           "ref": "value"
+           "fn": "coalesce",
+           "args": [
+            {
+             "ref": "value"
+            },
+            {
+             "lit": 0
+            }
+           ]
           },
           {
            "ref": "unhealthy"
@@ -1777,7 +2129,15 @@
              "fn": ">",
              "args": [
               {
-               "ref": "value"
+               "fn": "coalesce",
+               "args": [
+                {
+                 "ref": "value"
+                },
+                {
+                 "lit": 0
+                }
+               ]
               },
               {
                "ref": "degraded"
@@ -1788,7 +2148,15 @@
              "fn": "<",
              "args": [
               {
-               "ref": "value"
+               "fn": "coalesce",
+               "args": [
+                {
+                 "ref": "value"
+                },
+                {
+                 "lit": 0
+                }
+               ]
               },
               {
                "ref": "degraded"
