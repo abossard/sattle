@@ -2451,6 +2451,9 @@
        ]
       },
       "props": {
+       "name": {
+        "ref": "signal"
+       },
        "value": {
         "ref": "value"
        }
