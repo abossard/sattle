@@ -1,0 +1,381 @@
+{
+ "capturedAt": "2026-11-25T11:56:50.128163Z",
+ "signals": {
+  "container-app-apply/azureLogAnalytics/availability-test": {
+   "cut": "2026-11-25T11:56:15.690002Z",
+   "state": "Healthy",
+   "value": 100.0
+  },
+  "container-app-apply/azureResource/cpu-percentage": {
+   "cut": "2026-11-25T11:56:38.918221Z",
+   "state": "Healthy",
+   "value": 0.0
+  },
+  "container-app-apply/azureResource/memory-percentage": {
+   "cut": "2026-11-25T11:56:40.164188Z",
+   "state": "Healthy",
+   "value": 9.0
+  },
+  "container-app-apply/azureResource/response-time": {
+   "cut": "2026-11-25T11:56:43.071650Z",
+   "state": "Healthy",
+   "value": 4.66666666666667
+  },
+  "container-app-apply/azureResource/restart-count": {
+   "cut": "2026-11-25T11:56:44.155934Z",
+   "state": "Healthy",
+   "value": 0.0
+  },
+  "container-app-reports/azureLogAnalytics/availability-test": {
+   "cut": "2026-11-25T11:56:16.675524Z",
+   "state": "Healthy",
+   "value": 100.0
+  },
+  "container-app-reports/azureResource/cpu-percentage": {
+   "cut": "2026-11-25T11:56:42.143148Z",
+   "state": "Healthy",
+   "value": 0.0
+  },
+  "container-app-reports/azureResource/memory-percentage": {
+   "cut": "2026-11-25T11:52:48.545764Z",
+   "state": "Healthy",
+   "value": 9.0
+  },
+  "container-app-reports/azureResource/response-time": {
+   "cut": "2026-11-25T11:56:42.970438Z",
+   "state": "Healthy",
+   "value": 4.66666666666667
+  },
+  "container-app-reports/azureResource/restart-count": {
+   "cut": "2026-11-25T11:56:43.888524Z",
+   "state": "Healthy",
+   "value": 0.0
+  },
+  "container-app-tasks/azureLogAnalytics/availability-test": {
+   "cut": "2026-11-25T11:56:17.491316Z",
+   "state": "Healthy",
+   "value": 100.0
+  },
+  "container-app-tasks/azureResource/cpu-percentage": {
+   "cut": "2026-11-25T11:56:44.944408Z",
+   "state": "Healthy",
+   "value": 0.0
+  },
+  "container-app-tasks/azureResource/memory-percentage": {
+   "cut": "2026-11-25T11:51:51.099513Z",
+   "state": "Healthy",
+   "value": 9.0
+  },
+  "container-app-tasks/azureResource/response-time": {
+   "cut": "2026-11-25T11:52:25.560606Z",
+   "state": "Healthy",
+   "value": 4.33333333333333
+  },
+  "container-app-tasks/azureResource/restart-count": {
+   "cut": "2026-11-25T11:52:18.059639Z",
+   "state": "Healthy",
+   "value": 0.0
+  },
+  "container-app/azureLogAnalytics/availability-test": {
+   "cut": "2026-11-25T11:56:15.538420Z",
+   "state": "Healthy",
+   "value": 100.0
+  },
+  "container-app/azureResource/cpu-percentage": {
+   "cut": "2026-11-25T11:52:18.481580Z",
+   "state": "Healthy",
+   "value": 0.0
+  },
+  "container-app/azureResource/memory-percentage": {
+   "cut": "2026-11-25T11:56:42.371515Z",
+   "state": "Healthy",
+   "value": 9.0
+  },
+  "container-app/azureResource/response-time": {
+   "cut": "2026-11-25T11:56:42.193120Z",
+   "state": "Healthy",
+   "value": 4.66666666666667
+  },
+  "container-app/azureResource/restart-count": {
+   "cut": "2026-11-25T11:56:48.424529Z",
+   "state": "Healthy",
+   "value": 0.0
+  },
+  "foundry-account/azureResource/client-errors": {
+   "cut": "2026-11-25T11:51:58.481279Z",
+   "state": "Healthy",
+   "value": 0.0
+  },
+  "foundry-account/azureResource/server-errors": {
+   "cut": "2026-11-25T11:52:13.988820Z",
+   "state": "Healthy",
+   "value": 0.0
+  },
+  "hosted-agent/azureLogAnalytics/agent-task-failures": {
+   "cut": "2026-11-25T11:53:01.717859Z",
+   "state": "Healthy",
+   "value": 0.0
+  },
+  "hosted-agent/azureLogAnalytics/agent-task-latency": {
+   "cut": "2026-11-25T11:52:17.583877Z",
+   "state": "Unknown",
+   "value": null
+  },
+  "mcp-server/azureLogAnalytics/availability-test": {
+   "cut": "2026-11-25T11:53:22.143787Z",
+   "state": "Healthy",
+   "value": 100.0
+  },
+  "mcp-server/azureResource/cpu-percentage": {
+   "cut": "2026-11-25T11:56:48.994982Z",
+   "state": "Healthy",
+   "value": 0.0
+  },
+  "mcp-server/azureResource/memory-percentage": {
+   "cut": "2026-11-25T11:56:45.154809Z",
+   "state": "Healthy",
+   "value": 8.0
+  },
+  "mcp-server/azureResource/response-time": {
+   "cut": "2026-11-25T11:56:47.558462Z",
+   "state": "Healthy",
+   "value": 4.66666666666667
+  },
+  "mcp-server/azureResource/restart-count": {
+   "cut": "2026-11-25T11:56:42.870788Z",
+   "state": "Healthy",
+   "value": 0.0
+  },
+  "platform-context/azureLogAnalytics/failed-arm-operations": {
+   "cut": "2026-11-25T11:56:40.431782Z",
+   "state": "Unhealthy",
+   "value": 1.0
+  },
+  "platform-context/azureLogAnalytics/platform-alerts": {
+   "cut": "2026-11-25T11:56:16.427912Z",
+   "state": "Healthy",
+   "value": 0.0
+  },
+  "platform-context/azureLogAnalytics/service-health": {
+   "cut": "2026-11-25T11:53:36.887501Z",
+   "state": "Healthy",
+   "value": 0.0
+  },
+  "session-storage-apply/azureResource/availability": {
+   "cut": "2026-11-25T11:56:19.549933Z",
+   "state": "Unknown",
+   "value": null
+  },
+  "session-storage-apply/azureResource/end-to-end-latency": {
+   "cut": "2026-11-25T11:56:09.077517Z",
+   "state": "Unknown",
+   "value": null
+  },
+  "session-storage/azureResource/availability": {
+   "cut": "2026-11-25T11:56:09.039414Z",
+   "state": "Unknown",
+   "value": null
+  },
+  "session-storage/azureResource/end-to-end-latency": {
+   "cut": "2026-11-25T11:56:17.947275Z",
+   "state": "Unknown",
+   "value": null
+  },
+  "system-app-hosting-reports/azureLogAnalytics/report-route-failures": {
+   "cut": "2026-11-25T11:52:55.082373Z",
+   "state": "Healthy",
+   "value": 0.0
+  },
+  "system-app-hosting-tasks/azureLogAnalytics/task-route-failures": {
+   "cut": "2026-11-25T11:54:33.107531Z",
+   "state": "Healthy",
+   "value": 0.0
+  },
+  "system-app-hosting/azureLogAnalytics/view-route-failures": {
+   "cut": "2026-11-25T11:54:17.871697Z",
+   "state": "Healthy",
+   "value": 0.0
+  },
+  "system-apply-state/azureLogAnalytics/apply-state-failures": {
+   "cut": "2026-11-25T11:54:57.931644Z",
+   "state": "Healthy",
+   "value": 0.0
+  },
+  "system-apply-state/azureLogAnalytics/apply-state-latency": {
+   "cut": "2026-11-25T11:53:47.811612Z",
+   "state": "Unknown",
+   "value": null
+  },
+  "system-model-read/azureLogAnalytics/model-read-failures": {
+   "cut": "2026-11-25T11:54:21.990695Z",
+   "state": "Healthy",
+   "value": 0.0
+  },
+  "system-model-read/azureLogAnalytics/model-read-latency": {
+   "cut": "2026-11-25T11:52:28.996879Z",
+   "state": "Unknown",
+   "value": null
+  },
+  "system-model-write/azureLogAnalytics/apply-request-failures": {
+   "cut": "2026-11-25T11:53:07.096750Z",
+   "state": "Healthy",
+   "value": 0.0
+  },
+  "system-report-ingest/azureLogAnalytics/report-ingest-failures": {
+   "cut": "2026-11-25T11:55:36.330090Z",
+   "state": "Healthy",
+   "value": 0.0
+  },
+  "system-session-store/azureLogAnalytics/session-store-failures": {
+   "cut": "2026-11-25T11:54:59.449069Z",
+   "state": "Healthy",
+   "value": 0.0
+  },
+  "system-session-store/azureLogAnalytics/session-store-latency": {
+   "cut": "2026-11-25T11:53:48.558169Z",
+   "state": "Unknown",
+   "value": null
+  }
+ },
+ "entities": {
+  "container-app": "Healthy",
+  "container-app-apply": "Healthy",
+  "container-app-reports": "Healthy",
+  "container-app-tasks": "Healthy",
+  "discovered-app-topology": "Unknown",
+  "flow-apply-health-model-changes": "Healthy",
+  "flow-run-agent-tasks": "Healthy",
+  "flow-send-health-reports": "Healthy",
+  "flow-view-health-model": "Healthy",
+  "foundry-account": "Healthy",
+  "hosted-agent": "Healthy",
+  "id-5cfa67aeab88": "Unknown",
+  "id-92ab8cd23685": "Unknown",
+  "mcp-server": "Healthy",
+  "model-root": "Degraded",
+  "platform-context": "Unhealthy",
+  "session-storage": "Unknown",
+  "session-storage-apply": "Unknown",
+  "system-agent-runtime": "Healthy",
+  "system-ai-inference": "Healthy",
+  "system-app-hosting": "Healthy",
+  "system-app-hosting-apply": "Healthy",
+  "system-app-hosting-reports": "Healthy",
+  "system-app-hosting-tasks": "Healthy",
+  "system-apply-state": "Healthy",
+  "system-model-read": "Healthy",
+  "system-model-write": "Healthy",
+  "system-report-ingest": "Healthy",
+  "system-session-store": "Healthy"
+ },
+ "edges": [
+  [
+   "flow-apply-health-model-changes",
+   "system-app-hosting-apply"
+  ],
+  [
+   "flow-apply-health-model-changes",
+   "system-apply-state"
+  ],
+  [
+   "flow-apply-health-model-changes",
+   "system-model-write"
+  ],
+  [
+   "flow-run-agent-tasks",
+   "system-agent-runtime"
+  ],
+  [
+   "flow-run-agent-tasks",
+   "system-ai-inference"
+  ],
+  [
+   "flow-run-agent-tasks",
+   "system-app-hosting-tasks"
+  ],
+  [
+   "flow-run-agent-tasks",
+   "system-session-store"
+  ],
+  [
+   "flow-send-health-reports",
+   "system-app-hosting-reports"
+  ],
+  [
+   "flow-send-health-reports",
+   "system-report-ingest"
+  ],
+  [
+   "flow-view-health-model",
+   "system-app-hosting"
+  ],
+  [
+   "flow-view-health-model",
+   "system-model-read"
+  ],
+  [
+   "id-92ab8cd23685",
+   "id-5cfa67aeab88"
+  ],
+  [
+   "model-root",
+   "discovered-app-topology"
+  ],
+  [
+   "model-root",
+   "flow-apply-health-model-changes"
+  ],
+  [
+   "model-root",
+   "flow-run-agent-tasks"
+  ],
+  [
+   "model-root",
+   "flow-send-health-reports"
+  ],
+  [
+   "model-root",
+   "flow-view-health-model"
+  ],
+  [
+   "model-root",
+   "platform-context"
+  ],
+  [
+   "system-agent-runtime",
+   "hosted-agent"
+  ],
+  [
+   "system-agent-runtime",
+   "mcp-server"
+  ],
+  [
+   "system-ai-inference",
+   "foundry-account"
+  ],
+  [
+   "system-app-hosting",
+   "container-app"
+  ],
+  [
+   "system-app-hosting-apply",
+   "container-app-apply"
+  ],
+  [
+   "system-app-hosting-reports",
+   "container-app-reports"
+  ],
+  [
+   "system-app-hosting-tasks",
+   "container-app-tasks"
+  ],
+  [
+   "system-apply-state",
+   "session-storage-apply"
+  ],
+  [
+   "system-session-store",
+   "session-storage"
+  ]
+ ]
+}

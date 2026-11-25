@@ -26,6 +26,7 @@ import sys
 
 TOLERANCE = 1e-6
 ENTRY_DELAY = {"MetricRow": timedelta(minutes=1)}
+SOURCE_IDS = {"resourceId", "_ItemId", "EventDataId"}  # the source's own record ids: the program reads none of them
 
 
 def digest(name):
@@ -41,8 +42,8 @@ def iso(moment):
 
 
 def scrub(values, app_role):
-    """The row as the scrubbed reference names it: app role and resource groups by alias, no resource ids."""
-    out = {k: v for k, v in values.items() if k != "resourceId"}
+    """The row as the scrubbed reference names it: app role and resource groups by alias, no ids of the source."""
+    out = {k: v for k, v in values.items() if k not in SOURCE_IDS}
     if out.get("AppRoleName") == app_role:
         out["AppRoleName"] = "demo-workload"
     if out.get("ResourceGroup"):
