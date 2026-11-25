@@ -71,7 +71,7 @@ public class RatingPolicyTests
         Assert.Fail("The capture must reach the tick that closes the fourth window");
     }
 
-    /// <summary>A correction that arrives before the window from 10:00 is decided (at 10:04, #151 D5) is read with it; a decided transition is never withdrawn (Thm. 6.8).</summary>
+    /// <summary>A correction that arrives before the window from 10:00 is decided (at 10:04, #151 D5) is read with it; one after that would change the transitions from that window on (#151 D6).</summary>
     [Fact]
     public void Corrected_reading_moves_the_crossing_window_while_the_instrument_stays_hot()
     {

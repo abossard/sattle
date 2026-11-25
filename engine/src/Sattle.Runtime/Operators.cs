@@ -1089,11 +1089,16 @@ sealed class RollupOp : AggregatingOp
 
 // ---- fold ------------------------------------------------------------------------------------------------
 
-/// <summary>Fold (Ch. 6, Def. 6.5): per key a state over its windows in order, silent ones too. A window is stepped when the clock passes its close
-/// (`close = end + λ`, Def. 6.4) with the policy in force then, the row of greatest `since` (#151 D4). A transition row is written for the key's first
-/// observed window and for every window whose shown state differs from the one before; it is never withdrawn (Thm. 6.8). Per key the operator keeps its
-/// policy rows, the state after the last stepped window and the observations of the windows not yet closed. A key whose state a silent window leaves as
-/// it is has reached its `rest` and waits for its next observed window or a new policy.</summary>
+/// <summary>Fold (Ch. 6, Def. 6.5): per key a state over its windows in order, silent ones too, selected at the clock (Def. 6.2, s = close, u = ∞).
+/// Windows follow Def. 6.4 on the grid of the hop of the nearest Window upstream, or the period of a Series: window `ws` is [ws, ws + width) and closes at
+/// `close = ws + width + λ`, λ the Window's lateness, else the late horizon. The output at a clock is the transitions of the present rows whose window has
+/// closed: a key's first window that is not silent and has a policy, and every window whose shown state differs from the one before. The policy of a window
+/// is the present policy row (told apart as a whole row) of greatest `since` below its close, `since` being the clock the row entered at (#151 D4), kept
+/// while the row is present at the end of each clock.
+/// The fold is a function of its present rows (D6): a row added or withdrawn at a closed window, or a policy row withdrawn, changes the key's transitions from
+/// that window on (Prop. 6.7 (2)), and the operator retracts and writes only the rows that differ. Per key it keeps its policy rows, the observations of its
+/// present windows, its states where they change and the transitions it wrote. A key whose state a silent window leaves as it is has reached its `rest`
+/// and is stepped again at its next observed window or the next window a policy row enters.</summary>
 sealed class FoldOp : PhysOp
 {
     /// <summary>One value of a column: its number or code, or absent.</summary>
@@ -1106,38 +1111,48 @@ sealed class FoldOp : PhysOp
         public bool Equals(Cell[]? a, Cell[]? b) => a.AsSpan().SequenceEqual(b);
         public int GetHashCode(Cell[] a) { var h = new HashCode(); foreach (var c in a) h.Add(c); return h.ToHashCode(); }
     }
-    sealed class Policy(Cell[] zeta, long since) { public readonly Cell[] Zeta = zeta; public readonly long Since = since; public long Count; }
-    /// <summary>A window not yet closed: the weight of its rows (silent at 0) and, per observe aggregate, the weight of each distinct value.</summary>
+    sealed class Policy(Cell[] whole, Cell[] zeta, long since) { public readonly Cell[] Whole = whole, Zeta = zeta; public readonly long Since = since; public long Count; }
+    /// <summary>A present window of a key: the weight of its rows (silent at 0) and, per observe aggregate, the weight of each distinct value.</summary>
     sealed class Win(int aggs) { public long Weight; public readonly Dictionary<Cell, long>[] Values = [.. Enumerable.Range(0, aggs).Select(_ => new Dictionary<Cell, long>())]; }
     sealed class KeyState(int id, Cell[] key)
     {
         public readonly int Id = id; public readonly Cell[] Key = key;
+        /// <summary>The policy rows of the key, told apart by their whole row; one that left keeps its place until the clock advances.</summary>
         public readonly List<Policy> Policies = [];
-        public readonly SortedDictionary<long, Win> Open = [];
-        /// <summary>The state after window `At`; null while no window was stepped (the key is not active).</summary>
-        public Cell[]? State; public long At; public bool Rested; public int Quiet; public long Due = long.MaxValue;
-        public Policy? InForce;
+        public readonly SortedDictionary<long, Win> Obs = [];
+        /// <summary>n_k, null while the key is not active; the states σ_n at n_k and at every window where the state changes, up to `At`.</summary>
+        public long? Start; public readonly SortedDictionary<long, Cell[]> Trace = [];
+        /// <summary>The transitions written, by window.</summary>
+        public readonly SortedDictionary<long, Cell[]> Out = [];
+        /// <summary>The newest window stepped; whether the key rests there; the least window a change reached since.</summary>
+        public long At = long.MinValue; public bool Rested; public long Dirty = long.MaxValue; public long Due = long.MaxValue; public bool Stopped;
+    }
+    /// <summary>A key being stepped from window `N` to `Last`, from the state `State` (σ_{N−1}; null at n_k).</summary>
+    sealed class Job(KeyState st, long from, long n, long last, Cell[]? state)
+    {
+        public readonly KeyState St = st; public readonly long From = from, Last = last; public long N = n; public Cell[]? State = state;
+        public int Quiet; public bool Rested;
+        public readonly List<(long Ws, Cell[] Row)> Rows = [];
+        public (Cell[] Zeta, long Since)? Zeta; public Win? Obs;
     }
     /// <summary>Def. 6.5 item 3 asks a fold to come to rest after finitely many silent windows. A fold whose `next` keeps changing the state over this many silent
-    /// windows in a row is stopped there and counted under invalid parameters, so a jump of the clock cannot make it step without end.</summary>
+    /// windows in a row is stopped there and counted once per key under invalid parameters, so a jump of the clock cannot make it step without end.</summary>
     const int MaxQuiet = 1 << 16;
 
-    readonly TFold t; readonly long width, hop, lambda; readonly long? lookBack;
+    readonly TFold t; readonly long width, hop, lambda;
     readonly VExpr[] keys, observed, starts, nexts; readonly int[] polKey, polZeta;
     readonly int inWs, inNoData = -1, show;
     readonly int[] outKey, outObs, outZeta, stepZeta, stepState, stepObs; readonly int outWs, outWe, outFrom, outTo, outSince;
     readonly Dictionary<Cell[], KeyState> states = new(new Cells());
     readonly List<KeyState> byId = [];
     readonly SortedSet<(long Close, int Id)> due = [];
+    readonly HashSet<KeyState> pending = [], left = [];
     readonly BatchBuilder stepRows;
     long frontier = long.MinValue;
 
-    /// <summary>`lookBack`: the look-back of the series upstream, if any. A window it withdraws because the window grew old is no change of the window's rows:
-    /// the fold keeps the rows it saw while the window was inside the look-back. A window the series never showed inside it (one advance past its end and the
-    /// look-back) is silent, as in the series' output (#151).</summary>
-    public FoldOp(TFold t, Layout inLayout, Layout policyLayout, OpContext cx, long width, long hop, long lambda, long? lookBack = null) : base(t)
+    public FoldOp(TFold t, Layout inLayout, Layout policyLayout, OpContext cx, long width, long hop, long lambda) : base(t)
     {
-        this.t = t; this.width = width; this.hop = hop; this.lambda = lambda; this.lookBack = lookBack;
+        this.t = t; this.width = width; this.hop = hop; this.lambda = lambda;
         keys = [.. t.Keys.Select(k => ExprCompiler.Compile(k.Value, inLayout, cx.It, cx.Faults))];
         observed = [.. t.Observe.Select(o => ExprCompiler.Compile(o.Value!, inLayout, cx.It, cx.Faults))];
         var step = Layout.Of(t.Step);
@@ -1157,10 +1172,19 @@ sealed class FoldOp : PhysOp
     /// <summary>The start of the newest window on the grid of the hop that has closed, if one has.</summary>
     long? LastClosed()
     {
+        if (frontier == long.MinValue) return null;
         var bound = (Int128)frontier - width - lambda;
         if (bound < long.MinValue) return null;
         var q = bound / hop; if (bound % hop < 0) q--;
         return (long)(q * hop);
+    }
+    /// <summary>The first window on the grid that closes after `since`: where a policy row of that `since` starts to count.</summary>
+    long Enters(long since)
+    {
+        if (since == long.MinValue) return long.MinValue;
+        var bound = (Int128)since - width - lambda;
+        var q = bound / hop; if (bound % hop < 0) q--;
+        return OpContext.Clamp((q + 1) * hop);
     }
 
     KeyState StateOf(Cell[] key)
@@ -1170,58 +1194,69 @@ sealed class FoldOp : PhysOp
         return st;
     }
 
-    /// <summary>The policy in force: the present row with the greatest `since`; none when two rows share it.</summary>
-    static Policy? InForce(KeyState st)
+    /// <summary>The policy in force at window `ws`: the present rows with `since` below its close and the greatest `since` among them, when they hold one policy.</summary>
+    (Cell[] Zeta, long Since)? InForce(KeyState st, long ws)
     {
+        var close = Close(ws);
         Policy? best = null; var tie = false;
         foreach (var p in st.Policies)
+        {
+            if (p.Count <= 0 || p.Since >= close && p.Since != long.MinValue) continue;
             if (best is null || p.Since > best.Since) { best = p; tie = false; }
-            else if (p.Since == best.Since) tie = true;
-        return tie ? null : best;
+            else if (p.Since == best.Since && !p.Zeta.AsSpan().SequenceEqual(best.Zeta)) tie = true;
+        }
+        return best is null || tie ? null : (best.Zeta, best.Since);
     }
 
-    long FirstObserved(KeyState st) { foreach (var (ws, w) in st.Open) if (w.Weight > 0) return ws; return long.MaxValue; }
+    /// <summary>The next window after `ws` where something can move a key at rest: its next window that is not silent, or the next where a policy row enters.</summary>
+    long NextEvent(KeyState st, long ws)
+    {
+        var next = long.MaxValue;
+        foreach (var (w, win) in st.Obs) if (w > ws && win.Weight > 0) { next = w; break; }
+        foreach (var p in st.Policies) if (p.Count > 0 && Enters(p.Since) is var e && e > ws && e < next) next = e;
+        return next;
+    }
 
-    /// <summary>The close of the next window the key steps: the one after `At` while the key is active and not at rest, else its first observed open window.</summary>
+    /// <summary>The close at which the key must be stepped next: right away after a change at a closed window, else the next window while it moves, else its next event.</summary>
     void Schedule(KeyState st)
     {
         if (st.Due != long.MaxValue) due.Remove((st.Due, st.Id));
-        var next = st.State is not null && !st.Rested ? Close(st.At + hop) : FirstObserved(st) is var ws && ws != long.MaxValue ? Close(ws) : long.MaxValue;
-        st.Due = next;
-        if (next != long.MaxValue) due.Add((next, st.Id));
+        var ws = st.Start is not null && !st.Rested ? (st.At == long.MinValue ? long.MaxValue : OpContext.Clamp((Int128)st.At + hop)) : NextEvent(st, st.At);
+        st.Due = ws == long.MaxValue ? long.MaxValue : Close(ws);
+        if (st.Due != long.MaxValue) due.Add((st.Due, st.Id));
+    }
+
+    void Touch(KeyState st, long ws)
+    {
+        if (LastClosed() is { } last && ws <= last) { st.Dirty = Math.Min(st.Dirty, ws); pending.Add(st); }
+        else Schedule(st);
     }
 
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
     {
-        var touched = new HashSet<KeyState>();
         if (In(inputs, "policy") is { Rows: > 0 } pb)
             for (var k = 0; k < pb.Rows; k++)
             {
                 var row = pb.RowAt(k);
-                var key = polKey.Select(i => Cell.Of(pb.Cols[i], row)).ToArray(); var zeta = polZeta.Select(i => Cell.Of(pb.Cols[i], row)).ToArray();
+                var key = polKey.Select(i => Cell.Of(pb.Cols[i], row)).ToArray();
                 if (key.Any(c => !c.P)) continue;
+                var whole = pb.Cols.Select(c => Cell.Of(c, row)).ToArray();
                 var st = StateOf(key); var w = pb.Weight(row);
-                var p = st.Policies.Find(x => x.Zeta.AsSpan().SequenceEqual(zeta));
-                if (p is null) { if (w <= 0) continue; st.Policies.Add(p = new Policy(zeta, frontier)); }        // the row enters at the clock before this step's advance
+                var p = st.Policies.Find(x => x.Whole.AsSpan().SequenceEqual(whole));
+                if (p is null)
+                {
+                    if (w <= 0) continue;
+                    st.Policies.Add(p = new Policy(whole, [.. polZeta.Select(i => whole[i])], frontier));        // the row enters at the clock before this step's advance (D4)
+                }
+                var was = p.Count > 0;
                 p.Count += w;
-                if (p.Count <= 0) st.Policies.Remove(p);
-                touched.Add(st);
+                if (was != p.Count > 0) Touch(st, Enters(p.Since));        // a row that leaves or comes back changes the key from the first window it is in force at
+                if (p.Count <= 0) left.Add(st);
             }
-        foreach (var st in touched)
-        {
-            var now = InForce(st);
-            if (now == st.InForce) continue;
-            st.InForce = now;
-            // a new policy folds only windows that close after it entered; the windows a key at rest skipped closed under the old one and left its state as it was
-            if (st.State is not null && st.Rested && LastClosed() is { } closed) st.At = Math.Max(st.At, closed);
-            st.Rested = false; st.Quiet = 0;
-        }
         if (In(inputs, "in") is { Rows: > 0 } b)
         {
             var kc = keys.Select(k => k.Eval(b)).ToArray();
             var oc = observed.Select(o => o.Eval(b)).ToArray();
-            var clock = ep.HasAdvance ? Math.Max(frontier, ep.Lambda) : frontier;
-            var aged = lookBack is { } within && clock != long.MinValue ? OpContext.Clamp((Int128)clock - within) : long.MinValue;
             for (var k = 0; k < b.Rows; k++)
             {
                 var row = b.RowAt(k); var w = b.Weight(row);
@@ -1229,10 +1264,8 @@ sealed class FoldOp : PhysOp
                 var key = kc.Select(c => Cell.Of(c, row)).ToArray();
                 if (key.Any(c => !c.P)) continue;
                 var ws = b.Cols[inWs].L[row];
-                if (ws < aged) continue;                                                   // outside the look-back after this step: a withdrawal keeps the rows seen inside it, a row never shown inside it is no observation (#151)
-                if (Close(ws) <= frontier) { if (w > 0) cx.LateDropped++; continue; }      // its window has closed: a late row is dropped and counted, a withdrawal changes nothing (Thm. 6.8)
                 var st = StateOf(key);
-                if (!st.Open.TryGetValue(ws, out var win)) st.Open[ws] = win = new Win(oc.Length);
+                if (!st.Obs.TryGetValue(ws, out var win)) st.Obs[ws] = win = new Win(oc.Length);
                 win.Weight += w;
                 for (var i = 0; i < oc.Length; i++)
                 {
@@ -1241,57 +1274,83 @@ sealed class FoldOp : PhysOp
                     var n = win.Values[i].GetValueOrDefault(v) + w;
                     if (n == 0) win.Values[i].Remove(v); else win.Values[i][v] = n;
                 }
-                if (win.Weight == 0 && win.Values.All(x => x.Count == 0)) st.Open.Remove(ws);
-                touched.Add(st);
+                if (win.Weight == 0 && win.Values.All(x => x.Count == 0)) st.Obs.Remove(ws);
+                Touch(st, ws);
             }
         }
-        foreach (var st in touched) Schedule(st);
+        if (ep.HasAdvance && ep.Lambda > frontier)
+        {
+            // a policy row keeps the clock it entered at while it has a row at the end of each clock, as an element of a series does (Def. 7.16)
+            foreach (var st in left) st.Policies.RemoveAll(x => x.Count <= 0);
+            left.Clear();
+            frontier = ep.Lambda;
+            while (due.Count > 0 && due.Min.Close <= frontier) { var (close, id) = due.Min; due.Remove((close, id)); byId[id].Due = long.MaxValue; pending.Add(byId[id]); }
+        }
         var bb = EmptyOutput();
-        if (ep.HasAdvance && ep.Lambda > frontier) { frontier = ep.Lambda; Step(bb, cx); }
+        if (pending.Count > 0 && LastClosed() is { } closed) Step(bb, cx, closed);
+        pending.Clear();
         return bb.Build();
     }
 
-    /// <summary>Steps every window that closed, in rounds: each round steps one window of every due key, with one evaluation of `start` and `next` over all of them.</summary>
-    void Step(BatchBuilder bb, OpContext cx)
+    /// <summary>The job of a key that changed or is due: from the first window a change reached (from n_k afresh when it reached n_k or the key is not active),
+    /// else from the window after the newest stepped one, up to the newest closed window. Null when there is nothing to step.</summary>
+    Job? JobOf(KeyState st, long last)
     {
-        var round = new List<(KeyState St, long Ws, Win? Obs, bool First)>();
-        while (due.Count > 0 && due.Min.Close <= frontier)
+        if (st.Start is { } nk && st.Dirty > nk)
+        {
+            var from = Math.Min(st.Dirty, OpContext.Clamp((Int128)st.At + hop));
+            foreach (var ws in st.Trace.Keys.Where(x => x >= from).ToList()) st.Trace.Remove(ws);
+            var before = st.Trace.Last(x => x.Key < from).Value;
+            return new Job(st, from, from, last, before);
+        }
+        st.Start = null; st.Trace.Clear(); st.Rested = false;
+        foreach (var (ws, win) in st.Obs)
+        {
+            if (ws > last) break;
+            if (win.Weight > 0 && InForce(st, ws) is not null) { st.Start = ws; return new Job(st, long.MinValue, ws, last, null); }
+        }
+        st.At = last; st.Rested = true;
+        return null;
+    }
+
+    /// <summary>Steps the changed and due keys to the newest closed window, in rounds: each round steps one window of every key that needs `start` or `next`,
+    /// with one evaluation of them over all of these keys.</summary>
+    void Step(BatchBuilder bb, OpContext cx, long last)
+    {
+        var jobs = new List<Job>();
+        foreach (var st in pending) { var job = JobOf(st, last); st.Dirty = long.MaxValue; if (job is not null) jobs.Add(job); else { Retract(st, long.MinValue, [], bb); Schedule(st); } }
+        var round = new List<Job>();
+        while (jobs.Count > 0)
         {
             round.Clear();
-            while (due.Count > 0 && due.Min is var (close, id) && close <= frontier)
+            foreach (var job in jobs)
             {
-                due.Remove((close, id));
-                var st = byId[id]; st.Due = long.MaxValue;
-                var first = st.State is null;
-                var ws = first || st.Rested ? FirstObserved(st) : st.At + hop;
-                st.Open.Remove(ws, out var obs);
-                if (st.InForce is null)
-                {
-                    // no policy in force when the window closes: the window is not folded, and the key waits for its next observed window
-                    if (!first) { st.At = ws; st.Rested = true; }
-                    Schedule(st);
-                    continue;
-                }
-                round.Add((st, ws, obs, first));
+                // windows without a policy keep the state and need no evaluation
+                while (job.N <= job.Last && job.State is not null && (job.Zeta = InForce(job.St, job.N)) is null) { job.Quiet = 0; job.Rested = true; job.N = OpContext.Clamp((Int128)job.N + hop); }
+                if (job.N > job.Last) { Finish(job, bb); continue; }
+                job.Zeta ??= InForce(job.St, job.N);
+                job.Obs = job.St.Obs.GetValueOrDefault(job.N);
+                round.Add(job);
             }
+            jobs.RemoveAll(j => j.N > j.Last);
             if (round.Count == 0) continue;
             stepRows.Reset();
             for (var j = 0; j < round.Count; j++)
             {
-                var (st, _, obs, first) = round[j];
+                var job = round[j];
                 var r = stepRows.Add(1);
-                for (var i = 0; i < stepZeta.Length; i++) Put(stepRows, r, stepZeta[i], st.InForce!.Zeta[i]);
-                if (!first) for (var i = 0; i < stepState.Length; i++) Put(stepRows, r, stepState[i], st.State![i]);
-                for (var i = 0; i < stepObs.Length; i++) Put(stepRows, r, stepObs[i], Observe(t.Observe[i].Fn, obs?.Values[i]));
+                for (var i = 0; i < stepZeta.Length; i++) Put(stepRows, r, stepZeta[i], job.Zeta!.Value.Zeta[i]);
+                if (job.State is not null) for (var i = 0; i < stepState.Length; i++) Put(stepRows, r, stepState[i], job.State[i]);
+                for (var i = 0; i < stepObs.Length; i++) Put(stepRows, r, stepObs[i], Observe(t.Observe[i].Fn, job.Obs?.Values[i]));
             }
             var sb = stepRows.Batch;
-            if (round.Any(x => x.First))
+            if (round.Any(x => x.State is null))
                 for (var i = 0; i < starts.Length; i++)
                 {
                     var c = starts[i].Eval(sb);
                     var start = new Cell[round.Count];
-                    for (var j = 0; j < round.Count; j++) if (round[j].First) start[j] = Cell.Of(c, j);
-                    for (var j = 0; j < round.Count; j++) if (round[j].First) Put(stepRows, j, stepState[i], start[j]);
+                    for (var j = 0; j < round.Count; j++) if (round[j].State is null) start[j] = Cell.Of(c, j);
+                    for (var j = 0; j < round.Count; j++) if (round[j].State is null) Put(stepRows, j, stepState[i], start[j]);
                 }
             var before = new Cell[round.Count][];
             for (var j = 0; j < round.Count; j++) before[j] = [.. stepState.Select(s => Cell.Of(sb.Cols[s], j))];
@@ -1300,16 +1359,37 @@ sealed class FoldOp : PhysOp
             for (var i = 0; i < nexts.Length; i++) { var c = nexts[i].Eval(sb); for (var j = 0; j < round.Count; j++) after[j][i] = Cell.Of(c, j); }
             for (var j = 0; j < round.Count; j++)
             {
-                var (st, ws, obs, first) = round[j];
-                var silent = obs is not { Weight: > 0 };
-                st.Quiet = silent ? st.Quiet + 1 : 0;
-                st.Rested = silent && after[j].AsSpan().SequenceEqual(before[j]);
-                if (!st.Rested && st.Quiet >= MaxQuiet) { st.Rested = true; cx.Faults.InvalidParameter++; }
-                if (first || after[j][show] != before[j][show]) Write(bb, st, ws, before[j][show], after[j][show], obs);
-                st.State = after[j]; st.At = ws;
-                Schedule(st);
+                var job = round[j]; var st = job.St; var ws = job.N;
+                var first = job.State is null;
+                if (first || after[j][show] != before[j][show]) job.Rows.Add((ws, Row(st, ws, before[j][show], after[j][show], job.Obs, job.Zeta!.Value)));
+                var same = after[j].AsSpan().SequenceEqual(before[j]);
+                if (first || !same) st.Trace[ws] = after[j];
+                var silent = job.Obs is not { Weight: > 0 };
+                job.Quiet = silent ? job.Quiet + 1 : 0;
+                job.Rested = silent && same;
+                if (!job.Rested && job.Quiet >= MaxQuiet) { job.Rested = true; if (!st.Stopped) { st.Stopped = true; cx.Faults.InvalidParameter++; } }
+                job.State = after[j];
+                job.N = job.Rested ? Math.Min(NextEvent(st, ws), OpContext.Clamp((Int128)job.Last + hop)) : OpContext.Clamp((Int128)ws + hop);
             }
         }
+    }
+
+    /// <summary>Ends a job: the key's transitions from the job's first window on are replaced by the ones it found, writing only the rows that differ.</summary>
+    void Finish(Job job, BatchBuilder bb)
+    {
+        var st = job.St;
+        Retract(st, job.From, job.Rows, bb);
+        st.At = job.Last; st.Rested = job.Rested;
+        Schedule(st);
+    }
+
+    void Retract(KeyState st, long from, List<(long Ws, Cell[] Row)> rows, BatchBuilder bb)
+    {
+        var fresh = rows.ToDictionary(x => x.Ws, x => x.Row);
+        foreach (var (ws, old) in st.Out.Where(x => x.Key >= from).ToList())
+            if (!fresh.TryGetValue(ws, out var now) || !now.AsSpan().SequenceEqual(old)) { Write(bb, old, -1); st.Out.Remove(ws); }
+        foreach (var (ws, now) in fresh)
+            if (!st.Out.ContainsKey(ws)) { Write(bb, now, 1); st.Out[ws] = now; }
     }
 
     /// <summary>What an observe aggregate reads of a window: the number of its distinct values, or the least or greatest of them; absent in a silent window.</summary>
@@ -1330,15 +1410,19 @@ sealed class FoldOp : PhysOp
         if (!v.P) bb.Absent(row, col);
     }
 
-    void Write(BatchBuilder bb, KeyState st, long ws, Cell from, Cell to, Win? obs)
+    /// <summary>A transition row in the order of the output columns: key, window start and end, from, to, observation, policy, since.</summary>
+    Cell[] Row(KeyState st, long ws, Cell from, Cell to, Win? obs, (Cell[] Zeta, long Since) zeta) =>
+        [.. st.Key, new(ws, 0, true), new(OpContext.Clamp((Int128)ws + width), 0, true), from, to,
+         .. t.Observe.Select((o, i) => Observe(o.Fn, obs?.Values[i])), .. zeta.Zeta, zeta.Since == long.MinValue ? default : new(zeta.Since, 0, true)];
+
+    void Write(BatchBuilder bb, Cell[] cells, long weight)
     {
-        var row = bb.Add(1);
-        for (var i = 0; i < outKey.Length; i++) Put(bb, row, outKey[i], st.Key[i]);
-        Put(bb, row, outWs, new(ws, 0, true)); Put(bb, row, outWe, new(OpContext.Clamp((Int128)ws + width), 0, true));
-        Put(bb, row, outFrom, from); Put(bb, row, outTo, to);
-        for (var i = 0; i < outObs.Length; i++) Put(bb, row, outObs[i], Observe(t.Observe[i].Fn, obs?.Values[i]));
-        for (var i = 0; i < outZeta.Length; i++) Put(bb, row, outZeta[i], st.InForce!.Zeta[i]);
-        Put(bb, row, outSince, st.InForce!.Since == long.MinValue ? default : new(st.InForce.Since, 0, true));
+        var row = bb.Add(weight); var c = 0;
+        foreach (var i in outKey) Put(bb, row, i, cells[c++]);
+        Put(bb, row, outWs, cells[c++]); Put(bb, row, outWe, cells[c++]); Put(bb, row, outFrom, cells[c++]); Put(bb, row, outTo, cells[c++]);
+        foreach (var i in outObs) Put(bb, row, i, cells[c++]);
+        foreach (var i in outZeta) Put(bb, row, i, cells[c++]);
+        Put(bb, row, outSince, cells[c]);
     }
 }
 
@@ -1372,7 +1456,7 @@ sealed class UnionOp : PhysOp
 }
 
 /// <summary>Distinct: a row is present while its multiplicity is positive. Counts per whole row; a transition from absent to present emits the row once, from present to absent retracts it once.</summary>
-/// <summary>Decimals as key codes: equal numbers get one code whatever their scale, so a Decimal can be a group, roll-up or threshold key and the argument of countDistinct in tables keyed by 64-bit codes.</summary>
+/// <summary>Decimals as key codes: equal numbers get one code whatever their scale, so a Decimal can be a group, roll-up or fold key and the argument of countDistinct in tables keyed by 64-bit codes.</summary>
 sealed class DecimalCodes
 {
     readonly Dictionary<decimal, long> codes = []; readonly List<decimal> values = [];

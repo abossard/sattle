@@ -152,7 +152,7 @@ public static class Worlds
 
     public static readonly World FilteredEmit = Rows("filtered emit", "Filter, EmitEntity");
     public static readonly World OptionalProperty = Rows("optional property", "EmitEntity") with { Witnesses = ["prop:d="] };
-    /// <summary>A fold whose look-back (3 minutes) is shorter than the logs and than a window and its late horizon of three: a window leaves the series before it closes, and the fold keeps its rows (#151); the state has to outlive the windows that set it (D2).</summary>
+    /// <summary>A fold whose look-back (10 minutes) is shorter than the logs: a window leaves the series six windows after it closes (a window and its late horizon of three take four), and the fold forgets it (#151 D6): the key starts again at its first window still inside the look-back.</summary>
     /// <summary>#159 G2 and #151 D1: a fold by the group `g` of the items, straight over their series, so two items of one group give two rows for one key and window.</summary>
     public static readonly World SharedKeyThreshold = View("threshold by a key two items share", "Series, Fold", 0.3, Dense) with { Witnesses = ["state=t:off"] };
     public static readonly World Hysteresis = View("threshold over a short look-back", "Series, Rollup, Fold", 0.45, Dense) with { Witnesses = ["state=t:on", "state=t:off"] };
@@ -171,7 +171,7 @@ public static class Worlds
     public static readonly World TimeToLive = Silence("no data without a fill", "Series with ttl, Map, Fold") with { AdvanceShare = 0.35 };
     public static readonly World RollupAll = Silence("roll-up in no data when all members are", "Series with fill and ttl, Rollup, Fold");
 
-    /// <summary>#151 D4: a fold whose policy rows are the items, `above` the item's `n` and `enterAfter` n - 1, with a constant `below` of 1: a revised item is a new policy row, which holds from the windows that close after it entered.</summary>
+    /// <summary>#151 D4: a fold by the group of the items whose policy rows are the items, `above` the item's `n` and `enterAfter` n - 1, with a constant `below` of 1: a revised item is a new policy row, which holds from the windows that close after it entered, and two items of one group are two rows even with one policy. The signal shows the `since` of its newest transition.</summary>
     public static readonly World RowParameters = View("threshold with parameters of the row", "Series, Map, Fold", 0.45,
         [
             new("a", (r, now) => Row(("k", Text(r, "k", 2)), ("g", Value.Text("g0")), ("n", Value.Integer(r.Next(4))), ("d", Value.Null), ("t", Value.Instant(now))), f => ((TextValue)f["k"]).S),

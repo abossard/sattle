@@ -1,11 +1,13 @@
 using System.Collections.Immutable;
 using Sattle.Core;
+using Sattle.Language;
+using Sattle.Runtime;
 using Sattle.Reference;
 using static Sattle.Differential.Logs;
 
 namespace Sattle.Differential;
 
-/// <summary>Def. 7.14 and 7.15 and the fold of Def. 6.5 on the smallest logs that show them, in the world `fill and no data`: hits filled with 0, a look-back of five minutes, a time to live of three, "on" at one window of 3 or more, "off" after two windows of 1 or less, "silent" after three silent windows in a row (#151 D3: silence is silent windows, a `quiet` counter and a `gap` of 3 in the policy). A window of 60 s is folded when the clock passes its end plus the late horizon of three windows, so the window from 0 s at 240 s. The engine and the reference agree on each, and each gives the state the definitions say.</summary>
+/// <summary>Def. 7.14 and 7.15 and the fold of Def. 6.5 on the smallest logs that show them, in the world `fill and no data`: hits filled with 0, a look-back of thirty minutes, a time to live of three, "on" at one window of 3 or more, "off" after two windows of 1 or less, "silent" after three silent windows in a row (#151 D3: silence is silent windows, a `quiet` counter and a `gap` of 3 in the policy). A window of 60 s is folded when the clock passes its end plus the late horizon of three windows, so the window from 0 s at 240 s. The engine and the reference agree on each, and each gives the state the definitions say.</summary>
 public class SilenceTests
 {
     static RowInput Item(string k, long weight = 1) => new("a", Logs.Row(("k", Value.Text(k)), ("g", Value.Text("g0")), ("n", Value.Integer(1)), ("d", Value.Null), ("t", Value.Instant(Origin))), weight);
@@ -30,8 +32,8 @@ public class SilenceTests
         { "data return after the key went silent: it leaves silent from off, and a window of 2 stays there (D2, D3)", [.. On, Advance(420), Hits("k0", 2, 430), Advance(660)], "off" },
         { "data return after the key went silent and reach the threshold", [.. On, Advance(420), Hits("k0", 5, 430), Advance(660)], "on" },
         { "an item without a record and without a fill has no window that is not silent: its key never starts, so it has no state, not even silent (D3)", [Advance(60), Item("k1"), Advance(120), Advance(600)], "" },
-        { "an item that went and returned: the window that closed while it was gone has no policy and keeps the state (D4), the next is silent, and the key keeps its state (D2)", [.. On, Item("k0", -1), Advance(300), Item("k0"), Advance(360)], "on" },
-        { "and it is silent once three windows in a row with a policy had no record (D3)", [.. On, Item("k0", -1), Advance(300), Item("k0"), Advance(480)], "silent" },
+        { "an item that went and returned: its policy row left, and the row that came back entered at 300 s, after the window of 5 closed; so no window that is not silent has a policy, and the key has no state (D4, D6)", [.. On, Item("k0", -1), Advance(300), Item("k0"), Advance(360)], "" },
+        { "and silent windows with a policy after it do not start the key (D3)", [.. On, Item("k0", -1), Advance(300), Item("k0"), Advance(480)], "" },
         { "an item with one record and none after it is silent three windows later (D3)", [Advance(60), Item("k1"), Hits("k1", 2, 70), Advance(300), Advance(540)], "silent" },
     };
 
@@ -80,5 +82,36 @@ public class SilenceTests
         var expected = state == "" ? [] : new[] { $"state=t:{state}" };
         Assert.True(reference.Length == expected.Length && expected.All(e => reference.Any(l => l.Contains(e, StringComparison.Ordinal))), $"{what}: the reference gives\n{string.Join("\n", reference)}\nfor\n{Print(log)}");
         Assert.Null(Differential.FirstMismatch(w, [.. log], 0, reordered: false)?.ToString());
+    }
+
+    /// <summary>PROTOCOL 3.67, Def. 6.5 item 3: a fold must come to rest after finitely many silent windows. In a variant of `fill and no data` whose `quiet`
+    /// counter grows without bound on silent windows, the state never repeats, so the fold is stopped after 65,536 silent windows in a row and counted once
+    /// under `faults.invalidParameter`; the fold of the world, whose counter stops at the gap, comes to rest and is not counted. Both show silent. The record's
+    /// window stays in the input (a look-back of 50 days, a retention of 60), since a window that leaves it leaves the fold (#151 D6).</summary>
+    [Theory]
+    [InlineData(true, 0L)]
+    [InlineData(false, 1L)]
+    public void A_fold_that_does_not_come_to_rest_is_stopped_and_counted(bool comesToRest, long counted)
+    {
+        static SourceFile Variant(SourceFile f, bool rest)
+        {
+            if (!f.Path.EndsWith(".v.gkql.json", StringComparison.Ordinal)) return f;
+            var doc = System.Text.Json.Nodes.JsonNode.Parse(f.Text)!;
+            foreach (var v in doc["verbs"]!.AsArray())
+            {
+                if (v!["series"] is { } series) series["lookback"] = "1200h";
+                if (!rest && v["fold"] is { } fold)
+                    fold["state"]!["quiet"]!["next"] = System.Text.Json.Nodes.JsonNode.Parse("""{"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "n"}, {"lit": 0}]}, {"fn": "+", "args": [{"ref": "quiet"}, {"lit": 1}]}, {"lit": 0}]}""");
+            }
+            return f with { Text = doc.ToJsonString() };
+        }
+        var w = Worlds.Fill with { Name = comesToRest ? "fill and no data, look-back of 50 days" : "fill and no data, quiet without bound", Files = [.. Worlds.Fill.Files.Select(f => Variant(f, comesToRest))] };
+        using var engine = new Engine(w.Catalog, w.Catalog.Spaces.Keys.Single(), new EngineOptions { WindowRetentionNs = 60L * 24 * 60 * Minute });
+        Input[] log = [Advance(60), Item("k1"), Hits("k1", 2, 70), Advance(300), Advance(70_000 * 60)];
+        var seq = 0L;
+        foreach (var input in log)
+            if (input is AdvanceInput a) engine.Advance(a.Frontier, ++seq); else EngineRun.Ingest(engine, [(RowInput)input], ++seq);
+        Assert.Equal(counted, engine.Counters().InvalidParameter);
+        Assert.Equal("silent", engine.Graph("view").State.Entities.Single().Props.Text("d:w.view/prop:state"));
     }
 }

@@ -329,7 +329,12 @@ public class HostTests
     }
 
     [Fact]
-    public void The_catalog_has_empty_meters() => Assert.Empty(Fresh.Value.Meters("catalog")["meters"]!.AsArray());
+    public void The_catalog_has_empty_meters()
+    {
+        var answer = Fresh.Value.Meters("catalog");
+        Assert.Empty(answer["meters"]!.AsArray());
+        Assert.False(answer.AsObject().ContainsKey("thresholds"));         // PROTOCOL 3.67
+    }
 
     /// <summary>Review: Export.cs:296, after #151 D4. The meters document claims no threshold: the policy of a fold is the data of its policy rows, one per key and since, so the export has no one value to state. Its meters stay.</summary>
     [Theory]

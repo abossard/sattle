@@ -23,12 +23,12 @@ public class SmallestLogTests
     public static TheoryData<string, string, Input[], string?> Cases => new()
     {
         // ---- the first code review (paper/research/07-code-review-findings.md, section 1) ----
-        { "a state inside the band of the fold survives the look-back (#151 D2): only `exitAfter` windows at or below `below` leave the state", "threshold over a short look-back",
+        { "a state inside the band of the fold is carried over its windows (#151 D2): only `exitAfter` windows at or below `below` leave the state", "threshold over a short look-back",
             [
                 Row("a", 1, "k0", "g0", 1, 0),
                 Row("b", 1, "k0", "g0", 6, 0), Row("b", 1, "k0", "g0", 6, 60), Advance(120),            // two windows at 6: on (above 3 for 2)
                 Row("b", 1, "k0", "g0", 3, 120), Row("b", 1, "k0", "g0", 3, 180), Row("b", 1, "k0", "g0", 3, 240), Row("b", 1, "k0", "g0", 3, 300),
-                Advance(360),                                                                         // the windows at 6 left the 3 minutes of the look-back before they closed and are folded with their rows (#151); 3 never reached below 1
+                Advance(360),                                                                         // the windows at 6 are inside the 10 minutes of the look-back; 3 never reached below 1
             ], "state=t:on" },
         { "a window stays while one of its two supporting rows remains", "shared window",
             [

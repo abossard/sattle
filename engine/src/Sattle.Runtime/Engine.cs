@@ -232,8 +232,8 @@ public static class PlanCompiler
                     {
                         var (width, hop, lambda) = SeriesOf(tp, fo) is { } series ? (series.PeriodNs, series.PeriodNs, cx.RevisableFor(series.PeriodNs))
                             : WindowOf(tp, fo) is var w ? (w.WidthNs, w.HopNs, cx.RevisableFor(w.WidthNs, w.LatenessNs)) : default;
-                        op = new FoldOp(fo, inL, InputLayout(fo, "policy"), cx, width, hop, lambda, SeriesOf(tp, fo)?.WithinNs);
-                        strategies.Add($"{fo.Name}: Fold, per key a state over its windows in order, stepped when the clock passes a window's close; transitions are never withdrawn");
+                        op = new FoldOp(fo, inL, InputLayout(fo, "policy"), cx, width, hop, lambda);
+                        strategies.Add($"{fo.Name}: Fold, per key a state over its windows in order, selected when the clock reaches a window's close; a change at a closed window steps the key again from that window");
                         break;
                     }
                 case TEmitEntity e: op = new EmitEntityOp(e, sink++, inL, cx, Compile, from?.Cols ?? [], from?.Group); strategies.Add($"{e.Name}: EmitEntity {(e.Update ? "update" : "create")}, support-counted element layer"); break;

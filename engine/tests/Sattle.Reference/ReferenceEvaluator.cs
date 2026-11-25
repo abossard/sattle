@@ -29,7 +29,7 @@ public sealed record SpaceFacts(ImmutableSortedDictionary<string, GraphFacts> Gr
 /// Three things are functions of the log and not of the integrated state, and are carried from one input to the next as plain sets:
 /// the rows a windowed Group accepted (lateness is judged against the frontier at the row's position, premise B2),
 /// and, to find what an input added to or took from such an operator, its integrated input after the previous input;
-/// and per fold (Def. 6.5) its policy rows with the clock each entered at (#151 D4), the state of each active key after its newest closed window (D2) and the transitions selected so far.
+/// and per fold (Def. 6.5) its policy rows with the clock each entered at (#151 D4); the fold itself is recomputed from its present rows (D6).
 /// Two more are recorded facts (Def. 7.14): how far each source has reported, and since which clock (the arrival of its row, kept while it has a row at the end of each clock) an element has had a row in the structural input of a Series that fills or has a time to live.
 /// </summary>
 public static class ReferenceEvaluator
@@ -168,8 +168,8 @@ public static class ReferenceEvaluator
                     }
                 case TFold fold:
                     {
-                        var (width, hop, lateness, within) = Windows(plan, fold, settings);
-                        var (result, carried) = Denotation.Fold(fold, In("in"), In("policy"), width, hop, lateness, within, frontierBefore, frontier, p.Carried.GetValueOrDefault(slot, Denotation.Carried.None));
+                        var (width, hop, lateness) = Windows(plan, fold, settings);
+                        var (result, carried) = Denotation.Fold(fold, In("in"), In("policy"), width, hop, lateness, frontierBefore, frontier, p.Carried.GetValueOrDefault(slot, Denotation.Carried.None));
                         p = p with { Carried = p.Carried.SetItem(slot, carried) };
                         outs = outs.SetItem(op.Name, result);
                         break;
@@ -228,16 +228,14 @@ public static class ReferenceEvaluator
     }
 
     /// <summary>Def. 6.4 for a fold: the windows of its nearest Window (width, hop, windows start on the grid of the hop) or Series (width and hop its period), and
-    /// the lateness λ that closes them, the time the engine keeps such a window revisable: the Window's lateness, else the late horizon, at most the retention.
-    /// `Within`: the look-back of the nearest Series upstream, null without one.</summary>
-    static (long Width, long Hop, long Lateness, long? Within) Windows(TypedProjection plan, TFold fold, Settings s)
+    /// the lateness λ that closes them, the time the engine keeps such a window revisable: the Window's lateness, else the late horizon, at most the retention.</summary>
+    static (long Width, long Hop, long Lateness) Windows(TypedProjection plan, TFold fold, Settings s)
     {
         long Revisable(long width, long? lateness) => (long)System.Int128.Min(lateness ?? s.Horizon(width), s.WindowRetentionNs);
-        var within = Upstream<TSeries>(plan, fold)?.WithinNs;
         return Upstream<TOp>(plan, fold, o => o is TWindow or TSeries) switch
         {
-            TWindow w => (w.WidthNs, w.HopNs, Revisable(w.WidthNs, w.LatenessNs), within),
-            TSeries x => (x.PeriodNs, x.PeriodNs, Revisable(x.PeriodNs, null), within),
+            TWindow w => (w.WidthNs, w.HopNs, Revisable(w.WidthNs, w.LatenessNs)),
+            TSeries x => (x.PeriodNs, x.PeriodNs, Revisable(x.PeriodNs, null)),
             _ => throw new Undefined($"Fold {fold.Name} has no Window or Series upstream"),
         };
     }

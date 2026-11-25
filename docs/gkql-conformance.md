@@ -99,7 +99,7 @@ After a change `fixpoint` evaluates only the changed keys and the nodes that rea
 | `series` | T, `u` = window start + `lookback`; `since` is the clock at the end of which the element first had rows, sampled at the end of each clock (D3 on #159) |
 | `series` with `fill` | the progress of a source is a recorded input, records (source, until), not a time: the greatest `until` per source (K), joined with the sources that feed the window (J), window end at or before `until` less the hop lag (L), and window end at or before the clock (T) |
 | `series` with `freshness` | the no-data record of an element: T with `s = S + freshness`, `S` the later of `since` and the end of its newest record, until a newer record; it sits at the window that holds `S + freshness`. A roll-up in no data: K by the roll-up key, at the greatest window of its members' records |
-| `fold` | a window is folded when the clock passes its close, with the policy row of greatest `since` (the clock at which the row entered, #151 D4); a row for a closed window is late (`lateRows`); a transition is never withdrawn (Thm. 6.8) |
+| `fold` | `s` = the close of the transition's window, `u = ∞`; the fold is a function of its present rows (#151 D6): a row added or withdrawn at a closed window, or a policy row withdrawn, changes the key's transitions from that window on (Prop. 6.7 (2)); the policy of a window is the present row of greatest `since` below its close (the clock at which the row entered, kept while the row is present at the end of each clock, #151 D4) |
 
 ## Gaps
 

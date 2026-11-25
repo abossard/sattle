@@ -930,7 +930,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     {
         lock (Gate)
         {
-            if (g == "catalog") return new JsonObject { ["meters"] = new JsonArray(), ["thresholds"] = new JsonArray(), ["defaults"] = new JsonObject() };
+            if (g == "catalog") return new JsonObject { ["meters"] = new JsonArray(), ["defaults"] = new JsonObject() };
             HeadOf(g);
             return export.MetersDocument(Engine.Graph(g));
         }

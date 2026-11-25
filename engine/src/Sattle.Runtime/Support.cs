@@ -16,7 +16,7 @@ public static class Support
         ["Group"] = "per-key accumulators with signed weights; closing windows when keyed by windowStart",
         ["Series"] = "bilinear: new rows against seen windows, new windows against all rows",
         ["Rollup"] = "per (key, window) accumulators",
-        ["Fold"] = "per key a state over its windows in order, silent ones too, stepped when the clock passes a window's close; transitions are never withdrawn",
+        ["Fold"] = "per key a state over its windows in order, silent ones too, selected when the clock reaches a window's close; a change at a closed window steps the key again from that window and writes only the transitions that differ",
         ["Values"] = "constant rows, emitted once when the graph first evaluates",
         ["Join"] = "bilinear delta over per-side hash indexes on the equality keys",
         ["Traverse"] = "per start element the depth each element was first reached at; an added edge lowers depths from its far end, a lost edge walks the starts that visited its ends again, an edited entity touches the starts that visited it; emits the difference",
