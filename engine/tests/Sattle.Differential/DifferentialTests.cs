@@ -435,6 +435,24 @@ public class DifferentialTests
         }
     }
 
+    /// <summary>#175 A1: a window keeps one value per observe aggregate in place and the others aside. In `threshold by a key two items share`, three items of
+    /// g0 give the window at 60 s the hits 3, 0 and 1 before it is folded; then the row of `withdrawn` leaves, the value in place or one aside, and again before
+    /// the fold. The count and the max of the window follow, and the engine gives the reference's states under every cut.</summary>
+    [Theory]
+    [InlineData("k0")]
+    [InlineData("k1")]
+    [InlineData("k2")]
+    public void A_window_with_several_values_observes_them_after_one_leaves(string withdrawn)
+    {
+        var w = Worlds.SharedKeyThreshold;
+        var hits = new Dictionary<string, long> { ["k0"] = 3, ["k1"] = 0, ["k2"] = 1 };
+        Sattle.Reference.Input[] log = [.. hits.Keys.Select(k => PlainRow("a", 1, k, "g0", 1, 0)), PlainRow("b", 1, "k0", "g0", 3, 10),
+            .. hits.Select(h => PlainRow("b", 1, h.Key, "g0", h.Value, 70)), new Sattle.Reference.AdvanceInput(Logs.Origin + 150 * Logs.Second),
+            PlainRow("b", -1, withdrawn, "g0", hits[withdrawn], 70), new Sattle.Reference.AdvanceInput(Logs.Origin + 300 * Logs.Second)];
+        Assert.Null(Differential.FirstMismatch(w, log, 1, reordered: false)?.ToString());
+        Assert.Null(Differential.FirstMismatch(w, log, 1, reordered: true)?.ToString());
+    }
+
     /// <summary>#159 G3 (R1): an element is in a Series since its row arrived, at the clock it entered, not since an advance after it. Two runs with the same rows
     /// and the same clock, one with an advance between, give the same states, under every cut, and the reference agrees. The record of the element in the window
     /// from 60 s starts its key (#151 D3: a key starts at its first window that is not silent). Without a report of its source the windows after it are silent and

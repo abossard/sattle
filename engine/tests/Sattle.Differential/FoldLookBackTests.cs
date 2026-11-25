@@ -16,12 +16,14 @@ public class FoldLookBackTests
     static RowInput Hits(string k, long n, long seconds) => new("b", Row(("k", Value.Text(k)), ("g", Value.Text("g0")), ("n", Value.Integer(n)), ("d", Value.Null), ("t", Value.Instant(Origin + seconds * Second))), 1);
     /// <summary>A row of `a` in `fold over a windowed summarize`: a hit of `k` at `seconds`, with the decimal `d`; a row of `b` is a policy row of `k`.</summary>
     static RowInput Hit(string k, long seconds, decimal? d = null) => new("a", Row(("k", Value.Text(k)), ("g", Value.Text("g0")), ("n", Value.Integer(1)), ("d", d is { } x ? Value.Decimal(x) : Value.Null), ("t", Value.Instant(Origin + seconds * Second))), 1);
-    static RowInput Policy(string k) => new("b", Row(("k", Value.Text(k)), ("g", Value.Text("g0")), ("n", Value.Integer(1)), ("d", Value.Null), ("t", Value.Instant(Origin))), 1);
+    static RowInput Policy(string k, long weight = 1) => new("b", Row(("k", Value.Text(k)), ("g", Value.Text("g0")), ("n", Value.Integer(1)), ("d", Value.Null), ("t", Value.Instant(Origin))), weight);
     static AdvanceInput Advance(long seconds) => new(Origin + seconds * Second);
 
     static object Fold(Engine engine, string graph) => engine.Graphs.Single(g => g.Name == graph).Plan.Ops.Single(o => o.GetType().Name == "FoldOp");
     static T Field<T>(object o, string name) => (T)o.GetType().GetField(name, BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance)!.GetValue(o)!;
     static IEnumerable<object> Held(object fold) => Field<System.Collections.IDictionary>(fold, "states").Values.Cast<object>();
+    /// <summary>The windows a key holds in one of its parts.</summary>
+    static int Count(object part) => (int)part.GetType().GetProperty("Count")!.GetValue(part)!;
 
     /// <summary>Runs the engine one input at a time and calls `look` after each.</summary>
     static void Run(World w, IReadOnlyList<Input> log, Action<Engine, Input> look, IReadOnlySet<string>? traced = null)
@@ -76,7 +78,7 @@ public class FoldLookBackTests
         {
             foreach (var key in Held(Fold(engine, "master")))
                 foreach (var part in new[] { "Obs", "Trace", "Out" })
-                    most = Math.Max(most, Field<System.Collections.ICollection>(key, part).Count);
+                    most = Math.Max(most, Count(Field<object>(key, part)));
         });
         Assert.InRange(most, 1, 5);
     }
@@ -154,4 +156,86 @@ public class FoldLookBackTests
         var refused = Assert.Throws<InvalidOperationException>(() => EngineRun.Load(files));
         Assert.Contains("a fold reads the summary meter_2 keyed by windowStart, and nothing else reads it: give the other reader a summarize of its own", refused.Message, StringComparison.Ordinal);
     }
+
+    /// <summary>#175 A3: a variant of `fold transitions as nodes by key and window` (a look-back of 30 minutes) whose policy rows come from the edges between
+    /// items: the edge from k0 to k1, both of group g0, gives g0 its policy row. k0 has hits in 10 minutes and the clock follows them. Then one step changes k1's
+    /// `n`, its rows in either order: the match of the edge retracts its row and adds it back, so the policy row is withdrawn and added back unchanged, and k1,
+    /// with no hits, changes no window. The fold steps no window (it stepped 7 when each of the two rows touched the key) and its output does not change. The
+    /// reference agrees under every cut, where the two rows may also come in two steps.</summary>
+    [Theory]
+    [InlineData(-1L)]
+    [InlineData(1L)]
+    public void A_policy_row_withdrawn_and_added_back_in_one_step_refolds_nothing(long firstWeight)
+    {
+        var w = Worlds.FoldTransitionNodes with
+        {
+            Name = "fold transitions as nodes by key and window, policy by edges",
+            Files = [.. Worlds.FoldTransitionNodes.Files.Select(f => f with { Text = f.Text
+                .Replace("""{"from": "signal_2", "to": "signal_5Policy"},""", """{"from": "pol_1", "to": "pol_2"}, {"from": "pol_2", "to": "signal_5Policy"},""", StringComparison.Ordinal)
+                .Replace("""{"id": "signal_3",""", """{"id": "pol_1", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "s", "label": "Item"}, {"var": "t", "label": "Item"}], "edges": [{"var": "e", "label": "Edge", "from": "s", "to": "t"}]}}, {"id": "pol_2", "verb": "project", "columns": {"c": {"ref": "s.g"}}}, {"id": "signal_3",""", StringComparison.Ordinal) })],
+        };
+        Input[] before = [Item("k0"), Item("k1"), new RowInput("edges", Row(("src", Value.Text("k0")), ("dst", Value.Text("k1"))), 1), .. Enumerable.Range(0, 10).SelectMany(m => new Input[] { Hits("k0", 5, m * 60 + 10), Advance(m * 60 + 65) })];
+        static RowInput K1(long n, long weight) => new("a", Row(("k", Value.Text("k1")), ("g", Value.Text("g0")), ("n", Value.Integer(n)), ("d", Value.Null), ("t", Value.Instant(Origin))), weight);
+        RowInput[] step = firstWeight < 0 ? [K1(1, -1), K1(2, 1)] : [K1(2, 1), K1(1, -1)];
+        Assert.Null(Differential.FirstMismatch(w, [.. before, .. step, Advance(10 * 60 + 65)], 1, reordered: false)?.ToString());
+        using var engine = new Engine(w.Catalog, w.Catalog.Spaces.Keys.Single(), new EngineOptions { WindowRetentionNs = w.RetentionNs, TraceGraphs = new HashSet<string> { "view" } });
+        long seq = 0;
+        foreach (var input in before)
+            if (input is AdvanceInput a) engine.Advance(a.Frontier, ++seq); else EngineRun.Ingest(engine, [(RowInput)input], ++seq);
+        var fold = Fold(engine, "view");
+        Dictionary<string, long> Rows() => engine.Traced["view"][((PhysOp)fold).Name].ToDictionary(r => r.Key, r => r.Value.Weight);
+        var (steps, rows) = (Field<long>(fold, "steps"), Rows());
+        Assert.NotEmpty(rows);
+        EngineRun.Ingest(engine, [.. step], ++seq);
+        Assert.Equal(steps, Field<long>(fold, "steps"));
+        Assert.Equal(rows, Rows());
+    }
+
+    /// <summary>#175 A4: in `fold over a windowed summarize` k0 has a hit in each of minutes 0 to 5, each closed after its hit, so k0 moves at minute 5. Its policy
+    /// row leaves, and the clock jumps `minutes` minutes. With no policy in force the state stays up to the next window a policy row enters, of which there is
+    /// none, so the key reaches the newest closed window in one look and does not step window by window. The reference agrees under every cut.</summary>
+    [Theory]
+    [InlineData(30)]
+    [InlineData(2000)]
+    public void A_key_with_no_policy_in_force_jumps_to_its_next_event(int minutes)
+    {
+        var w = Worlds.WindowedFold;
+        Input[] log = [Policy("k0"), .. Enumerable.Range(0, 6).SelectMany(m => new Input[] { Hit("k0", m * 60 + 10), Advance(m * 60 + 240) }), Policy("k0", -1), Advance(540 + minutes * 60)];
+        Assert.Null(Differential.FirstMismatch(w, log, 1, reordered: false)?.ToString());
+        var perAdvance = new List<long>();
+        var steps = 0L;
+        Run(w, log, (engine, input) =>
+        {
+            if (input is not AdvanceInput) return;
+            var now = Field<long>(Fold(engine, "master"), "steps");
+            perAdvance.Add(now - steps); steps = now;
+        });
+        Assert.Equal(1L, perAdvance[^1]);
+    }
+
+    /// <summary>#175 A5: the transition function of a key's mode in the fold. A change at a closed window makes a key dirty from the least window changed; its
+    /// close makes it dirty from the window after the newest stepped; a job ends it moving, at rest or stopped at its last window, or inactive when no window starts
+    /// it; a drop moves its newest window up; the seed none makes it inactive.</summary>
+    [Theory]
+    [InlineData("Resting", 4L, Max, "Changed", 2L, "Dirty", 4L, 2L)]
+    [InlineData("Dirty", 4L, 3L, "Changed", 5L, "Dirty", 4L, 3L)]
+    [InlineData("Dirty", 4L, 3L, "Changed", 1L, "Dirty", 4L, 1L)]
+    [InlineData("Moving", 4L, Max, "Due", 0L, "Dirty", 4L, Max)]
+    [InlineData("Dirty", 4L, 3L, "Due", 0L, "Dirty", 4L, 3L)]
+    [InlineData("Dirty", 4L, 3L, "Moved", 9L, "Moving", 9L, Max)]
+    [InlineData("Dirty", 4L, Max, "Rested", 9L, "Resting", 9L, Max)]
+    [InlineData("Dirty", 4L, Max, "Stopped", 9L, "Stopped", 9L, Max)]
+    [InlineData("Dirty", 4L, 2L, "Unstarted", 9L, "Inactive", 9L, Max)]
+    [InlineData("Resting", 4L, Max, "Dropped", 9L, "Resting", 9L, Max)]
+    [InlineData("Moving", 9L, Max, "Dropped", 4L, "Moving", 9L, Max)]
+    [InlineData("Moving", 9L, Max, "Emptied", 0L, "Inactive", 9L, Max)]
+    public void A_key_mode_follows_its_transition_function(string phase, long at, long from, string e, long ws, string toPhase, long toAt, long toFrom)
+    {
+        var op = typeof(Engine).Assembly.GetType("Sattle.Runtime.FoldOp")!;
+        var mode = op.GetNestedType("Mode", BindingFlags.NonPublic)!;
+        object Mode(string p, long a, long f) => Activator.CreateInstance(mode, Enum.Parse(op.GetNestedType("Phase", BindingFlags.NonPublic)!, p), a, f)!;
+        var next = mode.GetMethod("Next", BindingFlags.Public | BindingFlags.Static)!.Invoke(null, [Mode(phase, at, from), Enum.Parse(op.GetNestedType("Event", BindingFlags.NonPublic)!, e), ws]);
+        Assert.Equal(Mode(toPhase, toAt, toFrom), next);
+    }
+    const long Max = long.MaxValue;
 }
