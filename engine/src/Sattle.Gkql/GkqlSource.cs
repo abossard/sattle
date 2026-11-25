@@ -124,6 +124,8 @@ public static class Lowering
         readonly Dictionary<OntologyView, string> owners = new(ReferenceEqualityComparer.Instance);
         /// <summary>The rules with a nodes sink: a create through them makes an element, so they name its identity domain.</summary>
         readonly HashSet<string> nodeRules = new(StringComparer.Ordinal), lenses = new(StringComparer.Ordinal);
+        /// <summary>The summaries keyed by `windowStart` of rows that are not a series' windows, by out port: a fold may read one that nothing else reads (#173 D1).</summary>
+        readonly Dictionary<string, string> windowSummaries = new(StringComparer.Ordinal);
 
         public void Run()
         {
@@ -438,7 +440,10 @@ public static class Lowering
                 throw new Refused(v.Id, "fold names its keys, policy columns, state fields with start and next, and the state it shows");
             if (ins.Count != 2 || ins.FirstOrDefault(i => i.Port == "in").Rows is not { } r || ins.FirstOrDefault(i => i.Port == "policy").Rows is not { } pol)
                 throw new Refused(v.Id, "a fold has one wire to in and one to policy");
-            if (!r.Windows) throw new Refused(v.Id, "a fold reads windows: a series or a summary of windows on in");
+            if (!r.Windows && !windowSummaries.ContainsKey(r.Port)) throw new Refused(v.Id, "a fold reads windows: a series or a summary of windows on in, or a summary keyed by windowStart");
+            // the summary gives a fold its windows from their first row, before their end (#172 D2), so it gives them to nothing else
+            if (windowSummaries.TryGetValue(r.Port, out var summary) && p.Wires.Count(x => x.From == summary) > 1)
+                throw new Refused(v.Id, $"a fold reads the summary {summary} keyed by windowStart, and nothing else reads it: give the other reader a summarize of its own");
             var op = Op("Fold", v.Id, ("show", T(f.Show)));
             B.Edge(r.Port, "wire", P(op, "in")); B.Edge(pol.Port, "wire", P(op, "policy"));
             foreach (var name in f.By)
@@ -592,6 +597,7 @@ public static class Lowering
                 throw new Refused(v.Id, "a summary of windows keeps them: windowStart is a key, {\"ref\": \"windowStart\"}");
             var op = Op(r.Windows ? "Rollup" : "Group", v.Id);
             var next = new Rows(P(op, "out"), [], new(StringComparer.Ordinal), r.Windows);
+            if (!r.Windows && by.TryGetValue("windowStart", out var start) && Read(v.Id, start) is Ref { Path: "windowStart" }) windowSummaries[next.Port] = v.Id;
             foreach (var (name, x) in by)
             {
                 if (name != "windowStart") Column(v.Id, name);

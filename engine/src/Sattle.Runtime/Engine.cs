@@ -197,7 +197,9 @@ public static class PlanCompiler
                 case TGroup g when g.ClosesWindows:
                     {
                         var (width, _, lambda) = tp.WindowsOf(g);
-                        op = new WindowedGroupOp(g, width, lambda!.Value, inL, cx, withCompanions);
+                        // #172 D2: a fold straight after it reads its windows before their end
+                        var open = readers.Count > 0 && readers.All(o => o is TFold && o.Inputs["in"] is { IsPort: false } i && i.Name == g.Name);
+                        op = new WindowedGroupOp(g, width, lambda!.Value, inL, cx, withCompanions, open);
                         strategies.Add($"{g.Name}: Group over windows, per-window hash accumulators, windows close on the logical frontier, a late row revises its window");
                         break;
                     }
@@ -207,8 +209,16 @@ public static class PlanCompiler
                 case TFold fo:
                     {
                         var (width, hop, lambda) = tp.WindowsOf(fo);
-                        op = new FoldOp(fo, inL, InputLayout(fo, "policy"), cx, width, hop, lambda!.Value);
-                        strategies.Add($"{fo.Name}: Fold, per key a state over its windows in order, selected when the clock reaches a window's close; a change at a closed window steps the key again from that window");
+                        // Def. 6.7 (#172 D1): a window of a Series leaves the look-back when the Series drops it, never before it closes; a window of a Window when it closes
+                        var lookback = width + lambda!.Value;
+                        for (var cur = (TOp)fo; cur.Inputs.TryGetValue("in", out var up) && !up.IsPort;)
+                        {
+                            cur = tp.Ops.First(o => o.Name == up.Name);
+                            if (cur is TSeries feed) { lookback = Math.Max(feed.WithinNs + 1, lookback); break; }
+                            if (cur is TWindow) break;
+                        }
+                        op = new FoldOp(fo, inL, InputLayout(fo, "policy"), cx, width, hop, lambda.Value, lookback);
+                        strategies.Add($"{fo.Name}: Fold, per key a seed and a state over its windows in the look-back, selected when the clock reaches a window's close; a change at a closed window steps the key again from that window, a window that leaves the look-back is stepped once more and dropped");
                         break;
                     }
                 case TEmitEntity e: op = new EmitEntityOp(e, sink++, inL, cx, Compile, from?.Cols ?? [], from?.Group); strategies.Add($"{e.Name}: EmitEntity {(e.Update ? "update" : "create")}, support-counted element layer"); break;
@@ -236,7 +246,7 @@ public static class PlanCompiler
             if (chain.Count > 1) chains.Add(chain);
         }
         var digest = Digests.Of("[\"" + EngineVersion + "\",\"" + catalog.Modules.GetValueOrDefault(tp.Module)?.Digest + "\",\"" + tp.Id + "\"]");
-        var bound = "Series and Rollup state is bounded by look-back / period windows per key; Group and Fold by open windows plus the closed windows within the lateness the program declares; Match, Join-free, holds no state beyond the input graph.";
+        var bound = "Series and Rollup state is bounded by look-back / period windows per key; Group by open windows plus the closed windows within the lateness the program declares; Fold by its seed, policy rows and windows in the look-back per key; Match, Join-free, holds no state beyond the input graph.";
         return new CompiledProjection { Typed = tp, Ops = ops, Info = new PlanInfo(tp.Name, digest, strategies, chains, bound) };
     }
 }

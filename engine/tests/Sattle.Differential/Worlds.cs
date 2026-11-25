@@ -83,6 +83,9 @@ public static class Worlds
     public static readonly World LatenessPerInput = Rows("lateness per input", "Join, Window, Group over windows, lateness per input", 0.25) with { Witnesses = ["window "] };
     /// <summary>Rows in windows of their own time. A late row revises its window.</summary>
     public static readonly World Windowed = Rows("window late revise", "Window, Group over windows", 0.25);
+    /// <summary>#173 (Def. 6.7, #172 D1, D2): a fold straight after a windowed summarize of the rows of `a`, the hits and the greatest `d` of a key per minute,
+    /// with a policy row per row of `b`; a window leaves the look-back at its close. The state of a key and each transition with its greatest `d` are nodes.</summary>
+    public static readonly World WindowedFold = Rows("fold over a windowed summarize", "Window, Group over windows, Fold", 0.3) with { Witnesses = ["state=t:on", "state=t:off", "top=n:2.5"] };
     /// <summary>D3 (#101): sliding windows of 3 minutes that move by 60 s; a row counts in the three windows that hold it.</summary>
     static readonly World Hopped = Rows("hop 3m by 60s", "Window with a hop, Group over windows", 0.25);
     /// <summary>D3 (#101): a window over a window: the 60 s windows of the rows, summed in sliding windows of 3 minutes.</summary>
@@ -262,6 +265,7 @@ public static class Worlds
         Aggregate("extremes with countDistinct") with { Witnesses = ["lo=n:", "hi=n:"] },
         Aggregate("countif"),
         Windowed with { Witnesses = ["window "] },
+        WindowedFold,
         LatenessPerInput,
         Windowed with { Name = "window late revise, retention 2 minutes", Kind = "Window, window retention", RetentionNs = 2 * Minute, Witnesses = ["window "],
             Files = [.. Windowed.Files.Select(f => f with { Text = f.Text.Replace("\"lateness\": \"3m\"", "\"lateness\": \"1m\"", StringComparison.Ordinal) })] },   // a lateness within the retention (#169 D1)

@@ -1,0 +1,16 @@
+{
+  "module": "w",
+  "version": "1.0.0",
+  "imports": [],
+  "entities": [
+    {"name": "Signal", "properties": [{"name": "k", "type": "Text"}, {"name": "state", "type": "Text", "optional": true}]},
+    {"name": "Transition", "properties": [{"name": "k", "type": "Text"}, {"name": "windowStart", "type": "Instant"}, {"name": "to", "type": "Text", "optional": true}, {"name": "top", "type": "Decimal", "optional": true}]}
+  ],
+  "identities": [
+    {"name": "signal", "type": "Signal", "components": [{"name": "k", "type": "Text"}]},
+    {"name": "transition", "type": "Transition", "components": [{"name": "k", "type": "Text"}, {"name": "windowStart", "type": "Instant"}]}
+  ],
+  "rows": [
+    {"name": "R", "fields": [{"name": "k", "type": "Text"}, {"name": "g", "type": "Text"}, {"name": "n", "type": "Integer"}, {"name": "d", "type": "Decimal", "optional": true}, {"name": "t", "type": "Instant"}]}
+  ]
+}
