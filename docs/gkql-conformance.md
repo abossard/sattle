@@ -32,7 +32,8 @@ One row per verb. "Fails" is the requirement that fails if the row is wrong.
 | `rows` | an input wire | none | nothing | R1 |
 | `graph-match` | L (a type filter per pattern node and edge), then a chain of J | edge `u → w`: `κ₁ = id(n_u)`, `κ₂ = source(e)`; then `κ₁ = target(e)`, `κ₂ = id(n_w)`. A reference node binds by id alone. | nothing; the input graph's adjacency is the arrangement | R5, R6 |
 | `where` | L: `f(1·r) = 1·r` if the condition is true, else 0 | none | nothing | R5 |
-| `project`, `extend` | L: a function of each row, weight kept | none | nothing | R5 |
+| `project` | L: a function of each row, weight kept; the named columns only | none | nothing | R5 |
+| `extend` | L: a function of each row, weight kept; the input columns and the named ones | none | nothing | R5 |
 | `union` | L: the sum of its wires | none | nothing | R5 |
 | `distinct` | K, not summarised | `κ(r) = r` | net weight per row | R1, R6 |
 | `join` | J (inner; at least one equality) | `κ₁` = the left `on` columns, `κ₂` = the right `on` columns; a key with an absent part joins nothing | each side arranged by key | R5, R6 |
