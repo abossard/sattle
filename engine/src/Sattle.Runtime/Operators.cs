@@ -1093,8 +1093,8 @@ sealed class RollupOp : AggregatingOp
 /// The fold has a look-back (Def. 6.7): window `ws` leaves it at `ws + lookback`, the window of a Series when the Series drops it and never before it closes,
 /// that of a Window at its close (#172 D1). At the advance that drops windows, a key is stepped through them with what the fold read before this step, their
 /// transitions stay in the output and are no longer held, the state after them is the key's seed, and no row of them is read again. A windowed Group read by
-/// folds only gives a window from its first row on (#172 D2). A key with no policy row and no window row in the look-back has the seed none, and once it holds
-/// no row it is forgotten.
+/// folds only gives a window from its first row on (#172 D2). At a step that moves the clock, a key with no policy row and no window row in the look-back has
+/// the seed none (#180), and once it holds no row it is forgotten.
 /// Within the look-back the fold is a function of its present rows (D6): a row added or withdrawn at a closed window, or a policy row withdrawn, changes the key's
 /// transitions from that window on (Prop. 6.7 (2)), and the operator retracts and writes only the rows that differ. Per key it keeps its seed, its policy rows, the
 /// observations of its windows in the look-back, its states where they change and the transitions it wrote there. A key whose state a silent window leaves as it
@@ -1153,7 +1153,7 @@ sealed class FoldOp : PhysOp
     /// <summary>The windows where a key has an observation or a state, so the advance that drops them finds their keys.</summary>
     readonly SortedSet<(long Ws, int Id)> held = [];
     readonly HashSet<KeyState> pending = [], left = [];
-    /// <summary>The keys whose rows changed in this step, which may now hold none.</summary>
+    /// <summary>The keys whose rows changed since the clock last moved, which may now hold none.</summary>
     readonly HashSet<KeyState> suspects = [];
     readonly BatchBuilder stepRows;
     long frontier = long.MinValue;
@@ -1289,7 +1289,7 @@ sealed class FoldOp : PhysOp
         while (due.Count > 0 && due.Min.Close <= frontier) Due();
         if (pending.Count > 0 && LastClosed() is { } closed) Step(bb, cx, closed);
         pending.Clear();
-        Forget(bb);
+        Forget(bb, advanced);
         return bb.Build();
     }
 
@@ -1435,21 +1435,22 @@ sealed class FoldOp : PhysOp
         first = to;
     }
 
-    /// <summary>Def. 6.7: a key with no policy row and no window row in the look-back has the seed none; a key that holds no row is forgotten.</summary>
-    void Forget(BatchBuilder bb)
+    /// <summary>Def. 6.7: at a step that moves the clock, a key with no policy row and no window row in the look-back has the seed none; while the clock
+    /// stands a key keeps its seed, so how the rows between two moves of the clock are cut does not change it (#180). A key that holds no row is forgotten.</summary>
+    void Forget(BatchBuilder bb, bool advanced)
     {
-        foreach (var st in suspects)
+        suspects.RemoveWhere(st =>
         {
-            if (frontier != long.MinValue && !st.Policies.Any(p => p.Count > 0) && !st.Obs.Values.Any(w => w.Weight > 0) && (st.Seed is not null || st.Start is not null))
+            if (advanced && !st.Policies.Any(p => p.Count > 0) && !st.Obs.Values.Any(w => w.Weight > 0) && (st.Seed is not null || st.Start is not null))
             {
                 st.Seed = null; st.Start = null; st.Trace.Clear(); st.Rested = true;
                 Retract(st, long.MinValue, [], bb);
             }
-            if (st.Policies.Count > 0 || st.Obs.Count > 0 || st.Seed is not null || st.Start is not null || st.Out.Count > 0) continue;
+            if (st.Policies.Count > 0 || st.Obs.Count > 0 || st.Seed is not null || st.Start is not null || st.Out.Count > 0) return advanced;
             if (st.Due != long.MaxValue) due.Remove((st.Due, st.Id));
             states.Remove(st.Key); byId[st.Id] = null; free.Push(st.Id);
-        }
-        suspects.Clear();
+            return true;
+        });
     }
 
     /// <summary>Ends a job: the key's transitions from the job's first window on are replaced by the ones it found, writing only the rows that differ.</summary>
