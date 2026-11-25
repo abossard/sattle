@@ -117,14 +117,6 @@
                   "ref": "metric"
                 }
               ]
-            },
-            "props": {
-              "name": {
-                "ref": "metric"
-              },
-              "average": {
-                "ref": "mean"
-              }
             }
           }
         ],
@@ -138,6 +130,38 @@
         ]
       },
       "rule": "reports"
+    },
+    {
+      "id": "showMetric",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "m",
+            "label": "Metric",
+            "id": {
+              "identity": "metric",
+              "args": [
+                {
+                  "ref": "resourceId"
+                },
+                {
+                  "ref": "metric"
+                }
+              ]
+            },
+            "props": {
+              "name": {
+                "ref": "metric"
+              },
+              "average": {
+                "ref": "mean"
+              }
+            }
+          }
+        ]
+      },
+      "rule": "showMetric"
     }
   ],
   "wires": [
@@ -156,6 +180,10 @@
     {
       "from": "perMetric",
       "to": "reports"
+    },
+    {
+      "from": "perMetric",
+      "to": "showMetric"
     }
   ]
 }
