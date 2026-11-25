@@ -1148,6 +1148,10 @@ sealed class ThresholdOp : PhysOp
     }
 
     /// <summary>The frontier from which no accepted window can start less than `within` after the last one of the key.</summary>
+    /// <summary>No window of the key is in the look-back and no late window can continue its episode any more: its carried state is over (D33).</summary>
+    bool Ended(KeyState st) => st.Windows.Count == 0 && st.Shared is not { Count: > 0 } && DropAt(st) <= frontier;
+    /// <summary>The key carries no state: a window that comes later starts a new episode in the initial state (`Step`).</summary>
+    static void EndEpisode(KeyState st) { st.Last = long.MinValue; st.Run = 0; }
     long DropAt(KeyState st) => st.Last == long.MinValue || lookBack is not { } within ? long.MinValue : OpContext.Clamp((Int128)st.Last + within + horizon);
 
     /// <summary>A row of a window in or out. A window is read when exactly one row holds it; a second row makes it shared (counted under invalid parameters),
@@ -1199,7 +1203,7 @@ sealed class ThresholdOp : PhysOp
         while (idle.Count > 0 && idle.Min is var due && due.At <= frontier)
         {
             idle.Remove(due);
-            if (states.TryGetValue(due.Id, out var gone) && gone.Windows.Count == 0 && gone.Shared is not { Count: > 0 } && gone.Silent == 0 && DropAt(gone) <= frontier) states.Remove(due.Id);
+            if (states.TryGetValue(due.Id, out var gone) && Ended(gone)) { if (gone.Silent == 0) states.Remove(due.Id); else EndEpisode(gone); }     // a key in no data keeps its record, not its episode
         }
         var b = In(inputs, "in"); if (b is null || b.Rows == 0) return null;
         var kc = keys.Select(k => k.Eval(b)).ToArray(); var vc = value.Eval(b);
@@ -1240,7 +1244,7 @@ sealed class ThresholdOp : PhysOp
             while (st.Windows.Count > 0 && st.Windows.Keys[0] < edge) { Step(ref st.State, ref st.Run, ref st.Last, ref st.StateWindow, st.Windows.Keys[0], st.Windows.Values[0]); st.Windows.RemoveAt(0); }
             long window = 0;
             var next = st.Windows.Count == 0 ? null : Run(st, out window);
-            if (next is null) idle.Add((DropAt(st), st.Id));     // no window in the look-back: the row goes; the carried state stays until no late window can continue the episode
+            if (next is null) { if (Ended(st)) EndEpisode(st); idle.Add((DropAt(st), st.Id)); }     // no window in the look-back: the row goes; the carried state stays until no late window can continue the episode, also while the key is in no data
             if (st.Silent > 0)
             {
                 next = t.NoData;

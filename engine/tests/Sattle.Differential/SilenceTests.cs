@@ -58,6 +58,8 @@ public class SilenceTests
         { "a hit late in a window: the window from 120 s holds it and is not filled with 0", [.. On, Reported(240), Advance(240), Hits("k0", 5, 250), Reported(360), Advance(360)], "on" },
         { "a loss at 250 s: only the window from 120 s reaches it; it is not covered, so one window of 0 does not end the state", [.. On, Lost(250), Reported(360), Advance(360)], "on" },
         { "the loss mark arrives after the windows were filled: the fill of the window from 120 s is taken back", [.. On, Reported(360), Advance(360), Lost(250)], "on" },
+        { "the windows of 3 left the look-back at 360 s and with them the episode, though the key was in no data: the window from 60 s, filled later, starts a new episode", [Advance(60), Hits("k1", 3, -90), Item("k1"), Advance(360), Reported(240)], "off" },
+        { "and likewise when the item went and returned before", [Advance(60), Hits("k1", 3, -90), Item("k1"), Item("k1", -1), Item("k1"), Advance(360), Reported(240)], "off" },
     };
 
     [Theory, MemberData(nameof(HopCases))]
