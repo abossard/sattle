@@ -1148,7 +1148,7 @@ public sealed class ProjectionChecker(Graph defs)
         FType Bool(bool req = true, Role? r = null) => new(Ty.Boolean, req, r ?? Role.Data);
         string? e1 = null;
         bool Arity(int min, int max = int.MaxValue) { if (args.Count < min || args.Count > max) { e1 = $"{fn} takes {(max == min ? min.ToString() : $"at least {min}")} argument(s), found {args.Count}"; return false; } return true; }
-        if (fn is not ("Coalesce" or "IsPresent") && args.Any(a => !a.Type.Req)) { Err("E-Call", node, $"{fn} does not accept an optional argument; use isPresent or coalesce"); return null; }
+        if (fn is not ("Coalesce" or "IsPresent" or "Round" or "ParseInteger") && args.Any(a => !a.Type.Req)) { Err("E-Call", node, $"{fn} does not accept an optional argument; use isPresent or coalesce"); return null; }
         Role? role;
         string? je;
         switch (fn)
@@ -1211,6 +1211,17 @@ public sealed class ProjectionChecker(Graph defs)
                 if (!Arity(1, 1)) break;
                 if (args[0].Type.Ty.Tag != Tag.Integer) { Err("E-Call", node, "ToDecimal needs an Integer"); return null; }
                 return new TCall(fn, args, new FType(Ty.Dec(args[0].Type.Ty.Unit), true, args[0].Type.Role));
+            case "Round":
+                // gkql `round(x, digits)` (conformance note, scalars): no value for digits outside 0 to 28 or for an argument without one, so the result is optional
+                if (!Arity(2, 2)) break;
+                if (!args[0].Type.Ty.IsNumeric || args[1].Type.Ty.Tag != Tag.Integer) { Err("E-Call", node, $"Round needs a number and an Integer count of digits, found {args[0].Type.Ty} and {args[1].Type.Ty}"); return null; }
+                role = Types.Join(fn, roles, out je); if (role is null) { Err("E-Call", node, je!); return null; }
+                return new TCall(fn, args, new FType(Ty.Dec(args[0].Type.Ty.Unit), false, role));
+            case "ParseInteger":
+                // gkql `toint(t)` (conformance note, scalars): no value for a text that is not an integer or for no text
+                if (!Arity(1, 1)) break;
+                if (args[0].Type.Ty.Tag != Tag.Text) { Err("E-Call", node, $"ParseInteger takes Text, found {args[0].Type.Ty}"); return null; }
+                return new TCall(fn, args, new FType(Ty.Int(), false, args[0].Type.Role));
             case "StartsWith" or "EndsWith" or "Contains":
                 if (!Arity(2, 2)) break;
                 if (args.Any(a => a.Type.Ty.Tag != Tag.Text)) { Err("E-Call", node, $"{fn} takes two Text arguments"); return null; }

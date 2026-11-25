@@ -667,6 +667,12 @@ The text editor of a projection reads and checks its `.kql` text through these c
 - **Digest per graph.** Each entry of `GET /health` `graphs` has `digest`: the graph's digest at its head (Def. 3.5, the `digest` of a preview's graphs), from the pass that makes the state digest. The catalog's too.
 - **Telemetry port (no wire change).** `ITelemetryStore.ScanGraph` hands every window of a graph in a range to a visitor, also the windows of an element that left; without a visitor it counts them and allocates nothing. `SeriesCount`, `PartialWindows` and `MergeConflicts` are on the port. `InMemoryTelemetryStore.Dump` and `WindowCount` are gone.
 
+## Version 3.70: the scalars `round` and `toint` (#177)
+- **Kernel.** The functions `Round` `(n, Integer) -> Decimal?` and `ParseInteger` `Text -> Integer?`. The kernel digest is `sha256:6cd2cffe57a1fe8bd0308b179b469e7b1e9c7eb73cecd730eef77846dcddad2d` (`GET /palette`, `kernelDigest`), so a state seal of an earlier build is refused and the journal is replayed.
+- **gkql.** `{"fn": "round", "args": [x, digits]}` and `{"fn": "toint", "args": [t]}`, as the scalars row of the conformance note defines them. Both give no value for an argument without one, so they take optional arguments.
+- **Palette.** `GET /palette` lists both functions, supported. Additive: a client of 3.69 ignores them.
+- **Wire.** No HTTP or WebSocket field changes.
+
 ## Version 3.69: a fold stamps its policy rows at clock ends; identity components of any scalar kind (#151, #170)
 - **Semantics (paper Ch. 6, Def. 6.6).** A policy row of a `fold` is stamped with the clock from which it has been present at every clock end. A row there before the clock first moves is stamped 0 (before: no `since`); a row that a step moving the clock adds (a node made when a window closes) is stamped with the new clock (before: the clock before the step), and a row that leaves during the clock that ends there loses its stamp. The `since` column of a transition is then always an instant.
 - **Identity.** A component of an identity domain that is an Integer, Decimal, Instant or Boolean is keyed by its normal-form text (`identity(transition, key, windowStart)`). Before, the engine read it as a text code and failed; ids of Text components are unchanged.

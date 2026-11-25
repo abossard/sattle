@@ -640,7 +640,7 @@ public class DifferentialTests
         return Sattle.Reference.Expressions.Eval(new Sattle.Language.TCall(fn, [.. args.Select(a => (Sattle.Language.TExpr)new Sattle.Language.TLit(a, Of(TyOf(a))))], Of(result)), _ => Value.Null);
     }
 
-    /// <summary>#177 A1, A2 in a program, world `round and text to integer`: one row of `a` gives `round(100.0 * n / 3, 2)`, `round(d, 0)` and `toint(k)`, in
+    /// <summary>#177 A1, A2 in a program, world `round and text to integer`: one row of `a` gives `round(100.0 * todecimal(n) / 3, 2)`, `round(d, 0)` and `toint(k)`, in
     /// the reference and in the engine; - for no value.</summary>
     [Theory]
     [InlineData("503", 2L, "2.5", "66.67 3 503")]
@@ -649,6 +649,10 @@ public class DifferentialTests
     [InlineData("", 0L, "2.4999", "0 2 -")]
     [InlineData("-7", 3L, null, "100 - -7")]
     [InlineData("5.0", 2L, "1.005", "66.67 1 -")]
+    [InlineData("+7", 1L, "1.5", "33.33 2 7")]
+    [InlineData(" 5", 0L, "-1.5", "0 -2 -")]
+    [InlineData("9223372036854775808", 2L, "0.49", "66.67 0 -")]
+    [InlineData("-9223372036854775808", 1L, "7", "33.33 7 -9223372036854775808")]
     public void Round_and_toint_in_a_program(string k, long n, string? d, string expected)
     {
         var w = Worlds.RoundAndToInt;
@@ -660,7 +664,11 @@ public class DifferentialTests
             return $"{P("ratio")} {P("whole")} {P("code")}";
         }
         Assert.Equal(expected, Out(Sattle.Reference.ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), log)));
-        Assert.Equal(expected, Out(EngineRun.Final(w.Catalog, log, Chunking.Largest)));
+        foreach (var chunking in new[] { Chunking.OneByOne, Chunking.Largest, Chunking.Reversed })
+        {
+            var engine = Out(EngineRun.Final(w.Catalog, log, chunking));
+            Assert.True(engine == expected, $"{chunking.Name}: engine {engine}, expected {expected}");
+        }
     }
 
     /// <summary>#177 A3 (Def. 6.3, Theorem 6.8; gkql conformance note, windowed summarize), world `fold transitions as nodes by key and window`: windows of 60 s,

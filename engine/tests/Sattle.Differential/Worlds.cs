@@ -154,7 +154,7 @@ public static class Worlds
     // ---- worlds outside `All`: their inputs are written out, not generated ----
 
     public static readonly World FilteredEmit = Rows("filtered emit", "Filter, EmitEntity");
-    /// <summary>#177 A1, A2: per group `g` of the rows of `a`, `round(100.0 * n / 3, 2)`, `round(d, 0)` and `toint(k)`.</summary>
+    /// <summary>#177 A1, A2: per group `g` of the rows of `a`, `round(100.0 * todecimal(n) / 3, 2)`, `round(d, 0)` and `toint(k)`.</summary>
     public static readonly World RoundAndToInt = Rows("round and text to integer", "Map, EmitEntity", 0, [A]);
     /// <summary>Def. 6.6: the master makes a node `Busy` per item and window of hits; a windowed summarize gives a window's row when the clock reaches its end, so a
     /// step that moves the clock adds the node. A view folds the hits of each item with its `Busy` nodes as policy rows.</summary>

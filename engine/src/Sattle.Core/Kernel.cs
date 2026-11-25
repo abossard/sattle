@@ -175,6 +175,7 @@ public static class KernelTable
         new("Add", "(n, n) -> n", "scalar", null), new("Subtract", "(n, n) -> n", "scalar", null), new("Shift", "(Instant, Integer) -> Instant", "scalar", null),
         new("Multiply", "(n, m) -> n*m", "scalar", null), new("Divide", "(n, m) -> Decimal", "scalar", null),
         new("Negate", "n -> n", "scalar", "Negate"), new("ToDecimal", "Integer -> Decimal", "scalar", "ToInteger"),
+        new("Round", "(n, Integer) -> Decimal?", "scalar", null), new("ParseInteger", "Text -> Integer?", "scalar", null),
         new("StartsWith", "(Text, Text) -> Boolean", "scalar", null), new("EndsWith", "(Text, Text) -> Boolean", "scalar", null),
         new("Contains", "(Text, Text) -> Boolean", "scalar", null),
         new("Concat", "(Text, Text, ...) -> Text", "scalar", null), new("Coalesce", "(a, ..., a) -> a", "scalar", null),
@@ -349,5 +350,5 @@ public static class Kernel
 
     /// <summary>Digest of the kernel graph. The compiled constant is checked by a test (section 2.8, step 2).</summary>
     public static string ComputeDigest() => Graph.Digest();
-    public const string CompiledDigest = "sha256:ad091fd0873c07cadedd791cfdf037acf1b8b9750906b53c483c99c179d65b0f";
+    public const string CompiledDigest = "sha256:6cd2cffe57a1fe8bd0308b179b469e7b1e9c7eb73cecd730eef77846dcddad2d";
 }

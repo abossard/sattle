@@ -62,6 +62,8 @@ public static class ExprCompiler
                         "Shift" => new VArith("Add", args[0], args[1], false, faults),
                         "Negate" => new VArith("Negate", args[0], args[0], c.Type.Ty.Tag == Tag.Decimal, faults),
                         "ToDecimal" => new VToDecimal(args[0]),
+                        "Round" => new VRound(args[0], args[1]),
+                        "ParseInteger" => new VParseInteger(args[0], it),
                         "If" => new VIf(args[0], args[1], args[2], c.Type.Ty.Tag == Tag.Decimal),
                         "Coalesce" => new VCoalesce(args, c.Type.Ty.Tag == Tag.Decimal),
                         "IsPresent" => new VIsPresent(args[0]),
@@ -209,6 +211,48 @@ sealed class VToDecimal : VExpr
         var x = a.Eval(batch); var o = Scratch(batch.N);
         for (var row = 0; row < batch.Rows; row++) { var i = batch.RowAt(row); if (x.P is not null && !x.P[i]) { Absent(o, i, batch.N); continue; } o.D[i] = x.L[i]; }
         return o;
+    }
+}
+
+/// <summary>gkql `round(x, digits)` (conformance note, scalars): the multiple of 10^-digits nearest to x, of two equally near the one farther from zero; no value for digits outside 0 to 28.</summary>
+sealed class VRound : VExpr
+{
+    readonly VExpr a, digits;
+    public VRound(VExpr a, VExpr digits) { this.a = a; this.digits = digits; IsDec = true; }
+    public override Column Eval(Batch batch)
+    {
+        var x = a.Eval(batch); var d = digits.Eval(batch); var o = Scratch(batch.N);
+        for (var row = 0; row < batch.Rows; row++)
+        {
+            var i = batch.RowAt(row);
+            if ((x.P is not null && !x.P[i]) || (d.P is not null && !d.P[i]) || d.L[i] is < 0 or > 28) { Absent(o, i, batch.N); continue; }
+            o.D[i] = decimal.Round(x.IsDec ? x.D[i] : x.L[i], (int)d.L[i], MidpointRounding.AwayFromZero);
+        }
+        return o;
+    }
+}
+
+/// <summary>gkql `toint(t)` (conformance note, scalars): the Integer a text spells as a sign `+` or `-` or none and then the digits 0 to 9 only, within 64 bits; no value for any other text.</summary>
+sealed class VParseInteger : VExpr
+{
+    readonly VExpr text; readonly Interner it;
+    public VParseInteger(VExpr text, Interner it) { this.text = text; this.it = it; }
+    public override Column Eval(Batch batch)
+    {
+        var t = text.Eval(batch); var o = Scratch(batch.N);
+        for (var row = 0; row < batch.Rows; row++)
+        {
+            var i = batch.RowAt(row);
+            if ((t.P is not null && !t.P[i]) || !Parse(it.Get((int)t.L[i]), out o.L[i])) Absent(o, i, batch.N);
+        }
+        return o;
+    }
+    static bool Parse(string s, out long n)
+    {
+        n = 0;
+        var digits = s.AsSpan(s.Length > 0 && s[0] is '+' or '-' ? 1 : 0);
+        return !digits.IsEmpty && !digits.ContainsAnyExceptInRange('0', '9')
+            && long.TryParse(s, System.Globalization.NumberStyles.AllowLeadingSign, System.Globalization.CultureInfo.InvariantCulture, out n);
     }
 }
 

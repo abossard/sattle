@@ -777,7 +777,7 @@ public static class Lowering
             ["and"] = "And", ["or"] = "Or", ["not"] = "Not", ["iff"] = "If", ["coalesce"] = "Coalesce",
             ["startswith"] = "StartsWith", ["endswith"] = "EndsWith", ["contains"] = "Contains",
             ["concat"] = "Concat", ["lower"] = "LowerInvariant", ["trim"] = "Trim",
-            ["+"] = "Add", ["-"] = "Subtract", ["*"] = "Multiply", ["/"] = "Divide", ["negate"] = "Negate", ["todecimal"] = "ToDecimal",
+            ["+"] = "Add", ["-"] = "Subtract", ["*"] = "Multiply", ["/"] = "Divide", ["negate"] = "Negate", ["todecimal"] = "ToDecimal", ["round"] = "Round", ["toint"] = "ParseInteger",
             ["isnotnull"] = "IsPresent", ["rate"] = "Rate", ["shift"] = "Shift", ["id"] = "EntityId",
         };
 

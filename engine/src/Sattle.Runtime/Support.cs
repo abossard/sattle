@@ -67,7 +67,7 @@ public static class Support
     [
         "Equal", "NotEqual", "LessThan", "LessOrEqual", "GreaterThan", "GreaterOrEqual", "And", "Or", "Not", "Add", "Subtract", "Shift", "Multiply", "Divide", "Negate",
         "StartsWith", "EndsWith", "Contains",
-        "ToDecimal", "Concat", "Coalesce", "IsPresent", "If", "Rate", "LowerInvariant", "Trim", "EntityId",
+        "ToDecimal", "Round", "ParseInteger", "Concat", "Coalesce", "IsPresent", "If", "Rate", "LowerInvariant", "Trim", "EntityId",
     ];
     public static readonly Dictionary<string, string> RuleClasses = new() { ["readonly"] = "", ["bijective"] = "", ["lens"] = "putput", ["sync"] = "" };
     /// <summary>What the children of a slot hold, for an editor: `fieldRef` (a path), `expr` (an expression), with the roots a path may start with and where the offered properties come from.</summary>
