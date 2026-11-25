@@ -1,0 +1,14 @@
+{
+  "module": "w",
+  "version": "1.0.0",
+  "imports": [],
+  "entities": [
+    {"name": "Out", "properties": [{"name": "g", "type": "Text"}, {"name": "ratio", "type": "Decimal", "optional": true}, {"name": "whole", "type": "Decimal", "optional": true}, {"name": "code", "type": "Integer", "optional": true}]}
+  ],
+  "identities": [
+    {"name": "out", "type": "Out", "components": [{"name": "g", "type": "Text"}]}
+  ],
+  "rows": [
+    {"name": "R", "fields": [{"name": "k", "type": "Text"}, {"name": "g", "type": "Text"}, {"name": "n", "type": "Integer"}, {"name": "d", "type": "Decimal", "optional": true}, {"name": "t", "type": "Instant"}]}
+  ]
+}

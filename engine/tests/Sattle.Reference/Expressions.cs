@@ -70,6 +70,19 @@ public static class Expressions
             case "Shift": return Value.Instant(((InstantValue)args[0]).Ns + (long)Canon.Integer(args[1]));
             case "Negate": return args[0] is IntegerValue n ? Value.Integer(-n.N) : Value.Decimal(-Canon.Number(args[0]));
             case "ToDecimal": return Value.Decimal(Canon.Number(args[0]));
+            case "Round":       // gkql `round` (conformance note, scalars): the multiple of 10^-digits nearest to x, half away from zero; digits from 0 to 28
+                {
+                    var digits = Canon.Integer(args[1]);
+                    if (digits < 0 || digits > 28) return Value.Null;
+                    try { return Value.Decimal(decimal.Round(Canon.Number(args[0]), (int)digits, MidpointRounding.AwayFromZero)); } catch (OverflowException) { return Value.Null; }
+                }
+            case "ParseInteger":    // gkql `toint` (conformance note, scalars): a sign or none, then digits 0 to 9 and nothing else, within the 64 bit Integer range
+                {
+                    var text = ((TextValue)args[0]).S;
+                    var body = text.Length > 0 && text[0] is '+' or '-' ? text[1..] : text;
+                    return body.Length > 0 && body.All(char.IsAsciiDigit) && long.TryParse(text, System.Globalization.NumberStyles.AllowLeadingSign, System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+                        ? Value.Integer(parsed) : Value.Null;
+                }
             case "Rate": return Value.Decimal(Canon.Number(args[0]) / (c.Args[0].Type.Role.Period / 1_000_000_000m));
             case "StartsWith": return Value.Boolean(((TextValue)args[0]).S.StartsWith(((TextValue)args[1]).S, StringComparison.OrdinalIgnoreCase));
             case "EndsWith": return Value.Boolean(((TextValue)args[0]).S.EndsWith(((TextValue)args[1]).S, StringComparison.OrdinalIgnoreCase));

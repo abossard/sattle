@@ -583,6 +583,89 @@ public class DifferentialTests
         Assert.Equal(selected, Moves(result!));
     }
 
+    /// <summary>#177 A1 on the reference alone (gkql conformance note, scalars): `round(x, digits)`, the engine's `Round`, is the multiple of 10^-digits nearest to
+    /// `x`, of two equally near the one farther from zero; digits outside 0 to 28 give no value. The result as its canonical form, - for none.</summary>
+    [Theory]
+    [InlineData("66.666666666666666666666666667", 2L, "n:66.67")]      // 100.0 * 2 / 3, as Divide gives it
+    [InlineData("2.5", 0L, "n:3")] [InlineData("-2.5", 0L, "n:-3")] [InlineData("0.5", 0L, "n:1")] [InlineData("2.4999", 0L, "n:2")]
+    [InlineData("1.005", 2L, "n:1.01")] [InlineData("-1.005", 2L, "n:-1.01")] [InlineData("66.665", 2L, "n:66.67")] [InlineData("66.6649", 2L, "n:66.66")]
+    [InlineData("2.50", 1L, "n:2.5")] [InlineData("7", 28L, "n:7")]
+    [InlineData("2.5", -1L, "-")] [InlineData("2.5", 29L, "-")] [InlineData(null, 2L, "-")]
+    public void Round_is_half_away_from_zero(string? x, long digits, string expected) =>
+        Assert.Equal(expected, Sattle.Reference.Canon.Of(Scalar("Round", Sattle.Language.Ty.Dec(), x is null ? Value.Null : Value.Decimal(decimal.Parse(x, System.Globalization.CultureInfo.InvariantCulture)), Value.Integer(digits))));
+
+    /// <summary>#177 A2 on the reference alone (gkql conformance note, scalars): `toint(t)`, the engine's `ParseInteger`, is the Integer that `t` spells as a sign
+    /// or none and then the digits 0 to 9 only, within the 64 bit range; any other text gives no value.</summary>
+    [Theory]
+    [InlineData("503", "n:503")] [InlineData("5", "n:5")] [InlineData("abc", "-")] [InlineData("", "-")]
+    [InlineData("-7", "n:-7")] [InlineData("+7", "n:7")] [InlineData("007", "n:7")]
+    [InlineData(" 5", "-")] [InlineData("5 ", "-")] [InlineData("5.0", "-")] [InlineData("1e3", "-")] [InlineData("-", "-")] [InlineData("+", "-")] [InlineData("٥", "-")]
+    [InlineData("9223372036854775807", "n:9223372036854775807")] [InlineData("-9223372036854775808", "n:-9223372036854775808")] [InlineData("9223372036854775808", "-")]
+    public void Toint_reads_only_an_integer_text(string text, string expected) =>
+        Assert.Equal(expected, Sattle.Reference.Canon.Of(Scalar("ParseInteger", Sattle.Language.Ty.Int(), Value.Text(text))));
+
+    static Value Scalar(string fn, Sattle.Language.Ty result, params Value[] args)
+    {
+        static Sattle.Language.FType Of(Sattle.Language.Ty ty) => new(ty, true, Sattle.Language.Role.Data);
+        static Sattle.Language.Ty TyOf(Value v) => v switch { TextValue => Sattle.Language.Ty.Text, IntegerValue => Sattle.Language.Ty.Int(), _ => Sattle.Language.Ty.Dec() };
+        return Sattle.Reference.Expressions.Eval(new Sattle.Language.TCall(fn, [.. args.Select(a => (Sattle.Language.TExpr)new Sattle.Language.TLit(a, Of(TyOf(a))))], Of(result)), _ => Value.Null);
+    }
+
+    /// <summary>#177 A1, A2 in a program, world `round and text to integer`: one row of `a` gives `round(100.0 * n / 3, 2)`, `round(d, 0)` and `toint(k)`, in
+    /// the reference and in the engine; - for no value.</summary>
+    [Theory]
+    [InlineData("503", 2L, "2.5", "66.67 3 503")]
+    [InlineData("5", 1L, "-2.5", "33.33 -3 5")]
+    [InlineData("abc", -1L, "0.5", "-33.33 1 -")]
+    [InlineData("", 0L, "2.4999", "0 2 -")]
+    [InlineData("-7", 3L, null, "100 - -7")]
+    [InlineData("5.0", 2L, "1.005", "66.67 1 -")]
+    public void Round_and_toint_in_a_program(string k, long n, string? d, string expected)
+    {
+        var w = Worlds.RoundAndToInt;
+        Sattle.Reference.Input[] log = [PlainRow("a", 1, k, "g0", n, 0, d is null ? null : decimal.Parse(d, System.Globalization.CultureInfo.InvariantCulture))];
+        static string Out(Sattle.Reference.SpaceFacts f)
+        {
+            var props = f.Graphs["master"].Entities.Values.Single().Props;
+            string P(string name) => props.FirstOrDefault(kv => kv.Key.EndsWith("prop:" + name, StringComparison.Ordinal)).Value is { } v and not NullValue ? Sattle.Reference.Canon.Of(v)[2..] : "-";
+            return $"{P("ratio")} {P("whole")} {P("code")}";
+        }
+        Assert.Equal(expected, Out(Sattle.Reference.ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), log)));
+        Assert.Equal(expected, Out(EngineRun.Final(w.Catalog, log, Chunking.Largest)));
+    }
+
+    /// <summary>#177 A3 (Def. 6.3, Theorem 6.8; gkql conformance note, windowed summarize), world `fold transitions as nodes by key and window`: windows of 60 s,
+    /// lateness 3m, a fold that turns on at hits of 2 or more and off at 1 or less, each after one window. Item k0 has hits 1 in windows 0, 1 and 3 and 5 in window
+    /// 2, from a row of time 130 s that enters after the row of window 3, at the clock `enters`. At 195, in window 3, and at 310, its time plus the lateness, it is on
+    /// time and stays in window 2: the master's window 2 holds 5, and the fold turns on at window 2 and off at window 3. At 315 it is late (Def. 6.1) and left out.
+    /// Windows as minute:hits, transitions as minute:from>to.</summary>
+    [Theory]
+    [InlineData(195L, "0:1 1:1 2:5 3:1", "0:off>off 2:off>on 3:on>off")]
+    [InlineData(310L, "0:1 1:1 2:5 3:1", "0:off>off 2:off>on 3:on>off")]
+    [InlineData(315L, "0:1 1:1 3:1", "0:off>off")]
+    public void A_row_that_arrives_after_its_window_ends_stays_in_its_window(long enters, string windows, string transitions)
+    {
+        var w = Worlds.FoldTransitionNodes;
+        static Sattle.Reference.Input At(long seconds) => new Sattle.Reference.AdvanceInput(Logs.Origin + seconds * Logs.Second);
+        Sattle.Reference.Input[] log = [PlainRow("a", 1, "k0", "g0", 0, 0), At(15), PlainRow("b", 1, "k0", "g0", 1, 10), At(75), PlainRow("b", 1, "k0", "g0", 1, 70),
+            At(195), PlainRow("b", 1, "k0", "g0", 1, 190), .. enters > 195 ? [At(enters)] : (Sattle.Reference.Input[])[], PlainRow("b", 1, "k0", "g0", 5, 130), At(600)];
+        static string Minute(long ns) => ((ns - Logs.Origin) / Logs.Minute).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        static string Show(Sattle.Reference.SpaceFacts f)
+        {
+            var hits = f.Graphs["master"].Windows.Where(x => x.Key.Property.EndsWith("prop:hits", StringComparison.Ordinal)).Select(x => $"{Minute(x.Key.Start)}:{Norm.Decimal(x.Value)}");
+            string? P(Sattle.Reference.EntityFact e, string name) => e.Props.FirstOrDefault(kv => kv.Key.EndsWith("prop:" + name, StringComparison.Ordinal)).Value switch { InstantValue i => Minute(i.Ns), TextValue t => t.S, _ => null };
+            var moves = f.Graphs["view"].Entities.Values.Where(e => P(e, "windowStart") is not null).Select(e => $"{P(e, "windowStart")}:{P(e, "from")}>{P(e, "to")}");
+            return string.Join(" ", hits.Order(StringComparer.Ordinal)) + " | " + string.Join(" ", moves.Order(StringComparer.Ordinal));
+        }
+        var expected = windows + " | " + transitions;
+        Assert.Equal(expected, Show(Sattle.Reference.ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), log)));
+        foreach (var chunking in new[] { Chunking.OneByOne, Chunking.Largest, Chunking.Reversed })
+        {
+            var engine = Show(EngineRun.Final(w.Catalog, log, chunking));
+            Assert.True(engine == expected, $"{chunking.Name}: engine {engine}, expected {expected}");
+        }
+    }
+
     /// <summary>A node row of `ranked` (item `k`, rank `n`, none for null) or an edge row `from>to` with its impact after a colon, signed.</summary>
     static Sattle.Reference.RowInput FixpointRow(string change)
     {

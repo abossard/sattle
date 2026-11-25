@@ -1,0 +1,13 @@
+{
+  "graph": "ingest",
+  "ontology": "w",
+  "history": 0,
+  "inputs": [{"name": "a", "rows": "w.R"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "a", "verb": "rows", "source": "a"},
+    {"id": "x_1", "verb": "extend", "columns": {"ratio": {"fn": "round", "args": [{"fn": "/", "args": [{"fn": "*", "args": [{"lit": 100.0}, {"ref": "n"}]}, {"lit": 3}]}, {"lit": 2}]}, "whole": {"fn": "round", "args": [{"ref": "d"}, {"lit": 0}]}, "code": {"fn": "toint", "args": [{"ref": "k"}]}}},
+    {"id": "observed_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Out", "id": {"identity": "out", "args": [{"ref": "g"}]}, "props": {"g": {"ref": "g"}, "ratio": {"ref": "ratio"}, "whole": {"ref": "whole"}, "code": {"ref": "code"}}}]}, "rule": "observed"}
+  ],
+  "wires": [{"from": "a", "to": "x_1"}, {"from": "x_1", "to": "observed_1"}]
+}
