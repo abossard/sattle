@@ -220,7 +220,7 @@ Since the kernel is the only part of the program that knows about definitions, t
 
 **What is a definition.** A new module of types, properties, constraints, identity domains, roles, kinds and labels; a new source of a kind the program reads; a new projection, among them a level of abstraction (Ch. 5, 5.8), a document or a tree; the same projection bound to another workload with other parameters (Ch. 5, Def. 5.14). Each is facts of the catalog, checked and versioned like any graph (Def. 2.1).
 
-**What needs a new release of the program.** A new operator kind, builtin function, aggregate, canonicalizer of an identity component, value kind or source reader, and a form of the text that the engine does not accept (Ch. 5, 5.6). Status: proved, since the kernel is a closed set (Def. 2.2) and the functions are fixed with the program (Ch. 5, Proposition 5.4); tested, since a test counts the 18 operator kinds of the kernel, and a form outside the language is refused when it is loaded, for example "percentile is not an aggregate of the profile (count, countif, count_distinct, sum, min, max, avg, arg_max, arg_min)".
+**What needs a new release of the program.** A new operator kind, builtin function, aggregate, canonicalizer of an identity component, value kind or source reader, and a form of the text that the engine does not accept (Ch. 5, 5.6). Status: proved, since the kernel is a closed set (Def. 2.2) and the functions are fixed with the program (Ch. 5, Proposition 5.4); tested, since a test counts the 18 operator kinds of the kernel, and a form outside the language is refused when it is loaded, for example an aggregate outside the list: "an aggregate is count, countif, count_distinct, sum, min, max, avg, arg_max, arg_min, percentile of a value".
 
 **What the definitions compute.** Inside that line, the class of computations a projection can express is stated in Ch. 5, 5.9, with the evidence for each claim:
 
@@ -234,7 +234,7 @@ Since the kernel is the only part of the program that knows about definitions, t
 | E6 | the only recursion is reach with a fixed bound; there is no recursion over rows and no cycle of graphs | proved, tested |
 | E7 | reachability without a bound is not expressible | sketch; that the bound is the limit: proved, tested |
 | E8 | tumbling and sliding windows, shifted times, recorded watermarks, revisions, time to live, hysteresis, roll-up, fill and no data | tested |
-| E9 | sessions, counters sampled at irregular times, ranks and percentiles of measurements are not expressible | each refusal tested |
+| E9 | sessions, counters sampled at irregular times, ranks of measurements, percentiles that combine the windows of a measurement and histograms are not expressible; the percentile of a numeric data value per group, at nearest rank, is | each refusal tested; the percentile tested (`A_percentile_is_the_value_of_nearest_rank`, and `The_engine_equals_the_reference_however_the_log_is_cut` on the world "group percentile") |
 | E10 | quotients of a graph by a map of its nodes, edges included | proved, tested |
 | E11 | one step of graph rewriting, and no rewriting to a normal form | sketch |
 
