@@ -5,6 +5,11 @@
                               collector output, a reference file (lab/health-mirror/export-model.py --scrub) and
                               the app role name -> OUT/capture/rows.ndjson, OUT/checkpoint.json, OUT/cuts.txt
   compare OUT                 OUT/replays/<cut>/master.final.snapshot.json -> one line per mismatch, exit 1 on any
+  mutate OUT                  OUT/mutants/<name>: the definitions with one binding dropped, one edge reversed, one
+                              threshold crossed, each with the cuts that show it
+  verify OUT                  compare OUT and each mutant: OUT must match, every mutant must not
+
+Run replay-cuts.sh on OUT and on each OUT/mutants/<name> between mutate and verify.
 
 A record enters the engine when Azure could first see it: a log row at its ingestion time (the collector's position),
 a metric minute when it ends. The engine's clock is the capture time, so `replay --until <cut> --advance-every 1s
@@ -79,6 +84,10 @@ def checkpoint(reference, index=-1):
             "entities": {e["entityId"]: e["state"] for e in c["entities"]}}
 
 
+def edges(model):
+    return sorted([r["properties"]["parentEntityName"], r["properties"]["childEntityName"]] for r in model["relationships"])
+
+
 def nodes(snapshot, label):
     """name -> {property: value} of the snapshot's nodes of one type."""
     out = {}
@@ -86,8 +95,14 @@ def nodes(snapshot, label):
         if e["type"]["value"].split(".")[-1] != label:
             continue
         props = {p["property"]["value"].split(".")[-1]: p["value"].get("value") for p in e["properties"]}
-        out[props.get("name")] = props
+        out[props.get("name")] = {**props, "id": e["id"]["value"]}
     return out
+
+
+def contains(snapshot):
+    names = {p["id"]: name for name, p in nodes(snapshot, "Entity").items()}
+    return sorted([names.get(r["source"]["value"]), names.get(r["target"]["value"])] for r in snapshot["extent"]["relationships"]
+                  if r["type"]["value"].split(".")[-1] == "Contains")
 
 
 def mismatches(expected, snapshots):
@@ -100,7 +115,10 @@ def mismatches(expected, snapshots):
             out.append(f"signal {key} at {want['cut']}: state {got.get('state')} != {want['state']}")
         elif (value is None) != (want["value"] is None) or (value is not None and abs(value - want["value"]) > TOLERANCE * max(1, abs(value))):
             out.append(f"signal {key} at {want['cut']}: value {value} != {want['value']}")
-    entities = nodes(snapshots[expected["capturedAt"]], "Entity")
+    at = snapshots[expected["capturedAt"]]
+    if contains(at) != expected["edges"]:
+        out.append(f"edges at {expected['capturedAt']}: {len(contains(at))} Contains, not the model's {len(expected['edges'])}")
+    entities = nodes(at, "Entity")
     for key, want in sorted(expected["entities"].items()):
         if entities.get(key, {}).get("state") != want:
             out.append(f"entity {key} at {expected['capturedAt']}: state {entities.get(key, {}).get('state')} != {want}")
@@ -108,7 +126,8 @@ def mismatches(expected, snapshots):
 
 
 def prepare(raw, reference, out, app_role):
-    expected = checkpoint(json.loads(Path(reference).read_text()))
+    expected = {**checkpoint(json.loads(Path(reference).read_text())),
+                "edges": edges(json.loads(Path(reference).with_name("model.json").read_text()))}
     cuts = sorted({instant(s["cut"]) for s in expected["signals"].values()} | {instant(expected["capturedAt"])})
     out = Path(out)
     (out / "capture").mkdir(parents=True, exist_ok=True)
@@ -118,15 +137,70 @@ def prepare(raw, reference, out, app_role):
     (out / "cuts.txt").write_text("".join(iso(c) + "\n" for c in cuts))
 
 
-def compare(out):
+def found(out):
     out = Path(out)
     expected = json.loads((out / "checkpoint.json").read_text())
     snapshots = {cut: json.loads((out / "replays" / cut / "master.final.snapshot.json").read_text())
                  for cut in (out / "cuts.txt").read_text().split()}
-    lines = mismatches(expected, snapshots)
+    return expected, mismatches(expected, snapshots)
+
+
+def compare(out):
+    expected, lines = found(out)
     print("\n".join(lines))
-    print(f"{len(expected['signals'])} signals, {len(expected['entities'])} entities, {len(lines)} mismatches")
+    print(f"{len(expected['signals'])} signals, {len(expected['entities'])} entities, {len(expected['edges'])} edges, "
+          f"{len(lines)} mismatches")
     return 1 if lines else 0
+
+
+def mutants(program, expected):
+    """name -> (program, the signal whose cut shows it): each changes one thing the comparison must catch."""
+    def copy():
+        return json.loads(json.dumps(program))
+    def rows(p, verb):
+        return next(v for v in p["verbs"] if v["id"] == verb)["values"]["rows"]
+    out = {}
+    p = copy(); dropped = rows(p, "signals").pop(0)
+    out["drop-binding"] = (p, dropped["signal"])
+    p = copy(); edge = rows(p, "children")[0]; edge["parent"], edge["child"] = edge["child"], edge["parent"]
+    out["reverse-edge"] = (p, None)
+    p = copy()
+    row = next(r for r in rows(p, "signals") if expected["signals"][r["signal"]]["state"] == "Healthy"
+               and expected["signals"][r["signal"]]["value"] is not None)
+    value = expected["signals"][row["signal"]]["value"]
+    row["unhealthy"] = value - 1 if row["above"] else value + 1
+    out["threshold"] = (p, row["signal"])
+    return out
+
+
+def mutate(out, definitions):
+    out, definitions = Path(out), Path(definitions)
+    expected = json.loads((out / "checkpoint.json").read_text())
+    program_file = definitions / "health.signals.gkql.json"
+    for name, (program, signal) in mutants(json.loads(program_file.read_text()), expected).items():
+        target = out / "mutants" / name
+        (target / "definitions").mkdir(parents=True, exist_ok=True)
+        for f in definitions.glob("*.gkql.json"):
+            (target / "definitions" / f.name).write_text(f.read_text())
+        (target / "definitions" / program_file.name).write_text(json.dumps(program, indent=1))
+        signals = {signal: expected["signals"][signal]} if signal else {}
+        (target / "checkpoint.json").write_text(json.dumps({**expected, "signals": signals}, indent=1) + "\n")
+        cuts = sorted({expected["capturedAt"]} | {s["cut"] for s in signals.values()})
+        (target / "cuts.txt").write_text("".join(c + "\n" for c in cuts))
+        if not (target / "capture").exists():
+            (target / "capture").symlink_to("../../capture")
+
+
+def verify(out):
+    """OUT matches the reference and every mutant does not."""
+    rows = [("checkpoint", Path(out), False)] + [(m.name, m, True) for m in sorted((Path(out) / "mutants").iterdir())]
+    wrong = 0
+    for name, path, must_differ in rows:
+        _, lines = found(path)
+        ok = bool(lines) == must_differ
+        wrong += not ok
+        print(f"{name}: {len(lines)} mismatches, {'as expected' if ok else 'WRONG'}")
+    return 1 if wrong else 0
 
 
 if __name__ == "__main__":
@@ -134,5 +208,9 @@ if __name__ == "__main__":
         prepare(*sys.argv[2:6])
     elif sys.argv[1:2] == ["compare"] and len(sys.argv) == 3:
         sys.exit(compare(sys.argv[2]))
+    elif sys.argv[1:2] == ["mutate"] and len(sys.argv) == 3:
+        mutate(sys.argv[2], Path(__file__).parent / "definitions")
+    elif sys.argv[1:2] == ["verify"] and len(sys.argv) == 3:
+        sys.exit(verify(sys.argv[2]))
     else:
         sys.exit(__doc__)

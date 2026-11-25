@@ -4,7 +4,7 @@
 set -euo pipefail
 out=$1
 dll=${2:-engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll}
-defs=$(dirname "$0")/definitions
+defs=$out/definitions; [ -d "$defs" ] || defs=$(dirname "$0")/definitions
 while read -r cut; do
   dotnet "$dll" replay "$out/capture" --defs "$defs" --space healthModel --advance-every 1s --lateness 0s --no-flush \
     --until "$cut" --out "$out/replays/$cut" > "$out/replays.log" 2>&1 || { tail -20 "$out/replays.log"; exit 1; }
