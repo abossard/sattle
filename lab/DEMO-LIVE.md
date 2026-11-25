@@ -50,7 +50,7 @@ engine/src/Sattle.Cli/bin/Release/net11.0/sattle serve --live --eh-namespace "$N
 - No state until the forwarder starts (step 2): its relist is the whole cluster.
 - The forwarder reads the cluster's name as Hubble gives it (Cilium's `cluster-name`) and puts it on every Kubernetes and Prometheus record, so the pods a flow names are the pods the Kubernetes rows describe. `--cluster NAME` is needed only for a cluster without Cilium.
 - Same command again: resumes from the journaled position and catches up in seconds.
-- Ctrl-C, SIGTERM or `--seconds` print why the input stopped, its counts and the state digest. `sattle replay tmp/live-stream/demo --no-flush --late-horizon 3 --overlay lab/captures/acme.space.module.gkql.json` gives the same digest.
+- Ctrl-C, SIGTERM or `--seconds` print why the input stopped, its counts and the state digest. `sattle replay tmp/live-stream/demo --no-flush --overlay lab/captures/acme.space.module.gkql.json` gives the same digest.
 - `curl -s localhost:5080/space | jq .input.lag`: events and seconds behind the hub.
 - Not `--from earliest`: the hub keeps 24 h and one throughput unit reads about 1.6 MB/s, too slow to catch up.
 
