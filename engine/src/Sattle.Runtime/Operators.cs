@@ -370,8 +370,7 @@ sealed class KeyTable
         return ExactSum.ToDecimal(acc, out d);
     }
 
-    /// <summary>The digits of a decimal in two 64-bit halves, and back.</summary>
-    /// <summary>A decimal as two longs, by its number: 2.5 and 2.50 are kept alike, so no value depends on which digits came first (#161).</summary>
+    /// <summary>A decimal in two 64-bit halves, by its number: 2.5 and 2.50 are kept alike, so no value depends on which digits came first (#161); and back.</summary>
     static (long A, long B) Pack(decimal d) { Span<int> bits = stackalloc int[4]; decimal.GetBits(DecimalKey.Normal(d), bits); return ((uint)bits[0] | (long)bits[1] << 32, (uint)bits[2] | (long)bits[3] << 32); }
     static decimal Unpack(long a, long b) => new([(int)a, (int)(a >> 32), (int)b, (int)(b >> 32)]);
 

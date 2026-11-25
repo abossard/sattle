@@ -6,8 +6,8 @@
   "parameters": [],
   "verbs": [
     {"id": "a", "verb": "rows", "source": "a"},
-    {"id": "agg_1", "verb": "summarize", "by": {"g": {"ref": "g"}}, "aggregates": {"hi": {"fn": "max", "args": [{"ref": "n"}]}, "lo": {"fn": "min", "args": [{"ref": "n"}]}, "top": {"fn": "max", "args": [{"ref": "d"}]}}},
-    {"id": "observed_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Agg", "id": {"identity": "agg", "args": [{"ref": "g"}]}, "props": {"g": {"ref": "g"}, "hi": {"ref": "hi"}, "lo": {"ref": "lo"}, "top": {"ref": "top"}}}]}, "rule": "observed"}
+    {"id": "agg_1", "verb": "summarize", "by": {"g": {"ref": "g"}}, "aggregates": {"hi": {"fn": "max", "args": [{"ref": "n"}]}, "lo": {"fn": "min", "args": [{"ref": "n"}]}, "top": {"fn": "max", "args": [{"ref": "d"}]}, "bottom": {"fn": "min", "args": [{"ref": "d"}]}}},
+    {"id": "observed_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Agg", "id": {"identity": "agg", "args": [{"ref": "g"}]}, "props": {"g": {"ref": "g"}, "hi": {"ref": "hi"}, "lo": {"ref": "lo"}, "top": {"ref": "top"}, "bottom": {"ref": "bottom"}}}]}, "rule": "observed"}
   ],
   "wires": [
     {"from": "a", "to": "agg_1"},

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "imports": [],
   "entities": [
-    {"name": "Agg", "properties": [{"name": "g", "type": "Text"}, {"name": "lo", "type": "Integer", "optional": true}, {"name": "hi", "type": "Integer", "optional": true}, {"name": "top", "type": "Decimal", "optional": true}]}
+    {"name": "Agg", "properties": [{"name": "g", "type": "Text"}, {"name": "lo", "type": "Integer", "optional": true}, {"name": "hi", "type": "Integer", "optional": true}, {"name": "top", "type": "Decimal", "optional": true}, {"name": "bottom", "type": "Decimal", "optional": true}]}
   ],
   "identities": [
     {"name": "agg", "type": "Agg", "components": [{"name": "g", "type": "Text"}]}

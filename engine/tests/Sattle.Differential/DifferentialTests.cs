@@ -333,16 +333,20 @@ public class DifferentialTests
         }
     }
 
-    /// <summary>#161 (#159 G5): the greatest decimal `top` of one group is its number whatever digits came first: 2.5 and 2.50 in every order, with and
-    /// without a retraction of the first, under every cut, equal to the reference.</summary>
+    /// <summary>#161 (#159 G5): the greatest decimal `top` and the least `bottom` of one group are their number whatever digits came first: the six orders
+    /// of `+2.50 +2.5 -2.50`, the same with the digits swapped, two rows, one row, and beside another value; under every cut, equal to the reference.</summary>
     [Theory]
-    [InlineData("+2.50 +2.5 -2.50")] [InlineData("+2.5 +2.50 -2.5")] [InlineData("+2.50 -2.50 +2.5")] [InlineData("+2.5 -2.5 +2.50")]
-    [InlineData("+2.50 +2.5")] [InlineData("+2.5 +2.50")] [InlineData("+2.50")] [InlineData("+1 +2.50 +2.5 -2.50")]
-    public void A_decimal_maximum_is_its_number_whatever_digits_came_first(string changes)
+    [InlineData("+2.50 +2.5 -2.50", "top")] [InlineData("+2.5 +2.50 -2.50", "top")] [InlineData("+2.50 -2.50 +2.5", "top")]
+    [InlineData("+2.5 -2.50 +2.50", "top")] [InlineData("-2.50 +2.50 +2.5", "top")] [InlineData("-2.50 +2.5 +2.50", "top")]
+    [InlineData("+2.5 +2.50 -2.5", "top")] [InlineData("+2.5 -2.5 +2.50", "top")]
+    [InlineData("+2.50 +2.5", "top")] [InlineData("+2.5 +2.50", "top")] [InlineData("+2.50", "top")] [InlineData("+1 +2.50 +2.5 -2.50", "top")]
+    [InlineData("+2.50 +2.5 -2.50", "bottom")] [InlineData("+2.5 +2.50 -2.50", "bottom")] [InlineData("-2.50 +2.50 +2.5", "bottom")]
+    [InlineData("+2.50", "bottom")] [InlineData("+3 +2.50 +2.5 -2.50", "bottom")]
+    public void A_decimal_extreme_is_its_number_whatever_digits_came_first(string changes, string property)
     {
         var w = Worlds.All.Single(x => x.Name == "group min and max");
         Sattle.Reference.Input[] log = [.. changes.Split(' ').Select(c => (Sattle.Reference.Input)PlainRow("a", c[0] == '+' ? 1 : -1, "k0", "g0", 0, 0, decimal.Parse(c[1..], System.Globalization.CultureInfo.InvariantCulture)))];
-        static Value? Of(Sattle.Reference.SpaceFacts f) => f.Graphs["master"].Entities.Values.SelectMany(e => e.Props).Where(kv => kv.Key.EndsWith("prop:top", StringComparison.Ordinal)).Select(kv => kv.Value).SingleOrDefault();
+        Value? Of(Sattle.Reference.SpaceFacts f) => f.Graphs["master"].Entities.Values.SelectMany(e => e.Props).Where(kv => kv.Key.EndsWith("prop:" + property, StringComparison.Ordinal)).Select(kv => kv.Value).SingleOrDefault();
         static string? Text(Value? v) => v is DecimalValue d ? d.Q.ToString(System.Globalization.CultureInfo.InvariantCulture) : null;
         Assert.Equal("2.5", Text(Of(Sattle.Reference.ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), log))));
         foreach (var chunking in new[] { Chunking.OneByOne, Chunking.Largest, Chunking.Reversed })
