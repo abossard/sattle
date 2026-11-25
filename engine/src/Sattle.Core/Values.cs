@@ -88,6 +88,18 @@ public static class Norm
         return s is "-0" or "" ? "0" : s;
     }
 
+    /// <summary>The text an identity key holds for a value (Def. 2.4): a text itself, the normal form of a number or an instant, `true` or `false`, the id of an element; null for the absent value and a list. A domain fixes the kind of each component, so the text is as injective as the value.</summary>
+    public static string? Text(Value v) => v switch
+    {
+        TextValue t => t.S,
+        IntegerValue i => i.N.ToString(CultureInfo.InvariantCulture),
+        DecimalValue d => Decimal(d.Q),
+        InstantValue n => Instant(n.Ns),
+        BooleanValue b => b.B ? "true" : "false",
+        EntityValue e => e.Id,
+        _ => null,
+    };
+
     public static string Instant(long ns)
     {
         var sec = Math.DivRem(ns, 1_000_000_000L, out var frac);

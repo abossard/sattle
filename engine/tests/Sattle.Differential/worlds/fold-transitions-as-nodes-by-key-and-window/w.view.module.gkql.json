@@ -1,0 +1,13 @@
+{
+  "module": "w.view",
+  "version": "1.0.0",
+  "imports": [
+    {"module": "w.base", "alias": "base", "version": "1.0.0", "digest": null}
+  ],
+  "entities": [
+    {"name": "Transition", "properties": [{"name": "k", "type": "Text"}, {"name": "windowStart", "type": "Instant"}, {"name": "from", "type": "Text", "optional": true}, {"name": "to", "type": "Text", "optional": true}]}
+  ],
+  "identities": [
+    {"name": "transition", "type": "Transition", "components": [{"name": "k", "type": "Text"}, {"name": "windowStart", "type": "Instant"}]}
+  ]
+}

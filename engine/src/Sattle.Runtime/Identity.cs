@@ -282,13 +282,16 @@ sealed class VId : VExpr
 {
     readonly IdDomain dom; readonly VExpr[] comps; readonly IdentityCatalog cat; readonly Interner it; readonly RuntimeFaults faults;
     readonly CodeCache[] caches; readonly bool[] keepsText;
+    /// <summary>Per component the type of a value that is not held as a text code (a number, an instant, a boolean), else null.</summary>
+    readonly Ty?[] scalars;
     readonly long[] buf; readonly Column[] cols;
     /// <summary>When set, `Eval` also fills `Owns` with the own id of each row's key (`IdentityCatalog.Resolve` with `own`).</summary>
     public bool TrackOwn { get; set; }
     public Column? Owns { get; private set; }
-    public VId(IdDomain dom, VExpr[] comps, IdentityCatalog cat, Interner it, RuntimeFaults faults)
+    public VId(IdDomain dom, VExpr[] comps, Ty[] types, IdentityCatalog cat, Interner it, RuntimeFaults faults)
     {
         this.dom = dom; this.comps = comps; this.cat = cat; this.it = it; this.faults = faults;
+        scalars = [.. types.Select(t => t.Tag is Tag.Integer or Tag.Decimal or Tag.Instant or Tag.Boolean ? t : null)];
         caches = [.. comps.Select(_ => new CodeCache())]; keepsText = [.. dom.Canonicalizers.Select(IdentityCatalog.KeepsText)];
         buf = new long[comps.Length]; cols = new Column[comps.Length];
     }
@@ -304,15 +307,7 @@ sealed class VId : VExpr
             for (var k = 0; k < cols.Length && ok; k++)
             {
                 if (cols[k].P is not null && !cols[k].P![i]) { ok = false; break; }
-                var code = (int)cols[k].L[i];
-                if (keepsText[k] && !it.IsYoung(code)) { buf[k] = code; continue; }          // an old code is the one code of its text, so the text's exact canonical form is the code itself
-                if (!caches[k].TryGet(code, out var cc))
-                {
-                    var text = it.Get(code);
-                    var s = IdentityCatalog.Canonicalize(dom.Canonicalizers[k], text);
-                    cc = s is null ? -1 : ReferenceEquals(s, text) && !it.IsYoung(code) ? code : it.Intern(s);       // a text the canonicalizer leaves as it is: an old code is the one code of its text
-                    if (!it.IsYoung(code)) caches[k].Set(code, cc);          // a young code may be freed and given to another text
-                }
+                var cc = Canonical(cols[k], k, i);
                 if (cc < 0) { faults.Overflow++; ok = false; break; }
                 buf[k] = cc;
             }
@@ -332,14 +327,25 @@ sealed class VId : VExpr
         for (var k = 0; k < comps.Length; k++) cols[k] = comps[k].Eval(b);
         return cols;
     }
+    /// <summary>The code of the canonical text of component `k` at a present row, -1 when it has none. A number, an instant or a boolean is its normal-form text (`Norm.Text`), interned old as every key text is.</summary>
+    int Canonical(Column c, int k, int row)
+    {
+        if (scalars[k] is { } ty) return it.Intern(Norm.Text(Codec.ToValue(c, row, ty, it))!);
+        var code = (int)c.L[row];
+        if (keepsText[k] && !it.IsYoung(code)) return code;          // an old code is the one code of its text, so the text's exact canonical form is the code itself
+        if (caches[k].TryGet(code, out var cc)) return cc;
+        var text = it.Get(code);
+        var s = IdentityCatalog.Canonicalize(dom.Canonicalizers[k], text);
+        cc = s is null ? -1 : ReferenceEquals(s, text) && !it.IsYoung(code) ? code : it.Intern(s);       // a text the canonicalizer leaves as it is: an old code is the one code of its text
+        if (!it.IsYoung(code)) caches[k].Set(code, cc);          // a young code may be freed and given to another text
+        return cc;
+    }
     public bool CanonicalComponents(Column[] cols, int row, long[] into)
     {
         for (var k = 0; k < cols.Length; k++)
         {
             if (cols[k].P is not null && !cols[k].P![row]) return false;
-            var code = (int)cols[k].L[row];
-            if (keepsText[k] && !it.IsYoung(code)) { into[k] = code; continue; }
-            if (!caches[k].TryGet(code, out var cc)) { var s = IdentityCatalog.Canonicalize(dom.Canonicalizers[k], it.Get(code)); cc = s is null ? -1 : it.Intern(s); if (!it.IsYoung(code)) caches[k].Set(code, cc); }
+            var cc = Canonical(cols[k], k, row);
             if (cc < 0) return false;
             into[k] = cc;
         }

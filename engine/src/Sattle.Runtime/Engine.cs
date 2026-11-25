@@ -162,14 +162,14 @@ public static class PlanCompiler
                 VExpr IdC(TId id)
                 {
                     var dom = cat.Domain(id.DomainId, id.DomainName, [.. id.Comps.Select(c => c.CompName)], [.. id.Comps.Select(c => c.Canonicalizer)], id.Type.Ty.TypeId);
-                    return new VId(dom, [.. id.Comps.Select(c => ExprCompiler.Compile(c.Value, inL, cx.It, cx.Faults, IdC))], cat, cx.It, cx.Faults);
+                    return new VId(dom, [.. id.Comps.Select(c => ExprCompiler.Compile(c.Value, inL, cx.It, cx.Faults, IdC))], [.. id.Comps.Select(c => c.Value.Type.Ty)], cat, cx.It, cx.Faults);
                 }
                 return ExprCompiler.Compile(e, inL, cx.It, cx.Faults, IdC);
             }
             VId MakeId(TId id)
             {
                 var dom = cat.Domain(id.DomainId, id.DomainName, [.. id.Comps.Select(c => c.CompName)], [.. id.Comps.Select(c => c.Canonicalizer)], id.Type.Ty.TypeId);
-                return new VId(dom, [.. id.Comps.Select(c => Compile(c.Value))], cat, cx.It, cx.Faults);
+                return new VId(dom, [.. id.Comps.Select(c => Compile(c.Value))], [.. id.Comps.Select(c => c.Value.Type.Ty)], cat, cx.It, cx.Faults);
             }
             PhysOp op;
             // an aggregate whose rows go only to sinks carries the pair of a mean or a last next to it (Law 7.5 item 3 (i)); other readers see the declared columns alone

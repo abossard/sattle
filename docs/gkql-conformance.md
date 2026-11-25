@@ -69,7 +69,7 @@ Over windows only `count`, `sum`, `min`, `max` and `avg` are allowed.
 | Construct | Ids |
 |---|---|
 | `graph-match`, `traverse`, `fixpoint` | copy the id of an input element into a column; no new id |
-| `nodes` | a copied element column, or `identity(domain, values)`: `ι(domain, canonical values)`, a 130 bit hash of the tenant, the domain and the canonical components, the same for all programs of a tenant; the canonical form (lower case, trimmed, canonical addresses) is part of `v_j`; the id written is the representative of its class under the present links (Ch. 2, Prop. 2.3) |
+| `nodes` | a copied element column, or `identity(domain, values)`: `ι(domain, canonical values)`, a 130 bit hash of the tenant, the domain and the canonical components, the same for all programs of a tenant; the canonical form (lower case, trimmed, canonical addresses; a number, instant or boolean component as its normal-form text) is part of `v_j`; the id written is the representative of its class under the present links (Ch. 2, Prop. 2.3) |
 | `edges` | `ι(c, source, target)` with the constant `c` = (program, edge key); the type is not part of the id |
 | other functions | none returns an id: `id(e)` reads an element as text; `identity` is allowed only in `nodes`, `edges` and `link` |
 

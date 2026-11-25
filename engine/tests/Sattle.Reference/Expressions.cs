@@ -20,7 +20,7 @@ public static class Expressions
     /// <summary>The identity key an `IdOf` denotes on a row; null when a component is absent or has no canonical form (the emit then skips the row, Def. 5.9).</summary>
     public static IdentityKey? KeyOf(TId id, Func<string, Value> field)
     {
-        var comps = id.Comps.Select(c => Eval(c.Value, field) is TextValue t ? Identities.Canonicalize(c.Canonicalizer, t.S) : null).ToImmutableArray();
+        var comps = id.Comps.Select(c => Norm.Text(Eval(c.Value, field)) is { } t ? Identities.Canonicalize(c.Canonicalizer, t) : null).ToImmutableArray();
         return comps.Any(c => c is null) ? null : new IdentityKey(id.DomainId, comps!);
     }
 

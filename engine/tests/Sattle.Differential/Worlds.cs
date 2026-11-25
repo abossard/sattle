@@ -155,6 +155,8 @@ public static class Worlds
     /// <summary>A fold whose look-back (10 minutes) is shorter than the logs: a window leaves the series six windows after it closes (a window and its late horizon of three take four), and the fold forgets it (#151 D6): the key starts again at its first window still inside the look-back.</summary>
     /// <summary>#159 G2 and #151 D1: a fold by the group `g` of the items, straight over their series, so two items of one group give two rows for one key and window.</summary>
     public static readonly World SharedKeyThreshold = View("threshold by a key two items share", "Series, Fold", 0.3, Dense) with { Witnesses = ["state=t:off"] };
+    /// <summary>#170: the transitions of a fold go straight to a nodes sink whose identity has the fold key and the window start (an Instant component).</summary>
+    public static readonly World FoldTransitionNodes = View("fold transitions as nodes by key and window", "Series, Fold, EmitEntity", 0.3, Dense) with { Witnesses = ["to=t:on", "windowStart=i:"] };
     public static readonly World Hysteresis = View("threshold over a short look-back", "Series, Rollup, Fold", 0.45, Dense) with { Witnesses = ["state=t:on", "state=t:off"] };
     /// <summary>T-B4 (premise B4 of Theorem 6.2): a fold over a roll-up by group, whose members change group (a keyed item row is replaced with another group, so the item leaves one key and joins another), with windows that leave the retained range of five minutes (the look-back; a window and its late horizon of three take four). Every advance is its own step in the engine and in the reference, so an advance and a structure change never share one; the harness cuts the rows between them every way.</summary>
     public static readonly World MembersLeave = View("threshold over a roll-up whose members leave", "Series, Rollup, Fold, structure change", 0.3, [
@@ -279,7 +281,7 @@ public static class Worlds
         TraverseOneToThree, TraverseIn, TraverseSubtype, JoinOnTraverseStart, JoinOnTraverseStartRight,
         View("emit update", "EmitEntity update") with { Witnesses = ["degree=n:"] },
         View("series and rollup", "Series, Rollup", 0.25) with { Witnesses = ["d:w.view/prop:v"] },
-        Hysteresis, SharedKeyThreshold, RowParameters, SharedWindow, Fill, FillAroundLoss, FillOverHop, TimeToLive, RollupAll, TwoKeyRules, LiftedDependency, OptionalProperty,
+        Hysteresis, SharedKeyThreshold, FoldTransitionNodes, RowParameters, SharedWindow, Fill, FillAroundLoss, FillOverHop, TimeToLive, RollupAll, TwoKeyRules, LiftedDependency, OptionalProperty,
         Rows("conflicting fragments", "EmitEntity, Def. 6.4") with { Witnesses = ["prop:g=", "prop:n="] },
         View("threshold", "Series, Rollup, Fold", 0.45, Dense) with { Witnesses = ["state=t:on", "state=t:off"] },
     ];
