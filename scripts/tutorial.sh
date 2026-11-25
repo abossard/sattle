@@ -25,6 +25,15 @@ require_capture() {
     printf 'Run ./scripts/tutorial.sh prepare <capture-directory> first.\n' >&2
     exit 1
   fi
+  if [[ ! -d "$data/records" ]]; then convert_capture; fi
+}
+
+# The engine reads record envelopes only: the collector turns the native fixtures into records under
+# records/. A replay of $data reads those and skips the native files, which the verifiers read for expectations.
+convert_capture() {
+  rm -rf "$data/records" "$data/.records"
+  python3 -B "$root/lab/collector/capture.py" "$data" "$data/.records"
+  mv "$data/.records" "$data/records"
 }
 
 build_engine() {
@@ -102,7 +111,8 @@ case "${1:-serve}" in
       printf 'Pass an Azure lab capture directory. See lab/README.md.\n' >&2
       exit 1
     fi
-    exec bash "$root/lab/fixtures/build-tutorial.sh" "$capture" "$data"
+    bash "$root/lab/fixtures/build-tutorial.sh" "$capture" "$data"
+    convert_capture
     ;;
   serve)
     require_capture
