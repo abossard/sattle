@@ -1351,10 +1351,12 @@ sealed class FoldOp : PhysOp
         return Math.Min(next, NextPolicy(st, ws));
     }
 
-    /// <summary>The window whose close a key waits for: the next one while it moves, else its next event; none while it is dirty.</summary>
+    /// <summary>The window whose close a key waits for: the next one while it moves, else its next event; none while it is dirty, or inactive with no
+    /// policy row (a policy row that comes touches the key).</summary>
     long DueWindow(KeyState st) => st.Mode.Phase switch
     {
         Phase.Dirty => long.MaxValue,
+        Phase.Inactive when !st.Policies.Any(p => p.Count > 0) => long.MaxValue,
         Phase.Moving => After(st.Mode.At),
         _ => NextEvent(st, st.Mode.At),
     };
@@ -1470,6 +1472,7 @@ sealed class FoldOp : PhysOp
     /// <summary>Adds weight `w` of value `v` to observe aggregate `agg` of window `ws`, whose value in place is `at`.</summary>
     static void See(KeyState st, long ws, int agg, ref Seen at, Cell v, long w)
     {
+        if (w == 0) return;
         if (at.N == 0) { at = new(v, w); return; }
         if (at.Value == v)
         {
@@ -1479,13 +1482,14 @@ sealed class FoldOp : PhysOp
                 var (nv, nn) = rest.First(); rest.Remove(nv);
                 at = new(nv, nn);
                 if (rest.Count > 0) sp[(ws, agg)] = rest;
+                else if (sp.Count == 0) st.Spill = null;
             }
             return;
         }
         var others = (st.Spill ??= []).TryGetValue((ws, agg), out var o) ? o : st.Spill[(ws, agg)] = [];
         var n = others.GetValueOrDefault(v) + w;
         if (n != 0) others[v] = n;
-        else if (others.Remove(v) && others.Count == 0) st.Spill.Remove((ws, agg));
+        else if (others.Remove(v) && others.Count == 0 && st.Spill.Remove((ws, agg)) && st.Spill.Count == 0) st.Spill = null;
     }
 
     /// <summary>What the observe aggregates read of window `ws`: the number of its distinct values, or the least or greatest of them, a decimal without trailing
@@ -1612,7 +1616,7 @@ sealed class FoldOp : PhysOp
             for (var i = 0; i < o; i++)
             {
                 if (st.Obs.At(i)[0].N > 0) st.Present--;
-                if (st.Spill is { } sp) for (var a = 0; a < observed.Length; a++) sp.Remove((st.Obs.Key(i), a));
+                if (st.Spill is { } sp) { for (var a = 0; a < observed.Length; a++) sp.Remove((st.Obs.Key(i), a)); if (sp.Count == 0) st.Spill = null; }
             }
             st.Obs.Drop(o);
             st.Out.Drop(st.Out.From(to));
