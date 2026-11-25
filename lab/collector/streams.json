@@ -7,7 +7,7 @@
    "query": "sum by (namespace, pod) (container_memory_working_set_bytes{container!=\"\"})", "labels": ["namespace", "pod"]},
   {"name": "node-usage", "plugin": "kubernetes-metrics", "rows": "UsageRow", "kind": "nodes"},
   {"name": "pod-usage", "plugin": "kubernetes-metrics", "rows": "UsageRow", "kind": "pods"},
-  {"name": "app-metrics", "plugin": "azure-monitor-hub", "rows": "MetricRow", "hub": "sattle-demo-metrics"},
+  {"name": "app-metrics", "plugin": "azure-monitor-hub", "rows": "MetricRow", "hub": "metrics"},
   {"name": "app-platform-metrics", "plugin": "azure-metrics", "rows": "MetricRow", "resource": "webApp",
    "namespace": "Microsoft.App/containerApps", "metrics": ["CpuPercentage", "RestartCount"]}
 ]

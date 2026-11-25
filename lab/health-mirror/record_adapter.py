@@ -11,7 +11,7 @@ def compact(value):
 
 
 def record(at, row_type, key, values):
-    return {"source": "records:" + row_type, "capturedAt": at, "payload": {"key": compact(key), "values": values}}
+    return {"v": 1, "source": "records:" + row_type, "capturedAt": at, "key": compact(key), "payload": {"key": compact(key), "values": values}}
 
 
 def normalize(envelope):

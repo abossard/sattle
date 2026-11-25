@@ -33,7 +33,7 @@ A stream is one query of one plugin and the row type its records feed (`streams.
 |---|---|---|---|---|
 | `log-analytics` | `table`, `columns`, optional `where`, `key` | one row, the columns as values | the `TimeGenerated` column | ingestion time |
 | `prometheus` | `query`, `step`, `labels` | one point: `metric`, `at`, `value`, the listed labels | `at` | sample time |
-| `azure-monitor-hub` | `hub` (a diagnostic setting sends `AllMetrics` there) | one metric record: `resourceId`, `metric`, `at`, `grain` (s), `total`, `average`, `minimum`, `maximum`, `count` | `at` | enqueued time |
+| `azure-monitor-hub` | `hub` (a diagnostic setting sends `AllMetrics` there; a name in `--resources FILE` maps it to the hub's own name) | one metric record: `resourceId`, `metric`, `at`, `grain` (s), `total`, `average`, `minimum`, `maximum`, `count` | `at` | enqueued time |
 | `azure-metrics` | `resource` (a name in `--resources FILE`, which maps it to the ARM id), `namespace`, `metrics`, optional `aggregations` (default Total, Count), `grain`, `settle`, `filter` | one bucket with any aggregate: same values as `azure-monitor-hub` | `at` | bucket time |
 | `kubernetes-metrics` | `kind` (`nodes` or `pods`) | one node or pod container: `kind`, `namespace`, `name`, `container`, `at`, `window`, `cpu` (cores), `memory` (bytes) | `at` | scrape time |
 

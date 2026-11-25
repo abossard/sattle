@@ -207,7 +207,7 @@ def main(argv):
     p.add_argument("--prometheus")
     p.add_argument("--context")
     p.add_argument("--eventhubs")
-    p.add_argument("--resources", type=Path, help="JSON map from a stream's resource name to its ARM id")
+    p.add_argument("--resources", type=Path, help="JSON map from a stream's resource or hub name to its ARM id or hub name")
     a = p.parse_args(argv)
     streams = json.loads(a.streams.read_text())
     if a.replay:

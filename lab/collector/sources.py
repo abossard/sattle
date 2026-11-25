@@ -237,7 +237,7 @@ def azure_monitor_hub_fetch(stream, window, options):
     """The events enqueued since the window start, read to the end the hub holds now."""
     with TemporaryDirectory() as d:
         out = Path(d) / "events.ndjson"
-        done = subprocess.run(["node", str(CONSUME), "--namespace", options["eventhubs"], "--hub", stream["hub"],
+        done = subprocess.run(["node", str(CONSUME), "--namespace", options["eventhubs"], "--hub", options["resources"].get(stream["hub"], stream["hub"]),
                                "--out", str(out), "--from", iso(window[0]), "--seconds", "5"],
                               capture_output=True, text=True, timeout=300)
         if done.returncode != 0:
