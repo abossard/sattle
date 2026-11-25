@@ -46,7 +46,8 @@ One row per verb. "Fails" is the requirement that fails if the row is wrong.
 | `traverse` | J unrolled at most `max` times, then K | J: rows keyed by start, edges keyed by the frontier id; K: (start, reached id), keeping the least depth; `0 ≤ min ≤ max ≤ 64` | rows by start; depth per (start, id), both ways | R5, R6 |
 | `fixpoint` | F, then J with the node rows | `κ_F`: a node row names its key, an edge row its `from`; J: the keys with an own row | per node its rows, its edges both ways, its value | R7 |
 | `link` | L (weights summed per pair of ids), then the classes of the present links | the pair of own ids | weight per pair; classes; a sparse own-id table in the sinks | R1, R4 |
-| `nodes`, `edges` | construction step, then merge | see elements | per element its fragments | R2, R4 |
+| `nodes` | construction step, then merge | ids: see elements; merge keyed by id | per element its fragments | R2, R4 |
+| `edges` | construction step, then merge | ids: see elements; merge keyed by id | per edge its fragments | R2, R4 |
 
 ### Aggregates of `summarize`
 
