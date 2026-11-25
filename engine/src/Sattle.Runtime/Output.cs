@@ -240,10 +240,20 @@ sealed class SeriesOp : PhysOp
         return false;
     }
 
+    /// <summary>Def. 7.16: `S`, the later of `since` and the end of the element's newest record in the look-back; a hop window ends `reachBack` after its grid window.</summary>
+    long SilentFrom(int elem)
+    {
+        var s = since.TryGetValue(elem, out var from) ? from : long.MinValue;
+        var reachBack = Lag.Length == 0 ? 0 : Lag.Max();
+        foreach (var a in Starts(elem, frontier - within, long.MaxValue, hi).Reverse())
+            if (Record(elem, a, hi, frontier) is not null) return Math.Max(s, a + period + reachBack);
+        return s;
+    }
+
     void UpdateMarker(BatchBuilder bb, int elem)
     {
         var list = arrangement.GetValueOrDefault(elem);
-        long? want = list is { Count: > 0 } && frontier != long.MinValue && InNoData(elem) ? Floor(frontier) - period : null;
+        long? want = list is { Count: > 0 } && frontier != long.MinValue && InNoData(elem) ? Floor(SilentFrom(elem) + ttl!.Value) : null;      // where the silence reached the time to live, not a window made from the clock (R8, #159 G7)
         long? old = marker.TryGetValue(elem, out var m) ? m : null;
         if (old == want) return;
         if (old is { } was && list is not null) foreach (var r in list) WriteRow(bb, r, was, [], -r.Weight, true);

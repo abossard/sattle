@@ -205,7 +205,7 @@ public static class Denotation
 
     /// <summary>
     /// Def. 7.16 for a roll-up: the records of members in no data are not aggregated, and a key is in no data iff every member that has a row is.
-    /// A member is a row of the input without its window and values. The key in no data has one record, at the window of the markers, without values.
+    /// A member is a row of the input without its window and values. The key in no data has one record, at the greatest window of its members' markers, without values.
     /// </summary>
     static Relation RollupWithNoData(TRollup r, Relation rows)
     {
@@ -221,7 +221,7 @@ public static class Denotation
             let marked = markers.Select(x => Member(x.Row)).Distinct(StringComparer.Ordinal).Count()
             where marked > 0 && marked == all
             let read = rows.Reader(markers[0].Row)
-            let start = Instant(read("windowStart"))
+            let start = markers.Max(x => Instant(rows.Reader(x.Row)("windowStart")))       // the greatest window of its members' markers (#159 G7)
             select Shape(r, r.Keys.Select(k => (k.Name, Expressions.Eval(k.Value, read))).Concat(r.Aggs.Select(a => (a.Target, Value.Null)))
                 .Concat([("windowStart", Value.Instant(start)), ("windowEnd", Value.Instant(start + r.PeriodNs)), (TThreshold.NoDataColumn, Value.Boolean(true))]).ToDictionary(x => x.Item1, x => x.Item2, StringComparer.Ordinal));
         var markerRows = silent.ToList();
@@ -356,7 +356,7 @@ public static class Denotation
     /// <summary>
     /// Def. 6.7: each row with the closed windows of its element in [frontier − within, frontier) that hold every property read.
     /// Def. 7.15: a read with a fill also holds its fill value in every window of the look-back that is covered for the element (it starts at or after `since` of the element, ends at or before `covered` of the read and contains no time of `lost`) and has no stored value.
-    /// Def. 7.16: with a time to live, an element for which the later of its `since` and the end of its newest record lies more than the time to live before the frontier has one more record, at the newest closed grid window, marked no data and without values.
+    /// Def. 7.16: with a time to live, an element for which the later of its `since` and the end of its newest record lies more than the time to live before the frontier has one more record, at the grid window that holds that later time plus the time to live, marked no data and without values.
     /// </summary>
     public static Relation Series(TSeries s, Relation rows, GraphFacts g, long? frontier, IReadOnlyDictionary<string, long> since, IReadOnlyList<long?> covered, IReadOnlyList<long> lags, IReadOnlySet<long> lost)
     {
@@ -385,7 +385,7 @@ public static class Denotation
             long? newest = records.Count > 0 ? Math.Max(records[^1].Start + s.PeriodNs + lags.DefaultIfEmpty().Max(), started ?? long.MinValue) : started;      // a hop window ends `lag` after its grid window (#111)
             if (s.TtlNs is { } ttl && frontier is { } at && newest is { } e && at - e > ttl)
             {
-                var start = Floor(at) - s.PeriodNs;
+                var start = Floor(e + ttl);       // the window in which the silence reached the time to live, not one made from the clock (R8, #159 G7)
                 result.Add((Shape(s, With(Named(rows, r.Row), [("windowStart", Value.Instant(start)), ("windowEnd", Value.Instant(start + s.PeriodNs)), .. s.Reads.Select(x => (x.OutName, Value.Null)), .. Marker(true)])), r.Weight));
             }
         }

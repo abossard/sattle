@@ -41,7 +41,7 @@ public sealed record SeriesSpec(string Element, string Lookback, string? Propert
 public sealed record HysteresisSpec(string[] By, string Value, decimal Above, long EnterAfter, decimal Below, long ExitAfter,
     string High, string Low, string Initial, string? NoData = null, bool EvidenceWindow = false,
     JsonElement? AboveBy = null, JsonElement? EnterBy = null, JsonElement? BelowBy = null, JsonElement? ExitBy = null);
-/// <summary>The rows whose `time` is within `age` before the newest input time.</summary>
+/// <summary>The rows whose `time` is within `age` before the clock.</summary>
 public sealed record RetainSpec(string Time, string Age);
 /// <summary>From the element in column `from`, every element reached over `min` to `max` edges of type `edge` (and its sub-types) in `direction` (out, in,
 /// either), one row each, in the new column `to`.</summary>

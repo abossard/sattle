@@ -668,6 +668,10 @@ The text editor of a projection reads and checks its `.kql` text through these c
 - **Digest per graph.** Each entry of `GET /health` `graphs` has `digest`: the graph's digest at its head (Def. 3.5, the `digest` of a preview's graphs), from the pass that makes the state digest. The catalog's too.
 - **Telemetry port (no wire change).** `ITelemetryStore.ScanGraph` hands every window of a graph in a range to a visitor, also the windows of an element that left; without a visitor it counts them and allocates nothing. `SeriesCount`, `PartialWindows` and `MergeConflicts` are on the port. `InMemoryTelemetryStore.Dump` and `WindowCount` are gone.
 
+## Version 3.65: a no-data record sits where the silence began to count (#159 G7)
+- **Series.** The no-data record of an element sits at the grid window that holds `S + freshness`, `S` the later of `since` and the end of its newest record; before, it sat at the newest closed window before the clock and moved with it. A roll-up in no data sits at the greatest window of its members' records. Only a clock selection reads the clock (Ch. 7, R8). No output changes: a `hysteresis` that cites evidence computes its own silence window.
+- **Kernel and wire.** No change.
+
 ## Version 3.64: a decimal is kept by its number (#161, #159 G5)
 - **Values.** Where an operator keeps one of several equal decimals (2.5 and 2.50), it keeps the number without trailing zeros: `min`, `max`, `arg_max`, `arg_min`, a decimal key of `summarize` and `join`, and the row `distinct` emits. Before, the digits that came first were kept, so the output depended on the order of the rows (Ch. 7, R1).
 - **Kernel and wire.** No change.
