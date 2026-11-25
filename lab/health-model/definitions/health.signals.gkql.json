@@ -1465,7 +1465,15 @@
     "fn": ">",
     "args": [
      {
-      "ref": "samples"
+      "fn": "coalesce",
+      "args": [
+       {
+        "ref": "samples"
+       },
+       {
+        "lit": 0.0
+       }
+      ]
      },
      {
       "lit": 0.0
