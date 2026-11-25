@@ -73,8 +73,8 @@ CASES = {
                            "windowStart": iso(at(1)), "value": 95}]}}},
     # A6: t2 succeeds at minute 3 while t1 stays Unknown until its own failure at minute 5
     "a6": {"records": [*task("t1", {0: "started", 2: "running", 5: "failed"}), *task("t2", {1: "started", 3: "succeeded"})], "end": 9,
-           "expect": {"completion": {"Transition": [t("t1", 0, "Unknown", "Unknown"), t("t1", 5, "Unknown", "Failed"),
-                                                    t("t2", 1, "Unknown", "Unknown"), t("t2", 3, "Unknown", "Succeeded")]}}},
+           "expect": {"completion": {"Transition": [t("t1", 0, "Unknown", "Unknown", 1), t("t1", 5, "Unknown", "Failed", 1),
+                                                    t("t2", 1, "Unknown", "Unknown", 1), t("t2", 3, "Unknown", "Succeeded", 1)]}}},
     # A7: revision 2 (entry streak 4) is added at 8:30, after window 6 closed (8:00) and before window 7 closes (9:00);
     # the windows before keep revision 1, the later ones are folded with revision 2
     "a7": {"records": [policy("api", enter=2), *readings("api", {**ABOVE4, 4: 10, 5: 10, 6: 10, 9: 90, 10: 90, 11: 90, 12: 90}),

@@ -76,6 +76,9 @@
     "key": {
      "ref": "key"
     },
+    "revision": {
+     "lit": 1
+    },
     "pending": {
      "lit": "Unknown"
     }
@@ -107,6 +110,7 @@
      }
     },
     "policy": [
+     "revision",
      "pending"
     ],
     "state": {
@@ -235,6 +239,9 @@
        },
        "value": {
         "ref": "value"
+       },
+       "revision": {
+        "ref": "revision"
        },
        "since": {
         "ref": "since"
