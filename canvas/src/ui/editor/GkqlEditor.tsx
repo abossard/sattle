@@ -5,7 +5,7 @@ import {
   appendVerb, authorableVerbs, canEditGkqlStructure, checkGkql, connect, focusOf, foldPolicy, layoutGkql, portsFor, readGkqlJson, rewire, rowsByVerb, sourcesFor, spanOf, verbAt, verbFocus, verbStyle, wirePort,
   type GkqlDrawing, type GkqlProgram, type GkqlVerb, type GkqlWire,
 } from "../../editor/gkql";
-import { openModel, step } from "../../editor/gkql-editing";
+import { checkStep, openCheck, openModel, step } from "../../editor/gkql-editing";
 import { GkqlGraph } from "./GkqlGraph";
 import { GkqlOutline } from "./GkqlOutline";
 import type { EditorProps } from "./languages";
@@ -227,9 +227,12 @@ function WirePanel({ focus, readOnly, remove }: { focus: string; readOnly: boole
  */
 export default function GkqlEditor({ file, source, initialTab = "wires", starter, recoveredText, diagnostics, store, onEdit, rows }: EditorProps) {
   const s = useStyles();
+  const projectionId = `d:${file.projection.slice(0, file.projection.lastIndexOf("."))}/projection:${file.projection.split(".").at(-1)}`;
+  const ours = useMemo(() => (diagnostics ?? []).filter((d) => d.file === file.file || d.focus === projectionId || d.focus.startsWith(projectionId + "/")), [diagnostics, file.file, projectionId]);
   const [model, dispatch] = useReducer(step, recoveredText ?? source ?? "", openModel);
   const [side, setSide] = useState<string>(initialTab === "source" ? "source" : "operation");
-  const [status, setStatus] = useState<{ phase: "idle" | "checking" | "checked" } | { phase: "error"; message: string }>({ phase: "idle" });
+  // the engine checked the draft's text when it opened the draft: the editor opens on that check
+  const [status, check] = useReducer(checkStep, model.text === source && diagnostics !== undefined && !ours.some((d) => d.severity === "error"), openCheck);
   const textArea = useRef<HTMLTextAreaElement>(null);
   const fromText = useRef(false);
   const loading = useRef(false);
@@ -247,7 +250,6 @@ export default function GkqlEditor({ file, source, initialTab = "wires", starter
   const readOnly = !store || checking;
   const structureEditable = canEditGkqlStructure(text);
   const frozen = readOnly || !structureEditable || model.error !== null;
-  const projectionId = `d:${file.projection.slice(0, file.projection.lastIndexOf("."))}/projection:${file.projection.split(".").at(-1)}`;
 
   // a source that arrives while nothing was edited becomes the text; every other change of the text is the author's
   useEffect(() => {
@@ -259,14 +261,14 @@ export default function GkqlEditor({ file, source, initialTab = "wires", starter
     if (model.text === noted.current) return;
     noted.current = model.text;
     if (loading.current) loading.current = false;
-    else { onEdit?.(model.text); setStatus({ phase: "idle" }); }
+    else { onEdit?.(model.text); check({ t: "edit" }); }
   }, [model.text, onEdit]);
 
   const problems = useMemo(() => {
     if (!program) return [];
-    const engine = changed ? [] : (diagnostics ?? []).filter((d) => d.file === file.file || d.focus === projectionId || d.focus.startsWith(projectionId + "/"));
+    const engine = changed ? [] : ours;
     return [...checkGkql(program), ...engine.map((d) => ({ focus: focusOf(program, projectionId, d.focus), message: d.message }))];
-  }, [program, changed, diagnostics, file.file, projectionId]);
+  }, [program, changed, ours, projectionId]);
   const byFocus = useMemo(() => {
     const map = new Map<string, string[]>();
     for (const p of problems) if (p.focus) map.set(p.focus, [...(map.get(p.focus) ?? []), p.message]);
@@ -292,17 +294,15 @@ export default function GkqlEditor({ file, source, initialTab = "wires", starter
 
   async function checkAndStore() {
     if (!store) return;
-    setStatus({ phase: "checking" });
-    try {
-      const error = await store(text);
-      setStatus(error ? { phase: "error", message: error } : { phase: "checked" });
-    } catch (error) { setStatus({ phase: "error", message: (error as Error).message }); }
+    check({ t: "start" });
+    try { check({ t: "answer", error: (await store(text)) || null }); }
+    catch (error) { check({ t: "answer", error: (error as Error).message }); }
   }
   async function showRows() {
     if (!rows || !program) return;
     const previewed = text;
     try { setCounted({ text: previewed, rows: rowsByVerb(program, projectionId, await rows()) }); }
-    catch (error) { setStatus({ phase: "error", message: (error as Error).message }); }
+    catch (error) { check({ t: "fail", message: (error as Error).message }); }
   }
   const add = (verb: string) => {
     if (!program) return;

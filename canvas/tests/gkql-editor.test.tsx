@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { readGkql, spanOf, type GkqlProgram } from "../src/editor/gkql";
 import { EditorService } from "../src/editor/service";
 import GkqlEditor from "../src/ui/editor/GkqlEditor";
+import type { EngineDiagnostic } from "../src/source/types";
 
 const base: GkqlProgram = {
   graph: "health", ontology: "tutorial",
@@ -41,6 +42,31 @@ it("loads the tutorial starter as an editable local change", async () => {
   expect(store).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Check & store" }));
   expect(store).toHaveBeenCalledWith(starter);
+});
+
+describe("a stored draft opens again on the engine's check of it", () => {
+  const stored = JSON.stringify({ ...base, graph: "storedHealth" });
+  const problem = (focus: string): EngineDiagnostic => ({ code: "Problem", severity: "error", focus, message: "a problem", line: 0, col: 0 });
+  it.each<[string, EngineDiagnostic[] | undefined, string | undefined, boolean, boolean]>([
+    ["passed", [], undefined, true, false],
+    ["passed, with an error in another projection", [problem("d:tutorial/projection:other")], undefined, true, false],
+    ["refused", [problem("d:tutorial/projection:health/verb:cpuState")], undefined, false, false],
+    ["with no check known", undefined, undefined, false, false],
+    ["with a local text", [], JSON.stringify({ ...base, graph: "localHealth" }), false, true],
+  ])("%s", async (_, diagnostics, recoveredText, checked, storable) => {
+    const user = userEvent.setup();
+    const port = new EditorService("http://localhost/engine");
+    const store = vi.fn().mockResolvedValue(null);
+    const first = render(<GkqlEditor file={metadata} source={JSON.stringify(base)} initialTab="source" port={port} store={store} />);
+    fireEvent.change(screen.getByRole("textbox", { name: "GKQL source" }), { target: { value: stored } });
+    await user.click(screen.getByRole("button", { name: "Check & store" }));
+    expect(await screen.findByText("Projection checked")).toBeTruthy();
+    first.unmount();
+    // the reload: a new editor on the text the draft holds and the engine's check of the draft
+    render(<GkqlEditor file={metadata} source={stored} diagnostics={diagnostics} recoveredText={recoveredText} initialTab="source" port={port} store={store} />);
+    expect(screen.queryByText("Projection checked") !== null).toBe(checked);
+    expect((screen.getByRole("button", { name: "Check & store" }) as HTMLButtonElement).disabled).toBe(!storable);
+  });
 });
 
 function editor(program: GkqlProgram = base) {

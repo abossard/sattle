@@ -94,6 +94,25 @@ export function step(m: GkqlModel, e: GkqlEvent): GkqlModel {
   }
 }
 
+/**
+ * The engine's check of the editor's text, a state machine of its own: `idle` (no check of this text is known, or the author changed it since),
+ * `checking` (Check & store runs), `checked` (the engine passed this text) and `error` (the engine refused it, or a preview of it failed).
+ */
+export type GkqlCheck = { phase: "idle" | "checking" | "checked" } | { phase: "error"; message: string };
+export type GkqlCheckEvent = { t: "edit" } | { t: "start" } | { t: "answer"; error: string | null } | { t: "fail"; message: string };
+
+/** The check as the editor opens: the engine checks a draft when it opens it, so the draft's own text with no error opens as checked. */
+export const openCheck = (passed: boolean): GkqlCheck => ({ phase: passed ? "checked" : "idle" });
+
+export function checkStep(c: GkqlCheck, e: GkqlCheckEvent): GkqlCheck {
+  switch (e.t) {
+    case "edit": return c.phase === "idle" ? c : { phase: "idle" };
+    case "start": return c.phase === "checking" ? c : { phase: "checking" };
+    case "answer": return c.phase !== "checking" ? c : e.error === null ? { phase: "checked" } : { phase: "error", message: e.error };
+    case "fail": return { phase: "error", message: e.message };
+  }
+}
+
 /** The edits of the program's structure, made on the last good program. */
 function structural(m: GkqlModel, e: Extract<GkqlEvent, { t: "change" | "remove" | "connect-end" }>): GkqlModel {
   switch (e.t) {

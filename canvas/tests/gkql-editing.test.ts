@@ -1,7 +1,7 @@
 // The GKQL editor's calculations and its state machine: every action as a pure step, checked on one small program.
 import { describe, expect, it } from "vitest";
 import { appendVerb, authorableVerbs, checkGkql, connect, focusOf, portsFor, printGkql, readGkql, rowsByVerb, spanOf, verbAt, verbStyle, type GkqlProgram } from "../src/editor/gkql";
-import { openModel, step, type GkqlEvent, type GkqlModel } from "../src/editor/gkql-editing";
+import { checkStep, openCheck, openModel, step, type GkqlCheck, type GkqlCheckEvent, type GkqlEvent, type GkqlModel } from "../src/editor/gkql-editing";
 
 const program: GkqlProgram = {
   graph: "p", ontology: "m", inputs: [{ name: "master", ontology: "m" }], parameters: [],
@@ -125,4 +125,17 @@ describe("each action of the editor", () => {
     ["an edit of the graph waits for a valid text", [{ t: "type", text: "{" }, { t: "remove", focus: "verb:keep" }], (m) => [m.text, verbs(m), m.notice !== null], ["{", ["match", "keep", "out"], true]],
     ["load replaces the text without history", [{ t: "load", text: printGkql({ ...program, verbs: [] , wires: [] }) }], (m) => [verbs(m), m.past.length], [[], 0]],
   ])("%s", (_, events, read, expected) => expect(read(run(events))).toEqual(expected));
+});
+
+describe("the engine's check of the text", () => {
+  const idle: GkqlCheck = { phase: "idle" }, checking: GkqlCheck = { phase: "checking" }, checked: GkqlCheck = { phase: "checked" };
+  const refused: GkqlCheck = { phase: "error", message: "no" };
+  it.each([[true, checked], [false, idle]] as const)("a draft whose check passed is %s opens as %o", (passed, state) => expect(openCheck(passed)).toEqual(state));
+  it.each<[GkqlCheck, GkqlCheckEvent, GkqlCheck]>([
+    [checked, { t: "edit" }, idle], [refused, { t: "edit" }, idle], [idle, { t: "edit" }, idle],
+    [idle, { t: "start" }, checking], [checked, { t: "start" }, checking], [refused, { t: "start" }, checking], [checking, { t: "start" }, checking],
+    [checking, { t: "answer", error: null }, checked], [checking, { t: "answer", error: "no" }, refused],
+    [idle, { t: "answer", error: null }, idle], [checked, { t: "answer", error: "no" }, checked],
+    [checked, { t: "fail", message: "no" }, refused], [idle, { t: "fail", message: "no" }, refused],
+  ])("%o on %o is %o", (from, event, to) => expect(checkStep(from, event)).toEqual(to));
 });
