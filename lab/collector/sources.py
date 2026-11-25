@@ -304,7 +304,7 @@ def azure_metrics_readings(stream, response):
                 if all(v is None for v in aggregates.values()):
                     continue
                 at = instant(point["timeStamp"])
-                values = {"resourceId": resource, "metric": metric["name"]["value"], "at": iso(at),
+                values = {"resourceId": resource, "resource": stream["resource"], "metric": metric["name"]["value"], "at": iso(at),
                           "grain": grain(stream.get("grain", "PT1M")), **aggregates}
                 key = compact([resource, values["metric"], sorted(dims.items()), values["at"]])
                 out.append({"key": key, "position": at, "values": values})

@@ -1,0 +1,263 @@
+{
+  "module": "health",
+  "version": "1.0.0",
+  "imports": [],
+  "space": {
+    "name": "healthModel",
+    "sources": [
+      {
+        "name": "availability",
+        "adapter": "record",
+        "rows": "AvailabilityRow"
+      },
+      {
+        "name": "dependencies",
+        "adapter": "record",
+        "rows": "DependencyRow"
+      },
+      {
+        "name": "requests",
+        "adapter": "record",
+        "rows": "RequestRow"
+      },
+      {
+        "name": "activity",
+        "adapter": "record",
+        "rows": "ActivityRow"
+      },
+      {
+        "name": "metrics",
+        "adapter": "record",
+        "rows": "MetricRow"
+      }
+    ],
+    "graphs": [
+      {
+        "name": "master",
+        "projection": "signals",
+        "master": true,
+        "inputs": {
+          "availability": "availability",
+          "dependencies": "dependencies",
+          "requests": "requests",
+          "activity": "activity",
+          "metrics": "metrics",
+          "webTest": {
+            "lit": "Health Pulse home page"
+          },
+          "mcpTest": {
+            "lit": "Azure MCP health"
+          },
+          "appRole": {
+            "lit": "demo-workload"
+          },
+          "modelResourceGroup": {
+            "lit": "group-66bdbf2ad096"
+          }
+        }
+      }
+    ]
+  },
+  "identities": [
+    {
+      "name": "entity",
+      "type": "Entity",
+      "components": [
+        {
+          "name": "key",
+          "type": "Text"
+        }
+      ]
+    },
+    {
+      "name": "signal",
+      "type": "Signal",
+      "components": [
+        {
+          "name": "key",
+          "type": "Text"
+        }
+      ]
+    }
+  ],
+  "entities": [
+    {
+      "name": "Entity",
+      "properties": [
+        {
+          "name": "name",
+          "type": "Text",
+          "label": true
+        },
+        {
+          "name": "state",
+          "type": "Text",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "Signal",
+      "properties": [
+        {
+          "name": "name",
+          "type": "Text",
+          "label": true
+        },
+        {
+          "name": "value",
+          "type": "Decimal",
+          "optional": true
+        },
+        {
+          "name": "state",
+          "type": "Text",
+          "optional": true
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "name": "Contains",
+      "from": "Entity",
+      "to": "Entity"
+    },
+    {
+      "name": "HasSignal",
+      "from": "Entity",
+      "to": "Signal"
+    }
+  ],
+  "rows": [
+    {
+      "name": "AvailabilityRow",
+      "fields": [
+        {
+          "name": "TimeGenerated",
+          "type": "Instant"
+        },
+        {
+          "name": "Name",
+          "type": "Text",
+          "optional": true
+        },
+        {
+          "name": "Success",
+          "type": "Boolean",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "DependencyRow",
+      "fields": [
+        {
+          "name": "TimeGenerated",
+          "type": "Instant"
+        },
+        {
+          "name": "AppRoleName",
+          "type": "Text",
+          "optional": true
+        },
+        {
+          "name": "Name",
+          "type": "Text",
+          "optional": true
+        },
+        {
+          "name": "Success",
+          "type": "Boolean",
+          "optional": true
+        },
+        {
+          "name": "DurationMs",
+          "type": "Decimal",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "RequestRow",
+      "fields": [
+        {
+          "name": "TimeGenerated",
+          "type": "Instant"
+        },
+        {
+          "name": "AppRoleName",
+          "type": "Text",
+          "optional": true
+        },
+        {
+          "name": "Name",
+          "type": "Text",
+          "optional": true
+        },
+        {
+          "name": "ResultCode",
+          "type": "Text",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "ActivityRow",
+      "fields": [
+        {
+          "name": "TimeGenerated",
+          "type": "Instant"
+        },
+        {
+          "name": "CategoryValue",
+          "type": "Text",
+          "optional": true
+        },
+        {
+          "name": "Level",
+          "type": "Text",
+          "optional": true
+        },
+        {
+          "name": "ResourceGroup",
+          "type": "Text",
+          "optional": true
+        },
+        {
+          "name": "ActivityStatusValue",
+          "type": "Text",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "MetricRow",
+      "fields": [
+        {
+          "name": "resource",
+          "type": "Text",
+          "optional": true
+        },
+        {
+          "name": "metric",
+          "type": "Text"
+        },
+        {
+          "name": "at",
+          "type": "Instant"
+        },
+        {
+          "name": "total",
+          "type": "Decimal",
+          "optional": true
+        },
+        {
+          "name": "count",
+          "type": "Decimal",
+          "optional": true
+        }
+      ]
+    }
+  ]
+}

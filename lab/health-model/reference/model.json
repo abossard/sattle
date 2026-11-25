@@ -1,0 +1,2238 @@
+{
+  "authenticationSettings": [
+    {
+      "name": "auth-system",
+      "properties": {
+        "authenticationKind": "ManagedIdentity",
+        "displayName": "Health model system identity",
+        "managedIdentityName": "SystemAssigned"
+      }
+    }
+  ],
+  "bindings": [
+    {
+      "definitionId": "container-app-apply/azureLogAnalytics/availability-test",
+      "entityId": "container-app-apply",
+      "group": "azureLogAnalytics",
+      "id": "container-app-apply/azureLogAnalytics/availability-test",
+      "signalName": "availability-test"
+    },
+    {
+      "definitionId": "container-app-apply/azureResource/cpu-percentage",
+      "entityId": "container-app-apply",
+      "group": "azureResource",
+      "id": "container-app-apply/azureResource/cpu-percentage",
+      "signalName": "cpu-percentage"
+    },
+    {
+      "definitionId": "container-app-apply/azureResource/memory-percentage",
+      "entityId": "container-app-apply",
+      "group": "azureResource",
+      "id": "container-app-apply/azureResource/memory-percentage",
+      "signalName": "memory-percentage"
+    },
+    {
+      "definitionId": "container-app-apply/azureResource/response-time",
+      "entityId": "container-app-apply",
+      "group": "azureResource",
+      "id": "container-app-apply/azureResource/response-time",
+      "signalName": "response-time"
+    },
+    {
+      "definitionId": "container-app-apply/azureResource/restart-count",
+      "entityId": "container-app-apply",
+      "group": "azureResource",
+      "id": "container-app-apply/azureResource/restart-count",
+      "signalName": "restart-count"
+    },
+    {
+      "definitionId": "container-app-reports/azureLogAnalytics/availability-test",
+      "entityId": "container-app-reports",
+      "group": "azureLogAnalytics",
+      "id": "container-app-reports/azureLogAnalytics/availability-test",
+      "signalName": "availability-test"
+    },
+    {
+      "definitionId": "container-app-reports/azureResource/cpu-percentage",
+      "entityId": "container-app-reports",
+      "group": "azureResource",
+      "id": "container-app-reports/azureResource/cpu-percentage",
+      "signalName": "cpu-percentage"
+    },
+    {
+      "definitionId": "container-app-reports/azureResource/memory-percentage",
+      "entityId": "container-app-reports",
+      "group": "azureResource",
+      "id": "container-app-reports/azureResource/memory-percentage",
+      "signalName": "memory-percentage"
+    },
+    {
+      "definitionId": "container-app-reports/azureResource/response-time",
+      "entityId": "container-app-reports",
+      "group": "azureResource",
+      "id": "container-app-reports/azureResource/response-time",
+      "signalName": "response-time"
+    },
+    {
+      "definitionId": "container-app-reports/azureResource/restart-count",
+      "entityId": "container-app-reports",
+      "group": "azureResource",
+      "id": "container-app-reports/azureResource/restart-count",
+      "signalName": "restart-count"
+    },
+    {
+      "definitionId": "container-app-tasks/azureLogAnalytics/availability-test",
+      "entityId": "container-app-tasks",
+      "group": "azureLogAnalytics",
+      "id": "container-app-tasks/azureLogAnalytics/availability-test",
+      "signalName": "availability-test"
+    },
+    {
+      "definitionId": "container-app-tasks/azureResource/cpu-percentage",
+      "entityId": "container-app-tasks",
+      "group": "azureResource",
+      "id": "container-app-tasks/azureResource/cpu-percentage",
+      "signalName": "cpu-percentage"
+    },
+    {
+      "definitionId": "container-app-tasks/azureResource/memory-percentage",
+      "entityId": "container-app-tasks",
+      "group": "azureResource",
+      "id": "container-app-tasks/azureResource/memory-percentage",
+      "signalName": "memory-percentage"
+    },
+    {
+      "definitionId": "container-app-tasks/azureResource/response-time",
+      "entityId": "container-app-tasks",
+      "group": "azureResource",
+      "id": "container-app-tasks/azureResource/response-time",
+      "signalName": "response-time"
+    },
+    {
+      "definitionId": "container-app-tasks/azureResource/restart-count",
+      "entityId": "container-app-tasks",
+      "group": "azureResource",
+      "id": "container-app-tasks/azureResource/restart-count",
+      "signalName": "restart-count"
+    },
+    {
+      "definitionId": "container-app/azureLogAnalytics/availability-test",
+      "entityId": "container-app",
+      "group": "azureLogAnalytics",
+      "id": "container-app/azureLogAnalytics/availability-test",
+      "signalName": "availability-test"
+    },
+    {
+      "definitionId": "container-app/azureResource/cpu-percentage",
+      "entityId": "container-app",
+      "group": "azureResource",
+      "id": "container-app/azureResource/cpu-percentage",
+      "signalName": "cpu-percentage"
+    },
+    {
+      "definitionId": "container-app/azureResource/memory-percentage",
+      "entityId": "container-app",
+      "group": "azureResource",
+      "id": "container-app/azureResource/memory-percentage",
+      "signalName": "memory-percentage"
+    },
+    {
+      "definitionId": "container-app/azureResource/response-time",
+      "entityId": "container-app",
+      "group": "azureResource",
+      "id": "container-app/azureResource/response-time",
+      "signalName": "response-time"
+    },
+    {
+      "definitionId": "container-app/azureResource/restart-count",
+      "entityId": "container-app",
+      "group": "azureResource",
+      "id": "container-app/azureResource/restart-count",
+      "signalName": "restart-count"
+    },
+    {
+      "definitionId": "foundry-account/azureResource/client-errors",
+      "entityId": "foundry-account",
+      "group": "azureResource",
+      "id": "foundry-account/azureResource/client-errors",
+      "signalName": "client-errors"
+    },
+    {
+      "definitionId": "foundry-account/azureResource/resource-health",
+      "entityId": "foundry-account",
+      "group": "azureResource",
+      "id": "foundry-account/azureResource/resource-health",
+      "signalName": "resource-health"
+    },
+    {
+      "definitionId": "foundry-account/azureResource/server-errors",
+      "entityId": "foundry-account",
+      "group": "azureResource",
+      "id": "foundry-account/azureResource/server-errors",
+      "signalName": "server-errors"
+    },
+    {
+      "definitionId": "hosted-agent/azureLogAnalytics/agent-task-failures",
+      "entityId": "hosted-agent",
+      "group": "azureLogAnalytics",
+      "id": "hosted-agent/azureLogAnalytics/agent-task-failures",
+      "signalName": "agent-task-failures"
+    },
+    {
+      "definitionId": "hosted-agent/azureLogAnalytics/agent-task-latency",
+      "entityId": "hosted-agent",
+      "group": "azureLogAnalytics",
+      "id": "hosted-agent/azureLogAnalytics/agent-task-latency",
+      "signalName": "agent-task-latency"
+    },
+    {
+      "definitionId": "mcp-server/azureLogAnalytics/availability-test",
+      "entityId": "mcp-server",
+      "group": "azureLogAnalytics",
+      "id": "mcp-server/azureLogAnalytics/availability-test",
+      "signalName": "availability-test"
+    },
+    {
+      "definitionId": "mcp-server/azureResource/cpu-percentage",
+      "entityId": "mcp-server",
+      "group": "azureResource",
+      "id": "mcp-server/azureResource/cpu-percentage",
+      "signalName": "cpu-percentage"
+    },
+    {
+      "definitionId": "mcp-server/azureResource/memory-percentage",
+      "entityId": "mcp-server",
+      "group": "azureResource",
+      "id": "mcp-server/azureResource/memory-percentage",
+      "signalName": "memory-percentage"
+    },
+    {
+      "definitionId": "mcp-server/azureResource/response-time",
+      "entityId": "mcp-server",
+      "group": "azureResource",
+      "id": "mcp-server/azureResource/response-time",
+      "signalName": "response-time"
+    },
+    {
+      "definitionId": "mcp-server/azureResource/restart-count",
+      "entityId": "mcp-server",
+      "group": "azureResource",
+      "id": "mcp-server/azureResource/restart-count",
+      "signalName": "restart-count"
+    },
+    {
+      "definitionId": "platform-context/azureLogAnalytics/failed-arm-operations",
+      "entityId": "platform-context",
+      "group": "azureLogAnalytics",
+      "id": "platform-context/azureLogAnalytics/failed-arm-operations",
+      "signalName": "failed-arm-operations"
+    },
+    {
+      "definitionId": "platform-context/azureLogAnalytics/platform-alerts",
+      "entityId": "platform-context",
+      "group": "azureLogAnalytics",
+      "id": "platform-context/azureLogAnalytics/platform-alerts",
+      "signalName": "platform-alerts"
+    },
+    {
+      "definitionId": "platform-context/azureLogAnalytics/service-health",
+      "entityId": "platform-context",
+      "group": "azureLogAnalytics",
+      "id": "platform-context/azureLogAnalytics/service-health",
+      "signalName": "service-health"
+    },
+    {
+      "definitionId": "session-storage-apply/azureResource/availability",
+      "entityId": "session-storage-apply",
+      "group": "azureResource",
+      "id": "session-storage-apply/azureResource/availability",
+      "signalName": "availability"
+    },
+    {
+      "definitionId": "session-storage-apply/azureResource/end-to-end-latency",
+      "entityId": "session-storage-apply",
+      "group": "azureResource",
+      "id": "session-storage-apply/azureResource/end-to-end-latency",
+      "signalName": "end-to-end-latency"
+    },
+    {
+      "definitionId": "session-storage/azureResource/availability",
+      "entityId": "session-storage",
+      "group": "azureResource",
+      "id": "session-storage/azureResource/availability",
+      "signalName": "availability"
+    },
+    {
+      "definitionId": "session-storage/azureResource/end-to-end-latency",
+      "entityId": "session-storage",
+      "group": "azureResource",
+      "id": "session-storage/azureResource/end-to-end-latency",
+      "signalName": "end-to-end-latency"
+    },
+    {
+      "definitionId": "system-app-hosting-reports/azureLogAnalytics/report-route-failures",
+      "entityId": "system-app-hosting-reports",
+      "group": "azureLogAnalytics",
+      "id": "system-app-hosting-reports/azureLogAnalytics/report-route-failures",
+      "signalName": "report-route-failures"
+    },
+    {
+      "definitionId": "system-app-hosting-tasks/azureLogAnalytics/task-route-failures",
+      "entityId": "system-app-hosting-tasks",
+      "group": "azureLogAnalytics",
+      "id": "system-app-hosting-tasks/azureLogAnalytics/task-route-failures",
+      "signalName": "task-route-failures"
+    },
+    {
+      "definitionId": "system-app-hosting/azureLogAnalytics/view-route-failures",
+      "entityId": "system-app-hosting",
+      "group": "azureLogAnalytics",
+      "id": "system-app-hosting/azureLogAnalytics/view-route-failures",
+      "signalName": "view-route-failures"
+    },
+    {
+      "definitionId": "system-apply-state/azureLogAnalytics/apply-state-failures",
+      "entityId": "system-apply-state",
+      "group": "azureLogAnalytics",
+      "id": "system-apply-state/azureLogAnalytics/apply-state-failures",
+      "signalName": "apply-state-failures"
+    },
+    {
+      "definitionId": "system-apply-state/azureLogAnalytics/apply-state-latency",
+      "entityId": "system-apply-state",
+      "group": "azureLogAnalytics",
+      "id": "system-apply-state/azureLogAnalytics/apply-state-latency",
+      "signalName": "apply-state-latency"
+    },
+    {
+      "definitionId": "system-model-read/azureLogAnalytics/model-read-failures",
+      "entityId": "system-model-read",
+      "group": "azureLogAnalytics",
+      "id": "system-model-read/azureLogAnalytics/model-read-failures",
+      "signalName": "model-read-failures"
+    },
+    {
+      "definitionId": "system-model-read/azureLogAnalytics/model-read-latency",
+      "entityId": "system-model-read",
+      "group": "azureLogAnalytics",
+      "id": "system-model-read/azureLogAnalytics/model-read-latency",
+      "signalName": "model-read-latency"
+    },
+    {
+      "definitionId": "system-model-write/azureLogAnalytics/apply-request-failures",
+      "entityId": "system-model-write",
+      "group": "azureLogAnalytics",
+      "id": "system-model-write/azureLogAnalytics/apply-request-failures",
+      "signalName": "apply-request-failures"
+    },
+    {
+      "definitionId": "system-report-ingest/azureLogAnalytics/report-ingest-failures",
+      "entityId": "system-report-ingest",
+      "group": "azureLogAnalytics",
+      "id": "system-report-ingest/azureLogAnalytics/report-ingest-failures",
+      "signalName": "report-ingest-failures"
+    },
+    {
+      "definitionId": "system-session-store/azureLogAnalytics/session-store-failures",
+      "entityId": "system-session-store",
+      "group": "azureLogAnalytics",
+      "id": "system-session-store/azureLogAnalytics/session-store-failures",
+      "signalName": "session-store-failures"
+    },
+    {
+      "definitionId": "system-session-store/azureLogAnalytics/session-store-latency",
+      "entityId": "system-session-store",
+      "group": "azureLogAnalytics",
+      "id": "system-session-store/azureLogAnalytics/session-store-latency",
+      "signalName": "session-store-latency"
+    }
+  ],
+  "discoveryRules": [
+    {
+      "name": "discover-app-insights",
+      "properties": {
+        "addRecommendedSignals": "Disabled",
+        "addResourceHealthSignal": "Disabled",
+        "authenticationSetting": "auth-system",
+        "discoverRelationships": "Enabled",
+        "displayName": "Application Insights topology",
+        "entityName": "discover-app-insights",
+        "specification": {
+          "applicationInsightsResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.Insights/components/resource-7efdd53da454",
+          "kind": "ApplicationInsightsTopology"
+        }
+      }
+    }
+  ],
+  "entities": [
+    {
+      "name": "container-app",
+      "properties": {
+        "canvasPosition": {
+          "x": 20.0,
+          "y": 520.0
+        },
+        "displayName": "Container App: resource-2f29e0a92d45 / View",
+        "impact": "Standard",
+        "signalGroups": {
+          "azureLogAnalytics": {
+            "authenticationSetting": "auth-system",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "signals": [
+              {
+                "dataUnit": "Percent",
+                "displayName": "Synthetic availability",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "LessThan",
+                    "threshold": 100.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "LessThan",
+                    "threshold": 67.0
+                  }
+                },
+                "name": "availability-test",
+                "queryText": "AppAvailabilityResults | where TimeGenerated > ago(15m) | where Name == \"Health Pulse home page\" | summarize Value = round(100.0 * countif(Success) / count(), 2) | where not(isnan(Value))",
+                "refreshInterval": "PT5M",
+                "signalKind": "LogAnalyticsQuery",
+                "timeGrain": "PT15M",
+                "valueColumnName": "Value"
+              }
+            ]
+          },
+          "azureResource": {
+            "authenticationSetting": "auth-system",
+            "azureResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.App/containerApps/resource-2f29e0a92d45",
+            "azureResourceKind": "ContainerApp",
+            "resourceHealth": {
+              "enabled": "Disabled",
+              "signalName": "ResourceHealth-id-336ab67940f7"
+            },
+            "signals": [
+              {
+                "aggregationType": "Average",
+                "dataUnit": "Percent",
+                "displayName": "CPU percentage",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 80.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 95.0
+                  }
+                },
+                "metricName": "CpuPercentage",
+                "metricNamespace": "Microsoft.App/containerApps",
+                "name": "cpu-percentage",
+                "refreshInterval": "PT5M",
+                "signalKind": "AzureResourceMetric",
+                "timeGrain": "PT5M"
+              },
+              {
+                "aggregationType": "Average",
+                "dataUnit": "Percent",
+                "displayName": "Memory percentage",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 80.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 95.0
+                  }
+                },
+                "metricName": "MemoryPercentage",
+                "metricNamespace": "Microsoft.App/containerApps",
+                "name": "memory-percentage",
+                "refreshInterval": "PT5M",
+                "signalKind": "AzureResourceMetric",
+                "timeGrain": "PT5M"
+              },
+              {
+                "aggregationType": "Average",
+                "dataUnit": "MilliSeconds",
+                "displayName": "HTTP response time",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 3000.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 5000.0
+                  }
+                },
+                "metricName": "ResponseTime",
+                "metricNamespace": "Microsoft.App/containerApps",
+                "name": "response-time",
+                "refreshInterval": "PT5M",
+                "signalKind": "AzureResourceMetric",
+                "timeGrain": "PT5M"
+              },
+              {
+                "aggregationType": "Total",
+                "dataUnit": "Count",
+                "displayName": "Container restarts",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 0.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 1.0
+                  }
+                },
+                "metricName": "RestartCount",
+                "metricNamespace": "Microsoft.App/containerApps",
+                "name": "restart-count",
+                "refreshInterval": "PT5M",
+                "signalKind": "AzureResourceMetric",
+                "timeGrain": "PT5M"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "container-app-apply",
+      "properties": {
+        "canvasPosition": {
+          "x": 2020.0,
+          "y": 520.0
+        },
+        "displayName": "Container App: resource-2f29e0a92d45 / Apply",
+        "impact": "Standard",
+        "signalGroups": {
+          "azureLogAnalytics": {
+            "authenticationSetting": "auth-system",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "signals": [
+              {
+                "dataUnit": "Percent",
+                "displayName": "Synthetic availability",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "LessThan",
+                    "threshold": 100.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "LessThan",
+                    "threshold": 67.0
+                  }
+                },
+                "name": "availability-test",
+                "queryText": "AppAvailabilityResults | where TimeGenerated > ago(15m) | where Name == \"Health Pulse home page\" | summarize Value = round(100.0 * countif(Success) / count(), 2) | where not(isnan(Value))",
+                "refreshInterval": "PT5M",
+                "signalKind": "LogAnalyticsQuery",
+                "timeGrain": "PT15M",
+                "valueColumnName": "Value"
+              }
+            ]
+          },
+          "azureResource": {
+            "authenticationSetting": "auth-system",
+            "azureResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.App/containerApps/resource-2f29e0a92d45",
+            "azureResourceKind": "ContainerApp",
+            "resourceHealth": {
+              "enabled": "Disabled",
+              "signalName": "ResourceHealth-id-ed3f70e073e9"
+            },
+            "signals": [
+              {
+                "aggregationType": "Average",
+                "dataUnit": "Percent",
+                "displayName": "CPU percentage",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 80.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 95.0
+                  }
+                },
+                "metricName": "CpuPercentage",
+                "metricNamespace": "Microsoft.App/containerApps",
+                "name": "cpu-percentage",
+                "refreshInterval": "PT5M",
+                "signalKind": "AzureResourceMetric",
+                "timeGrain": "PT5M"
+              },
+              {
+                "aggregationType": "Average",
+                "dataUnit": "Percent",
+                "displayName": "Memory percentage",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 80.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 95.0
+                  }
+                },
+                "metricName": "MemoryPercentage",
+                "metricNamespace": "Microsoft.App/containerApps",
+                "name": "memory-percentage",
+                "refreshInterval": "PT5M",
+                "signalKind": "AzureResourceMetric",
+                "timeGrain": "PT5M"
+              },
+              {
+                "aggregationType": "Average",
+                "dataUnit": "MilliSeconds",
+                "displayName": "HTTP response time",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 3000.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 5000.0
+                  }
+                },
+                "metricName": "ResponseTime",
+                "metricNamespace": "Microsoft.App/containerApps",
+                "name": "response-time",
+                "refreshInterval": "PT5M",
+                "signalKind": "AzureResourceMetric",
+                "timeGrain": "PT5M"
+              },
+              {
+                "aggregationType": "Total",
+                "dataUnit": "Count",
+                "displayName": "Container restarts",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 0.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 1.0
+                  }
+                },
+                "metricName": "RestartCount",
+                "metricNamespace": "Microsoft.App/containerApps",
+                "name": "restart-count",
+                "refreshInterval": "PT5M",
+                "signalKind": "AzureResourceMetric",
+                "timeGrain": "PT5M"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "container-app-reports",
+      "properties": {
+        "canvasPosition": {
+          "x": 420.0,
+          "y": 520.0
+        },
+        "displayName": "Container App: resource-2f29e0a92d45 / Report",
+        "impact": "Standard",
+        "signalGroups": {
+          "azureLogAnalytics": {
+            "authenticationSetting": "auth-system",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "signals": [
+              {
+                "dataUnit": "Percent",
+                "displayName": "Synthetic availability",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "LessThan",
+                    "threshold": 100.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "LessThan",
+                    "threshold": 67.0
+                  }
+                },
+                "name": "availability-test",
+                "queryText": "AppAvailabilityResults | where TimeGenerated > ago(15m) | where Name == \"Health Pulse home page\" | summarize Value = round(100.0 * countif(Success) / count(), 2) | where not(isnan(Value))",
+                "refreshInterval": "PT5M",
+                "signalKind": "LogAnalyticsQuery",
+                "timeGrain": "PT15M",
+                "valueColumnName": "Value"
+              }
+            ]
+          },
+          "azureResource": {
+            "authenticationSetting": "auth-system",
+            "azureResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.App/containerApps/resource-2f29e0a92d45",
+            "azureResourceKind": "ContainerApp",
+            "resourceHealth": {
+              "enabled": "Disabled",
+              "signalName": "ResourceHealth-id-fbc04c18bd30"
+            },
+            "signals": [
+              {
+                "aggregationType": "Average",
+                "dataUnit": "Percent",
+                "displayName": "CPU percentage",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 80.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 95.0
+                  }
+                },
+                "metricName": "CpuPercentage",
+                "metricNamespace": "Microsoft.App/containerApps",
+                "name": "cpu-percentage",
+                "refreshInterval": "PT5M",
+                "signalKind": "AzureResourceMetric",
+                "timeGrain": "PT5M"
+              },
+              {
+                "aggregationType": "Average",
+                "dataUnit": "Percent",
+                "displayName": "Memory percentage",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 80.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 95.0
+                  }
+                },
+                "metricName": "MemoryPercentage",
+                "metricNamespace": "Microsoft.App/containerApps",
+                "name": "memory-percentage",
+                "refreshInterval": "PT5M",
+                "signalKind": "AzureResourceMetric",
+                "timeGrain": "PT5M"
+              },
+              {
+                "aggregationType": "Average",
+                "dataUnit": "MilliSeconds",
+                "displayName": "HTTP response time",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 3000.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 5000.0
+                  }
+                },
+                "metricName": "ResponseTime",
+                "metricNamespace": "Microsoft.App/containerApps",
+                "name": "response-time",
+                "refreshInterval": "PT5M",
+                "signalKind": "AzureResourceMetric",
+                "timeGrain": "PT5M"
+              },
+              {
+                "aggregationType": "Total",
+                "dataUnit": "Count",
+                "displayName": "Container restarts",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 0.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 1.0
+                  }
+                },
+                "metricName": "RestartCount",
+                "metricNamespace": "Microsoft.App/containerApps",
+                "name": "restart-count",
+                "refreshInterval": "PT5M",
+                "signalKind": "AzureResourceMetric",
+                "timeGrain": "PT5M"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "container-app-tasks",
+      "properties": {
+        "canvasPosition": {
+          "x": 820.0,
+          "y": 520.0
+        },
+        "displayName": "Container App: resource-2f29e0a92d45 / Tasks",
+        "impact": "Standard",
+        "signalGroups": {
+          "azureLogAnalytics": {
+            "authenticationSetting": "auth-system",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "signals": [
+              {
+                "dataUnit": "Percent",
+                "displayName": "Synthetic availability",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "LessThan",
+                    "threshold": 100.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "LessThan",
+                    "threshold": 67.0
+                  }
+                },
+                "name": "availability-test",
+                "queryText": "AppAvailabilityResults | where TimeGenerated > ago(15m) | where Name == \"Health Pulse home page\" | summarize Value = round(100.0 * countif(Success) / count(), 2) | where not(isnan(Value))",
+                "refreshInterval": "PT5M",
+                "signalKind": "LogAnalyticsQuery",
+                "timeGrain": "PT15M",
+                "valueColumnName": "Value"
+              }
+            ]
+          },
+          "azureResource": {
+            "authenticationSetting": "auth-system",
+            "azureResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.App/containerApps/resource-2f29e0a92d45",
+            "azureResourceKind": "ContainerApp",
+            "resourceHealth": {
+              "enabled": "Disabled",
+              "signalName": "ResourceHealth-id-388a94fdd00a"
+            },
+            "signals": [
+              {
+                "aggregationType": "Average",
+                "dataUnit": "Percent",
+                "displayName": "CPU percentage",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 80.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 95.0
+                  }
+                },
+                "metricName": "CpuPercentage",
+                "metricNamespace": "Microsoft.App/containerApps",
+                "name": "cpu-percentage",
+                "refreshInterval": "PT5M",
+                "signalKind": "AzureResourceMetric",
+                "timeGrain": "PT5M"
+              },
+              {
+                "aggregationType": "Average",
+                "dataUnit": "Percent",
+                "displayName": "Memory percentage",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 80.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 95.0
+                  }
+                },
+                "metricName": "MemoryPercentage",
+                "metricNamespace": "Microsoft.App/containerApps",
+                "name": "memory-percentage",
+                "refreshInterval": "PT5M",
+                "signalKind": "AzureResourceMetric",
+                "timeGrain": "PT5M"
+              },
+              {
+                "aggregationType": "Average",
+                "dataUnit": "MilliSeconds",
+                "displayName": "HTTP response time",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 3000.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 5000.0
+                  }
+                },
+                "metricName": "ResponseTime",
+                "metricNamespace": "Microsoft.App/containerApps",
+                "name": "response-time",
+                "refreshInterval": "PT5M",
+                "signalKind": "AzureResourceMetric",
+                "timeGrain": "PT5M"
+              },
+              {
+                "aggregationType": "Total",
+                "dataUnit": "Count",
+                "displayName": "Container restarts",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 0.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 1.0
+                  }
+                },
+                "metricName": "RestartCount",
+                "metricNamespace": "Microsoft.App/containerApps",
+                "name": "restart-count",
+                "refreshInterval": "PT5M",
+                "signalKind": "AzureResourceMetric",
+                "timeGrain": "PT5M"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "discovered-app-topology",
+      "properties": {
+        "canvasPosition": {
+          "x": 2820.0,
+          "y": 190.0
+        },
+        "displayName": "Discovered Application Topology",
+        "impact": "Suppressed",
+        "signalGroups": {
+          "dependencies": {
+            "aggregationType": "WorstOf",
+            "ignoreUnknown": true
+          }
+        }
+      }
+    },
+    {
+      "name": "flow-apply-health-model-changes",
+      "properties": {
+        "canvasPosition": {
+          "x": 2120.0,
+          "y": 190.0
+        },
+        "displayName": "Apply approved changes",
+        "healthObjective": 99.0,
+        "icon": {
+          "iconName": "UserFlow"
+        },
+        "impact": "Standard",
+        "signalGroups": {
+          "dependencies": {
+            "aggregationType": "WorstOf",
+            "ignoreUnknown": false
+          }
+        }
+      }
+    },
+    {
+      "name": "flow-run-agent-tasks",
+      "properties": {
+        "canvasPosition": {
+          "x": 1180.0,
+          "y": 190.0
+        },
+        "displayName": "Run a Task",
+        "healthObjective": 99.0,
+        "icon": {
+          "iconName": "UserFlow"
+        },
+        "impact": "Standard",
+        "signalGroups": {
+          "dependencies": {
+            "aggregationType": "WorstOf",
+            "ignoreUnknown": false
+          }
+        }
+      }
+    },
+    {
+      "name": "flow-send-health-reports",
+      "properties": {
+        "canvasPosition": {
+          "x": 520.0,
+          "y": 190.0
+        },
+        "displayName": "Send a health report",
+        "healthObjective": 99.0,
+        "icon": {
+          "iconName": "UserFlow"
+        },
+        "impact": "Standard",
+        "signalGroups": {
+          "dependencies": {
+            "aggregationType": "WorstOf",
+            "ignoreUnknown": false
+          }
+        }
+      }
+    },
+    {
+      "name": "flow-view-health-model",
+      "properties": {
+        "canvasPosition": {
+          "x": 120.0,
+          "y": 190.0
+        },
+        "displayName": "View a health model",
+        "healthObjective": 99.0,
+        "icon": {
+          "iconName": "UserFlow"
+        },
+        "impact": "Standard",
+        "signalGroups": {
+          "dependencies": {
+            "aggregationType": "WorstOf",
+            "ignoreUnknown": false
+          }
+        }
+      }
+    },
+    {
+      "name": "foundry-account",
+      "properties": {
+        "canvasPosition": {
+          "x": 1620.0,
+          "y": 520.0
+        },
+        "displayName": "Foundry account: resource-5a09f7bf4e6f / gpt-54-mini",
+        "impact": "Standard",
+        "signalGroups": {
+          "azureResource": {
+            "authenticationSetting": "auth-system",
+            "azureResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.CognitiveServices/accounts/resource-5a09f7bf4e6f",
+            "azureResourceKind": "CognitiveServicesAccount",
+            "resourceHealth": {
+              "enabled": "Enabled",
+              "signalName": "resource-health"
+            },
+            "signals": [
+              {
+                "aggregationType": "Total",
+                "dataUnit": "Count",
+                "displayName": "Client and throttling errors",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 2.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 10.0
+                  }
+                },
+                "metricName": "ClientErrors",
+                "metricNamespace": "Microsoft.CognitiveServices/accounts",
+                "name": "client-errors",
+                "refreshInterval": "PT5M",
+                "signalKind": "AzureResourceMetric",
+                "timeGrain": "PT5M"
+              },
+              {
+                "aggregationType": "Total",
+                "dataUnit": "Count",
+                "displayName": "Server errors",
+                "evaluationRules": {
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 0.0
+                  }
+                },
+                "metricName": "ServerErrors",
+                "metricNamespace": "Microsoft.CognitiveServices/accounts",
+                "name": "server-errors",
+                "refreshInterval": "PT5M",
+                "signalKind": "AzureResourceMetric",
+                "timeGrain": "PT5M"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "hosted-agent",
+      "properties": {
+        "canvasPosition": {
+          "x": 1220.0,
+          "y": 520.0
+        },
+        "displayName": "Foundry project: resource-3cee86f9820a / health-model-agent",
+        "impact": "Standard",
+        "signalGroups": {
+          "azureLogAnalytics": {
+            "authenticationSetting": "auth-system",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "signals": [
+              {
+                "dataUnit": "Count",
+                "displayName": "Failed agent Tasks",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 0.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 2.0
+                  }
+                },
+                "name": "agent-task-failures",
+                "queryText": "AppDependencies | where TimeGenerated > ago(15m) | where AppRoleName == \"demo-workload\" | where Name startswith \"foundry.agent.\" | summarize Value = countif(Success == false)",
+                "refreshInterval": "PT5M",
+                "signalKind": "LogAnalyticsQuery",
+                "timeGrain": "PT15M",
+                "valueColumnName": "Value"
+              },
+              {
+                "dataUnit": "MilliSeconds",
+                "displayName": "Agent Task duration (p95, whole Task)",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 450000.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 570000.0
+                  }
+                },
+                "name": "agent-task-latency",
+                "queryText": "AppDependencies | where TimeGenerated > ago(15m) | where AppRoleName == \"demo-workload\" | where Name startswith \"foundry.agent.\" | summarize Value = percentile(DurationMs, 95) | where not(isnan(Value))",
+                "refreshInterval": "PT5M",
+                "signalKind": "LogAnalyticsQuery",
+                "timeGrain": "PT15M",
+                "valueColumnName": "Value"
+              }
+            ]
+          },
+          "azureResource": {
+            "authenticationSetting": "auth-system",
+            "azureResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.CognitiveServices/accounts/resource-5a09f7bf4e6f/projects/resource-3cee86f9820a",
+            "azureResourceKind": "CognitiveServicesAccount",
+            "resourceHealth": {
+              "enabled": "Disabled",
+              "signalName": "ResourceHealth-id-03098bebb502"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "id-5cfa67aeab88",
+      "properties": {
+        "discoveredBy": "discover-app-insights",
+        "displayName": "resource-1b50ca9061b0",
+        "icon": {
+          "iconName": "Resource"
+        },
+        "impact": "Standard",
+        "signalGroups": {
+          "azureResource": {
+            "authenticationSetting": "auth-system",
+            "azureResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourcegroups/group-66bdbf2ad096/providers/microsoft.storage/storageaccounts/resource-1b50ca9061b0"
+          }
+        }
+      }
+    },
+    {
+      "name": "id-92ab8cd23685",
+      "properties": {
+        "discoveredBy": "discover-app-insights",
+        "displayName": "demo-workload",
+        "icon": {
+          "iconName": "SystemComponent"
+        },
+        "impact": "Standard",
+        "signalGroups": {
+          "azureLogAnalytics": {
+            "authenticationSetting": "auth-system",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3"
+          }
+        }
+      }
+    },
+    {
+      "name": "mcp-server",
+      "properties": {
+        "canvasPosition": {
+          "x": 1420.0,
+          "y": 520.0
+        },
+        "displayName": "Container App: resource-2904904b5c4b",
+        "impact": "Standard",
+        "signalGroups": {
+          "azureLogAnalytics": {
+            "authenticationSetting": "auth-system",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "signals": [
+              {
+                "dataUnit": "Percent",
+                "displayName": "Synthetic availability",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "LessThan",
+                    "threshold": 100.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "LessThan",
+                    "threshold": 67.0
+                  }
+                },
+                "name": "availability-test",
+                "queryText": "AppAvailabilityResults | where TimeGenerated > ago(15m) | where Name == \"Azure MCP health\" | summarize Value = round(100.0 * countif(Success) / count(), 2) | where not(isnan(Value))",
+                "refreshInterval": "PT5M",
+                "signalKind": "LogAnalyticsQuery",
+                "timeGrain": "PT15M",
+                "valueColumnName": "Value"
+              }
+            ]
+          },
+          "azureResource": {
+            "authenticationSetting": "auth-system",
+            "azureResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.App/containerApps/resource-2904904b5c4b",
+            "azureResourceKind": "ContainerApp",
+            "resourceHealth": {
+              "enabled": "Disabled",
+              "signalName": "ResourceHealth-id-61367846caa5"
+            },
+            "signals": [
+              {
+                "aggregationType": "Average",
+                "dataUnit": "Percent",
+                "displayName": "CPU percentage",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 80.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 95.0
+                  }
+                },
+                "metricName": "CpuPercentage",
+                "metricNamespace": "Microsoft.App/containerApps",
+                "name": "cpu-percentage",
+                "refreshInterval": "PT5M",
+                "signalKind": "AzureResourceMetric",
+                "timeGrain": "PT5M"
+              },
+              {
+                "aggregationType": "Average",
+                "dataUnit": "Percent",
+                "displayName": "Memory percentage",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 80.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 95.0
+                  }
+                },
+                "metricName": "MemoryPercentage",
+                "metricNamespace": "Microsoft.App/containerApps",
+                "name": "memory-percentage",
+                "refreshInterval": "PT5M",
+                "signalKind": "AzureResourceMetric",
+                "timeGrain": "PT5M"
+              },
+              {
+                "aggregationType": "Average",
+                "dataUnit": "MilliSeconds",
+                "displayName": "HTTP response time",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 7000.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 10000.0
+                  }
+                },
+                "metricName": "ResponseTime",
+                "metricNamespace": "Microsoft.App/containerApps",
+                "name": "response-time",
+                "refreshInterval": "PT5M",
+                "signalKind": "AzureResourceMetric",
+                "timeGrain": "PT5M"
+              },
+              {
+                "aggregationType": "Total",
+                "dataUnit": "Count",
+                "displayName": "Container restarts",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 0.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 1.0
+                  }
+                },
+                "metricName": "RestartCount",
+                "metricNamespace": "Microsoft.App/containerApps",
+                "name": "restart-count",
+                "refreshInterval": "PT5M",
+                "signalKind": "AzureResourceMetric",
+                "timeGrain": "PT5M"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "model-root",
+      "properties": {
+        "alerts": {
+          "unhealthy": {
+            "actionGroupIds": [
+              "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.Insights/actionGroups/resource-8b7887dd969a"
+            ],
+            "description": "CORE is unhealthy.",
+            "severity": "Sev2"
+          }
+        },
+        "canvasPosition": {
+          "x": 1120.0,
+          "y": 40.0
+        },
+        "displayName": "CORE",
+        "healthObjective": 99.0,
+        "impact": "Standard",
+        "signalGroups": {
+          "dependencies": {
+            "aggregationType": "WorstOf",
+            "ignoreUnknown": false
+          }
+        }
+      }
+    },
+    {
+      "name": "platform-context",
+      "properties": {
+        "canvasPosition": {
+          "x": 2620.0,
+          "y": 190.0
+        },
+        "displayName": "Azure platform context",
+        "impact": "Limited",
+        "signalGroups": {
+          "azureLogAnalytics": {
+            "authenticationSetting": "auth-system",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "signals": [
+              {
+                "dataUnit": "Count",
+                "displayName": "Critical Service Health events",
+                "evaluationRules": {
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 0.0
+                  }
+                },
+                "name": "service-health",
+                "queryText": "AzureActivity | where TimeGenerated > ago(15m) | where CategoryValue == \"ServiceHealth\" | summarize Value = countif(Level in (\"Error\", \"Critical\"))",
+                "refreshInterval": "PT5M",
+                "signalKind": "LogAnalyticsQuery",
+                "timeGrain": "PT15M",
+                "valueColumnName": "Value"
+              },
+              {
+                "dataUnit": "Count",
+                "displayName": "Failed ARM operations in this resource group",
+                "evaluationRules": {
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 0.0
+                  }
+                },
+                "name": "failed-arm-operations",
+                "queryText": "AzureActivity | where TimeGenerated > ago(15m) | where CategoryValue == \"Administrative\" | where ResourceGroup =~ \"group-66bdbf2ad096\" | summarize Value = countif(ActivityStatusValue in (\"Failed\", \"Failure\"))",
+                "refreshInterval": "PT5M",
+                "signalKind": "LogAnalyticsQuery",
+                "timeGrain": "PT15M",
+                "valueColumnName": "Value"
+              },
+              {
+                "dataUnit": "Count",
+                "displayName": "Platform alert activity",
+                "evaluationRules": {
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 20.0
+                  }
+                },
+                "name": "platform-alerts",
+                "queryText": "AzureActivity | where TimeGenerated > ago(15m) | where CategoryValue == \"Alert\" | summarize Value = count()",
+                "refreshInterval": "PT5M",
+                "signalKind": "LogAnalyticsQuery",
+                "timeGrain": "PT15M",
+                "valueColumnName": "Value"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "session-storage",
+      "properties": {
+        "canvasPosition": {
+          "x": 1020.0,
+          "y": 520.0
+        },
+        "displayName": "Blob Storage: resource-1b50ca9061b0 / sessions, Tasks",
+        "impact": "Standard",
+        "signalGroups": {
+          "azureResource": {
+            "authenticationSetting": "auth-system",
+            "azureResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.Storage/storageAccounts/resource-1b50ca9061b0",
+            "azureResourceKind": "StorageAccount",
+            "resourceHealth": {
+              "enabled": "Disabled",
+              "signalName": "ResourceHealth-id-dbc1d081d0dc"
+            },
+            "signals": [
+              {
+                "aggregationType": "Average",
+                "dataUnit": "Percent",
+                "displayName": "Blob availability",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "LessThan",
+                    "threshold": 99.9
+                  },
+                  "unhealthyRule": {
+                    "operator": "LessThan",
+                    "threshold": 99.0
+                  }
+                },
+                "metricName": "Availability",
+                "metricNamespace": "Microsoft.Storage/storageAccounts/blobServices",
+                "name": "availability",
+                "refreshInterval": "PT1M",
+                "signalKind": "AzureResourceMetric",
+                "timeGrain": "PT1M"
+              },
+              {
+                "aggregationType": "Average",
+                "dataUnit": "MilliSeconds",
+                "displayName": "Blob end-to-end latency",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 2000.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 5000.0
+                  }
+                },
+                "metricName": "SuccessE2ELatency",
+                "metricNamespace": "Microsoft.Storage/storageAccounts/blobServices",
+                "name": "end-to-end-latency",
+                "refreshInterval": "PT1M",
+                "signalKind": "AzureResourceMetric",
+                "timeGrain": "PT1M"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "session-storage-apply",
+      "properties": {
+        "canvasPosition": {
+          "x": 2420.0,
+          "y": 520.0
+        },
+        "displayName": "Blob Storage: resource-1b50ca9061b0 / sessions, Apply",
+        "impact": "Standard",
+        "signalGroups": {
+          "azureResource": {
+            "authenticationSetting": "auth-system",
+            "azureResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.Storage/storageAccounts/resource-1b50ca9061b0",
+            "azureResourceKind": "StorageAccount",
+            "resourceHealth": {
+              "enabled": "Disabled",
+              "signalName": "ResourceHealth-id-567ee835f2f5"
+            },
+            "signals": [
+              {
+                "aggregationType": "Average",
+                "dataUnit": "Percent",
+                "displayName": "Blob availability",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "LessThan",
+                    "threshold": 99.9
+                  },
+                  "unhealthyRule": {
+                    "operator": "LessThan",
+                    "threshold": 99.0
+                  }
+                },
+                "metricName": "Availability",
+                "metricNamespace": "Microsoft.Storage/storageAccounts/blobServices",
+                "name": "availability",
+                "refreshInterval": "PT1M",
+                "signalKind": "AzureResourceMetric",
+                "timeGrain": "PT1M"
+              },
+              {
+                "aggregationType": "Average",
+                "dataUnit": "MilliSeconds",
+                "displayName": "Blob end-to-end latency",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 2000.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 5000.0
+                  }
+                },
+                "metricName": "SuccessE2ELatency",
+                "metricNamespace": "Microsoft.Storage/storageAccounts/blobServices",
+                "name": "end-to-end-latency",
+                "refreshInterval": "PT1M",
+                "signalKind": "AzureResourceMetric",
+                "timeGrain": "PT1M"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "system-agent-runtime",
+      "properties": {
+        "canvasPosition": {
+          "x": 1220.0,
+          "y": 340.0
+        },
+        "displayName": "Assistant execution",
+        "icon": {
+          "iconName": "SystemComponent"
+        },
+        "impact": "Standard",
+        "signalGroups": {
+          "dependencies": {
+            "aggregationType": "WorstOf",
+            "ignoreUnknown": false
+          }
+        }
+      }
+    },
+    {
+      "name": "system-ai-inference",
+      "properties": {
+        "canvasPosition": {
+          "x": 1420.0,
+          "y": 340.0
+        },
+        "displayName": "Model inference",
+        "icon": {
+          "iconName": "SystemComponent"
+        },
+        "impact": "Standard",
+        "signalGroups": {
+          "dependencies": {
+            "aggregationType": "WorstOf",
+            "ignoreUnknown": false
+          }
+        }
+      }
+    },
+    {
+      "name": "system-app-hosting",
+      "properties": {
+        "canvasPosition": {
+          "x": 20.0,
+          "y": 340.0
+        },
+        "displayName": "Web and API for viewing",
+        "icon": {
+          "iconName": "SystemComponent"
+        },
+        "impact": "Standard",
+        "signalGroups": {
+          "azureLogAnalytics": {
+            "authenticationSetting": "auth-system",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "signals": [
+              {
+                "dataUnit": "Count",
+                "displayName": "Failed model-view requests",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 0.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 2.0
+                  }
+                },
+                "name": "view-route-failures",
+                "queryText": "AppRequests | where TimeGenerated > ago(5m) | where AppRoleName == \"demo-workload\" | where Name in (\"GET /api/health-models\", \"GET /api/health-model\", \"GET /api/health-model/stream\", \"GET /api/timeline\", \"GET /api/entities/{entity_name:path}\") | summarize Value = countif(toint(ResultCode) >= 500)",
+                "refreshInterval": "PT5M",
+                "signalKind": "LogAnalyticsQuery",
+                "timeGrain": "PT5M",
+                "valueColumnName": "Value"
+              }
+            ]
+          },
+          "dependencies": {
+            "aggregationType": "WorstOf",
+            "ignoreUnknown": false
+          }
+        }
+      }
+    },
+    {
+      "name": "system-app-hosting-apply",
+      "properties": {
+        "canvasPosition": {
+          "x": 2020.0,
+          "y": 340.0
+        },
+        "displayName": "Web and API for Apply",
+        "icon": {
+          "iconName": "SystemComponent"
+        },
+        "impact": "Standard",
+        "signalGroups": {
+          "dependencies": {
+            "aggregationType": "WorstOf",
+            "ignoreUnknown": false
+          }
+        }
+      }
+    },
+    {
+      "name": "system-app-hosting-reports",
+      "properties": {
+        "canvasPosition": {
+          "x": 420.0,
+          "y": 340.0
+        },
+        "displayName": "Web and API for reports",
+        "icon": {
+          "iconName": "SystemComponent"
+        },
+        "impact": "Standard",
+        "signalGroups": {
+          "azureLogAnalytics": {
+            "authenticationSetting": "auth-system",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "signals": [
+              {
+                "dataUnit": "Count",
+                "displayName": "Failed report requests",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 0.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 2.0
+                  }
+                },
+                "name": "report-route-failures",
+                "queryText": "AppRequests | where TimeGenerated > ago(5m) | where AppRoleName == \"demo-workload\" | where Name == \"POST /api/entities/{entity_name:path}/health-reports\" | summarize Value = countif(toint(ResultCode) >= 500)",
+                "refreshInterval": "PT5M",
+                "signalKind": "LogAnalyticsQuery",
+                "timeGrain": "PT5M",
+                "valueColumnName": "Value"
+              }
+            ]
+          },
+          "dependencies": {
+            "aggregationType": "WorstOf",
+            "ignoreUnknown": false
+          }
+        }
+      }
+    },
+    {
+      "name": "system-app-hosting-tasks",
+      "properties": {
+        "canvasPosition": {
+          "x": 820.0,
+          "y": 340.0
+        },
+        "displayName": "Web and API for Tasks",
+        "icon": {
+          "iconName": "SystemComponent"
+        },
+        "impact": "Standard",
+        "signalGroups": {
+          "azureLogAnalytics": {
+            "authenticationSetting": "auth-system",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "signals": [
+              {
+                "dataUnit": "Count",
+                "displayName": "Failed Task requests",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 0.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 2.0
+                  }
+                },
+                "name": "task-route-failures",
+                "queryText": "AppRequests | where TimeGenerated > ago(5m) | where AppRoleName == \"demo-workload\" | where Name in (\"GET /api/sessions\", \"POST /api/sessions\", \"GET /api/sessions/{sid}\", \"POST /api/sessions/{sid}/tasks\", \"GET /api/sessions/{sid}/tasks/{tid}\", \"GET /api/sessions/{sid}/tasks/{tid}/events\", \"GET /api/sessions/{sid}/tasks/{tid}/diff\") | summarize Value = countif(toint(ResultCode) >= 500)",
+                "refreshInterval": "PT5M",
+                "signalKind": "LogAnalyticsQuery",
+                "timeGrain": "PT5M",
+                "valueColumnName": "Value"
+              }
+            ]
+          },
+          "dependencies": {
+            "aggregationType": "WorstOf",
+            "ignoreUnknown": false
+          }
+        }
+      }
+    },
+    {
+      "name": "system-apply-state",
+      "properties": {
+        "canvasPosition": {
+          "x": 2420.0,
+          "y": 340.0
+        },
+        "displayName": "Apply result storage",
+        "icon": {
+          "iconName": "SystemComponent"
+        },
+        "impact": "Standard",
+        "signalGroups": {
+          "azureLogAnalytics": {
+            "authenticationSetting": "auth-system",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "signals": [
+              {
+                "dataUnit": "Count",
+                "displayName": "Failed Apply state calls",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 0.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 2.0
+                  }
+                },
+                "name": "apply-state-failures",
+                "queryText": "AppDependencies | where TimeGenerated > ago(15m) | where AppRoleName == \"demo-workload\" | where Name startswith \"sessions.store.\" | summarize Value = countif(Success == false)",
+                "refreshInterval": "PT5M",
+                "signalKind": "LogAnalyticsQuery",
+                "timeGrain": "PT15M",
+                "valueColumnName": "Value"
+              },
+              {
+                "dataUnit": "MilliSeconds",
+                "displayName": "Apply state duration (p95)",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 2000.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 10000.0
+                  }
+                },
+                "name": "apply-state-latency",
+                "queryText": "AppDependencies | where TimeGenerated > ago(15m) | where AppRoleName == \"demo-workload\" | where Name startswith \"sessions.store.\" | summarize Value = percentile(DurationMs, 95) | where not(isnan(Value))",
+                "refreshInterval": "PT5M",
+                "signalKind": "LogAnalyticsQuery",
+                "timeGrain": "PT15M",
+                "valueColumnName": "Value"
+              }
+            ]
+          },
+          "dependencies": {
+            "aggregationType": "WorstOf",
+            "ignoreUnknown": false
+          }
+        }
+      }
+    },
+    {
+      "name": "system-model-read",
+      "properties": {
+        "canvasPosition": {
+          "x": 220.0,
+          "y": 340.0
+        },
+        "displayName": "Model catalog and history",
+        "icon": {
+          "iconName": "SystemComponent"
+        },
+        "impact": "Standard",
+        "signalGroups": {
+          "azureLogAnalytics": {
+            "authenticationSetting": "auth-system",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "signals": [
+              {
+                "dataUnit": "Count",
+                "displayName": "Failed model reads",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 0.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 2.0
+                  }
+                },
+                "name": "model-read-failures",
+                "queryText": "AppDependencies | where TimeGenerated > ago(15m) | where AppRoleName == \"demo-workload\" | where Name in (\"healthmodel.catalog\", \"healthmodel.read\", \"healthmodel.timeline\", \"healthmodel.history\") | summarize Value = countif(Success == false)",
+                "refreshInterval": "PT5M",
+                "signalKind": "LogAnalyticsQuery",
+                "timeGrain": "PT15M",
+                "valueColumnName": "Value"
+              },
+              {
+                "dataUnit": "MilliSeconds",
+                "displayName": "Model read duration (p95)",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 5000.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 40000.0
+                  }
+                },
+                "name": "model-read-latency",
+                "queryText": "AppDependencies | where TimeGenerated > ago(15m) | where AppRoleName == \"demo-workload\" | where Name in (\"healthmodel.catalog\", \"healthmodel.read\", \"healthmodel.timeline\", \"healthmodel.history\") | summarize Value = percentile(DurationMs, 95) | where not(isnan(Value))",
+                "refreshInterval": "PT5M",
+                "signalKind": "LogAnalyticsQuery",
+                "timeGrain": "PT15M",
+                "valueColumnName": "Value"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "system-model-write",
+      "properties": {
+        "canvasPosition": {
+          "x": 2220.0,
+          "y": 340.0
+        },
+        "displayName": "Model change writer",
+        "icon": {
+          "iconName": "SystemComponent"
+        },
+        "impact": "Standard",
+        "signalGroups": {
+          "azureLogAnalytics": {
+            "authenticationSetting": "auth-system",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "signals": [
+              {
+                "dataUnit": "Count",
+                "displayName": "Failed Apply requests",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 0.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 2.0
+                  }
+                },
+                "name": "apply-request-failures",
+                "queryText": "AppRequests | where TimeGenerated > ago(5m) | where AppRoleName == \"demo-workload\" | where Name == \"POST /api/sessions/{sid}/tasks/{tid}/apply\" | summarize Value = countif(toint(ResultCode) >= 500)",
+                "refreshInterval": "PT5M",
+                "signalKind": "LogAnalyticsQuery",
+                "timeGrain": "PT5M",
+                "valueColumnName": "Value"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "system-report-ingest",
+      "properties": {
+        "canvasPosition": {
+          "x": 620.0,
+          "y": 340.0
+        },
+        "displayName": "Health report ingestion",
+        "icon": {
+          "iconName": "SystemComponent"
+        },
+        "impact": "Standard",
+        "signalGroups": {
+          "azureLogAnalytics": {
+            "authenticationSetting": "auth-system",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "signals": [
+              {
+                "dataUnit": "Count",
+                "displayName": "Failed report ingestion calls",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 0.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 2.0
+                  }
+                },
+                "name": "report-ingest-failures",
+                "queryText": "AppDependencies | where TimeGenerated > ago(15m) | where AppRoleName == \"demo-workload\" | where Name == \"healthmodel.report\" | summarize Value = countif(Success == false)",
+                "refreshInterval": "PT5M",
+                "signalKind": "LogAnalyticsQuery",
+                "timeGrain": "PT15M",
+                "valueColumnName": "Value"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "system-session-store",
+      "properties": {
+        "canvasPosition": {
+          "x": 1020.0,
+          "y": 340.0
+        },
+        "displayName": "Session and Task storage",
+        "icon": {
+          "iconName": "SystemComponent"
+        },
+        "impact": "Standard",
+        "signalGroups": {
+          "azureLogAnalytics": {
+            "authenticationSetting": "auth-system",
+            "logAnalyticsWorkspaceResourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.OperationalInsights/workspaces/resource-0197acac68e3",
+            "signals": [
+              {
+                "dataUnit": "Count",
+                "displayName": "Failed session-store calls",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 0.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 2.0
+                  }
+                },
+                "name": "session-store-failures",
+                "queryText": "AppDependencies | where TimeGenerated > ago(15m) | where AppRoleName == \"demo-workload\" | where Name startswith \"sessions.store.\" | summarize Value = countif(Success == false)",
+                "refreshInterval": "PT5M",
+                "signalKind": "LogAnalyticsQuery",
+                "timeGrain": "PT15M",
+                "valueColumnName": "Value"
+              },
+              {
+                "dataUnit": "MilliSeconds",
+                "displayName": "Session-store duration (p95)",
+                "evaluationRules": {
+                  "degradedRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 2000.0
+                  },
+                  "unhealthyRule": {
+                    "operator": "GreaterThan",
+                    "threshold": 10000.0
+                  }
+                },
+                "name": "session-store-latency",
+                "queryText": "AppDependencies | where TimeGenerated > ago(15m) | where AppRoleName == \"demo-workload\" | where Name startswith \"sessions.store.\" | summarize Value = percentile(DurationMs, 95) | where not(isnan(Value))",
+                "refreshInterval": "PT5M",
+                "signalKind": "LogAnalyticsQuery",
+                "timeGrain": "PT15M",
+                "valueColumnName": "Value"
+              }
+            ]
+          },
+          "dependencies": {
+            "aggregationType": "WorstOf",
+            "ignoreUnknown": false
+          }
+        }
+      }
+    }
+  ],
+  "model": {
+    "identityType": "SystemAssigned",
+    "location": "swedencentral",
+    "name": "model-root",
+    "properties": {},
+    "sourceId": "/subscriptions/subscription-9a2fe67ba2ef/resourceGroups/group-66bdbf2ad096/providers/Microsoft.CloudHealth/healthmodels/model-root",
+    "tags": {
+      "azd-env-name": "demo-workload",
+      "workload": "azure-health-model-demo"
+    },
+    "type": "microsoft.cloudhealth/healthmodels"
+  },
+  "relationships": [
+    {
+      "name": "id-9ec7eeb35678",
+      "properties": {
+        "childEntityName": "id-5cfa67aeab88",
+        "discoveredBy": "discover-app-insights",
+        "parentEntityName": "id-92ab8cd23685"
+      }
+    },
+    {
+      "name": "r-agent-runtime-hosted-agent",
+      "properties": {
+        "childEntityName": "hosted-agent",
+        "displayName": "hosted by",
+        "parentEntityName": "system-agent-runtime"
+      }
+    },
+    {
+      "name": "r-agent-runtime-mcp-server",
+      "properties": {
+        "childEntityName": "mcp-server",
+        "displayName": "reads Azure through",
+        "parentEntityName": "system-agent-runtime"
+      }
+    },
+    {
+      "name": "r-ai-inference-foundry-account",
+      "properties": {
+        "childEntityName": "foundry-account",
+        "displayName": "backed by",
+        "parentEntityName": "system-ai-inference"
+      }
+    },
+    {
+      "name": "r-app-hosting-container-app",
+      "properties": {
+        "childEntityName": "container-app",
+        "displayName": "hosted by",
+        "parentEntityName": "system-app-hosting"
+      }
+    },
+    {
+      "name": "r-apply-app-hosting",
+      "properties": {
+        "childEntityName": "system-app-hosting-apply",
+        "displayName": "runs on",
+        "parentEntityName": "flow-apply-health-model-changes"
+      }
+    },
+    {
+      "name": "r-apply-app-hosting-container-app",
+      "properties": {
+        "childEntityName": "container-app-apply",
+        "displayName": "hosted by",
+        "parentEntityName": "system-app-hosting-apply"
+      }
+    },
+    {
+      "name": "r-apply-model-write",
+      "properties": {
+        "childEntityName": "system-model-write",
+        "displayName": "writes through",
+        "parentEntityName": "flow-apply-health-model-changes"
+      }
+    },
+    {
+      "name": "r-apply-state",
+      "properties": {
+        "childEntityName": "system-apply-state",
+        "displayName": "records the result in",
+        "parentEntityName": "flow-apply-health-model-changes"
+      }
+    },
+    {
+      "name": "r-apply-state-storage",
+      "properties": {
+        "childEntityName": "session-storage-apply",
+        "displayName": "backed by",
+        "parentEntityName": "system-apply-state"
+      }
+    },
+    {
+      "name": "r-report-app-hosting-container-app",
+      "properties": {
+        "childEntityName": "container-app-reports",
+        "displayName": "hosted by",
+        "parentEntityName": "system-app-hosting-reports"
+      }
+    },
+    {
+      "name": "r-root-apply-health-model-changes",
+      "properties": {
+        "childEntityName": "flow-apply-health-model-changes",
+        "displayName": "serves",
+        "parentEntityName": "model-root"
+      }
+    },
+    {
+      "name": "r-root-discovery",
+      "properties": {
+        "childEntityName": "discovered-app-topology",
+        "displayName": "supplements with discovery",
+        "parentEntityName": "model-root"
+      }
+    },
+    {
+      "name": "r-root-platform",
+      "properties": {
+        "childEntityName": "platform-context",
+        "displayName": "observes platform context",
+        "parentEntityName": "model-root"
+      }
+    },
+    {
+      "name": "r-root-run-agent-tasks",
+      "properties": {
+        "childEntityName": "flow-run-agent-tasks",
+        "displayName": "serves",
+        "parentEntityName": "model-root"
+      }
+    },
+    {
+      "name": "r-root-send-health-reports",
+      "properties": {
+        "childEntityName": "flow-send-health-reports",
+        "displayName": "serves",
+        "parentEntityName": "model-root"
+      }
+    },
+    {
+      "name": "r-root-view-health-model",
+      "properties": {
+        "childEntityName": "flow-view-health-model",
+        "displayName": "serves",
+        "parentEntityName": "model-root"
+      }
+    },
+    {
+      "name": "r-run-agent-tasks-agent-runtime",
+      "properties": {
+        "childEntityName": "system-agent-runtime",
+        "displayName": "runs through",
+        "parentEntityName": "flow-run-agent-tasks"
+      }
+    },
+    {
+      "name": "r-run-agent-tasks-ai-inference",
+      "properties": {
+        "childEntityName": "system-ai-inference",
+        "displayName": "infers through",
+        "parentEntityName": "flow-run-agent-tasks"
+      }
+    },
+    {
+      "name": "r-run-agent-tasks-app-hosting-tasks",
+      "properties": {
+        "childEntityName": "system-app-hosting-tasks",
+        "displayName": "runs on",
+        "parentEntityName": "flow-run-agent-tasks"
+      }
+    },
+    {
+      "name": "r-run-agent-tasks-session-store",
+      "properties": {
+        "childEntityName": "system-session-store",
+        "displayName": "keeps sessions in",
+        "parentEntityName": "flow-run-agent-tasks"
+      }
+    },
+    {
+      "name": "r-send-health-reports-app-hosting-reports",
+      "properties": {
+        "childEntityName": "system-app-hosting-reports",
+        "displayName": "runs on",
+        "parentEntityName": "flow-send-health-reports"
+      }
+    },
+    {
+      "name": "r-send-health-reports-ingest",
+      "properties": {
+        "childEntityName": "system-report-ingest",
+        "displayName": "reports through",
+        "parentEntityName": "flow-send-health-reports"
+      }
+    },
+    {
+      "name": "r-session-store-session-storage",
+      "properties": {
+        "childEntityName": "session-storage",
+        "displayName": "backed by",
+        "parentEntityName": "system-session-store"
+      }
+    },
+    {
+      "name": "r-task-app-hosting-container-app",
+      "properties": {
+        "childEntityName": "container-app-tasks",
+        "displayName": "hosted by",
+        "parentEntityName": "system-app-hosting-tasks"
+      }
+    },
+    {
+      "name": "r-view-health-model-app-hosting",
+      "properties": {
+        "childEntityName": "system-app-hosting",
+        "displayName": "runs on",
+        "parentEntityName": "flow-view-health-model"
+      }
+    },
+    {
+      "name": "r-view-health-model-model-read",
+      "properties": {
+        "childEntityName": "system-model-read",
+        "displayName": "reads through",
+        "parentEntityName": "flow-view-health-model"
+      }
+    }
+  ],
+  "schemaVersion": 1,
+  "signalDefinitions": []
+}

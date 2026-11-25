@@ -1,0 +1,2860 @@
+{
+ "graph": "signals",
+ "ontology": "health",
+ "description": "The 47 signals of the reference health model from raw rows and metric minutes, evaluated at the clock, and the state of its 28 entities.",
+ "history": 0,
+ "inputs": [
+  {
+   "name": "availability",
+   "rows": "health.AvailabilityRow"
+  },
+  {
+   "name": "dependencies",
+   "rows": "health.DependencyRow"
+  },
+  {
+   "name": "requests",
+   "rows": "health.RequestRow"
+  },
+  {
+   "name": "activity",
+   "rows": "health.ActivityRow"
+  },
+  {
+   "name": "metrics",
+   "rows": "health.MetricRow"
+  }
+ ],
+ "parameters": [
+  {
+   "name": "webTest",
+   "kind": "Text",
+   "default": ""
+  },
+  {
+   "name": "mcpTest",
+   "kind": "Text",
+   "default": ""
+  },
+  {
+   "name": "appRole",
+   "kind": "Text",
+   "default": ""
+  },
+  {
+   "name": "modelResourceGroup",
+   "kind": "Text",
+   "default": ""
+  }
+ ],
+ "verbs": [
+  {
+   "id": "availability",
+   "verb": "rows",
+   "source": "availability"
+  },
+  {
+   "id": "availabilityTests",
+   "verb": "where",
+   "condition": {
+    "fn": "or",
+    "args": [
+     {
+      "fn": "==",
+      "args": [
+       {
+        "ref": "Name"
+       },
+       {
+        "param": "webTest"
+       }
+      ]
+     },
+     {
+      "fn": "==",
+      "args": [
+       {
+        "ref": "Name"
+       },
+       {
+        "param": "mcpTest"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "availabilityGroups",
+   "verb": "extend",
+   "columns": {
+    "group": {
+     "fn": "iff",
+     "args": [
+      {
+       "fn": "==",
+       "args": [
+        {
+         "ref": "Name"
+        },
+        {
+         "param": "webTest"
+        }
+       ]
+      },
+      {
+       "lit": "webTest"
+      },
+      {
+       "lit": "mcpTest"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "availabilityRecent",
+   "verb": "retain",
+   "retain": {
+    "time": "TimeGenerated",
+    "age": "15m"
+   }
+  },
+  {
+   "id": "availabilityRuns",
+   "verb": "summarize",
+   "by": {
+    "group": {
+     "ref": "group"
+    }
+   },
+   "aggregates": {
+    "runs": {
+     "fn": "count"
+    },
+    "passed": {
+     "fn": "countif",
+     "args": [
+      {
+       "ref": "Success"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "availabilityRatio",
+   "verb": "project",
+   "columns": {
+    "computation": {
+     "ref": "group"
+    },
+    "measure": {
+     "lit": "ratio"
+    },
+    "value": {
+     "fn": "/",
+     "args": [
+      {
+       "fn": "*",
+       "args": [
+        {
+         "lit": 100.0
+        },
+        {
+         "ref": "passed"
+        }
+       ]
+      },
+      {
+       "ref": "runs"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "dependencies",
+   "verb": "rows",
+   "source": "dependencies"
+  },
+  {
+   "id": "dependenciesOfRole",
+   "verb": "where",
+   "condition": {
+    "fn": "==",
+    "args": [
+     {
+      "ref": "AppRoleName"
+     },
+     {
+      "param": "appRole"
+     }
+    ]
+   }
+  },
+  {
+   "id": "dependencyGroups",
+   "verb": "extend",
+   "columns": {
+    "group": {
+     "fn": "iff",
+     "args": [
+      {
+       "fn": "startswith",
+       "args": [
+        {
+         "fn": "lower",
+         "args": [
+          {
+           "ref": "Name"
+          }
+         ]
+        },
+        {
+         "lit": "foundry.agent."
+        }
+       ]
+      },
+      {
+       "lit": "agent"
+      },
+      {
+       "fn": "iff",
+       "args": [
+        {
+         "fn": "startswith",
+         "args": [
+          {
+           "fn": "lower",
+           "args": [
+            {
+             "ref": "Name"
+            }
+           ]
+          },
+          {
+           "lit": "sessions.store."
+          }
+         ]
+        },
+        {
+         "lit": "store"
+        },
+        {
+         "fn": "iff",
+         "args": [
+          {
+           "fn": "or",
+           "args": [
+            {
+             "fn": "or",
+             "args": [
+              {
+               "fn": "or",
+               "args": [
+                {
+                 "fn": "==",
+                 "args": [
+                  {
+                   "ref": "Name"
+                  },
+                  {
+                   "lit": "healthmodel.catalog"
+                  }
+                 ]
+                },
+                {
+                 "fn": "==",
+                 "args": [
+                  {
+                   "ref": "Name"
+                  },
+                  {
+                   "lit": "healthmodel.read"
+                  }
+                 ]
+                }
+               ]
+              },
+              {
+               "fn": "==",
+               "args": [
+                {
+                 "ref": "Name"
+                },
+                {
+                 "lit": "healthmodel.timeline"
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "fn": "==",
+             "args": [
+              {
+               "ref": "Name"
+              },
+              {
+               "lit": "healthmodel.history"
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "lit": "read"
+          },
+          {
+           "fn": "iff",
+           "args": [
+            {
+             "fn": "==",
+             "args": [
+              {
+               "ref": "Name"
+              },
+              {
+               "lit": "healthmodel.report"
+              }
+             ]
+            },
+            {
+             "lit": "report"
+            },
+            {
+             "lit": ""
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "dependenciesKnown",
+   "verb": "where",
+   "condition": {
+    "fn": "!=",
+    "args": [
+     {
+      "ref": "group"
+     },
+     {
+      "lit": ""
+     }
+    ]
+   }
+  },
+  {
+   "id": "dependenciesRecent",
+   "verb": "retain",
+   "retain": {
+    "time": "TimeGenerated",
+    "age": "15m"
+   }
+  },
+  {
+   "id": "dependencyCalls",
+   "verb": "summarize",
+   "by": {
+    "group": {
+     "ref": "group"
+    }
+   },
+   "aggregates": {
+    "failed": {
+     "fn": "countif",
+     "args": [
+      {
+       "fn": "==",
+       "args": [
+        {
+         "ref": "Success"
+        },
+        {
+         "lit": false
+        }
+       ]
+      }
+     ]
+    },
+    "p95": {
+     "fn": "percentile",
+     "args": [
+      {
+       "ref": "DurationMs"
+      },
+      {
+       "lit": 95
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "dependencyFailures",
+   "verb": "project",
+   "columns": {
+    "computation": {
+     "ref": "group"
+    },
+    "measure": {
+     "lit": "failures"
+    },
+    "value": {
+     "fn": "todecimal",
+     "args": [
+      {
+       "ref": "failed"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "dependencyP95",
+   "verb": "project",
+   "columns": {
+    "computation": {
+     "ref": "group"
+    },
+    "measure": {
+     "lit": "p95"
+    },
+    "value": {
+     "ref": "p95"
+    }
+   }
+  },
+  {
+   "id": "requests",
+   "verb": "rows",
+   "source": "requests"
+  },
+  {
+   "id": "requestsOfRole",
+   "verb": "where",
+   "condition": {
+    "fn": "==",
+    "args": [
+     {
+      "ref": "AppRoleName"
+     },
+     {
+      "param": "appRole"
+     }
+    ]
+   }
+  },
+  {
+   "id": "requestGroups",
+   "verb": "extend",
+   "columns": {
+    "group": {
+     "fn": "iff",
+     "args": [
+      {
+       "fn": "==",
+       "args": [
+        {
+         "ref": "Name"
+        },
+        {
+         "lit": "POST /api/entities/{entity_name:path}/health-reports"
+        }
+       ]
+      },
+      {
+       "lit": "reports"
+      },
+      {
+       "fn": "iff",
+       "args": [
+        {
+         "fn": "==",
+         "args": [
+          {
+           "ref": "Name"
+          },
+          {
+           "lit": "POST /api/sessions/{sid}/tasks/{tid}/apply"
+          }
+         ]
+        },
+        {
+         "lit": "apply"
+        },
+        {
+         "fn": "iff",
+         "args": [
+          {
+           "fn": "or",
+           "args": [
+            {
+             "fn": "or",
+             "args": [
+              {
+               "fn": "or",
+               "args": [
+                {
+                 "fn": "or",
+                 "args": [
+                  {
+                   "fn": "==",
+                   "args": [
+                    {
+                     "ref": "Name"
+                    },
+                    {
+                     "lit": "GET /api/health-models"
+                    }
+                   ]
+                  },
+                  {
+                   "fn": "==",
+                   "args": [
+                    {
+                     "ref": "Name"
+                    },
+                    {
+                     "lit": "GET /api/health-model"
+                    }
+                   ]
+                  }
+                 ]
+                },
+                {
+                 "fn": "==",
+                 "args": [
+                  {
+                   "ref": "Name"
+                  },
+                  {
+                   "lit": "GET /api/health-model/stream"
+                  }
+                 ]
+                }
+               ]
+              },
+              {
+               "fn": "==",
+               "args": [
+                {
+                 "ref": "Name"
+                },
+                {
+                 "lit": "GET /api/timeline"
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "fn": "==",
+             "args": [
+              {
+               "ref": "Name"
+              },
+              {
+               "lit": "GET /api/entities/{entity_name:path}"
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "lit": "view"
+          },
+          {
+           "fn": "iff",
+           "args": [
+            {
+             "fn": "or",
+             "args": [
+              {
+               "fn": "or",
+               "args": [
+                {
+                 "fn": "or",
+                 "args": [
+                  {
+                   "fn": "or",
+                   "args": [
+                    {
+                     "fn": "or",
+                     "args": [
+                      {
+                       "fn": "or",
+                       "args": [
+                        {
+                         "fn": "==",
+                         "args": [
+                          {
+                           "ref": "Name"
+                          },
+                          {
+                           "lit": "GET /api/sessions"
+                          }
+                         ]
+                        },
+                        {
+                         "fn": "==",
+                         "args": [
+                          {
+                           "ref": "Name"
+                          },
+                          {
+                           "lit": "POST /api/sessions"
+                          }
+                         ]
+                        }
+                       ]
+                      },
+                      {
+                       "fn": "==",
+                       "args": [
+                        {
+                         "ref": "Name"
+                        },
+                        {
+                         "lit": "GET /api/sessions/{sid}"
+                        }
+                       ]
+                      }
+                     ]
+                    },
+                    {
+                     "fn": "==",
+                     "args": [
+                      {
+                       "ref": "Name"
+                      },
+                      {
+                       "lit": "POST /api/sessions/{sid}/tasks"
+                      }
+                     ]
+                    }
+                   ]
+                  },
+                  {
+                   "fn": "==",
+                   "args": [
+                    {
+                     "ref": "Name"
+                    },
+                    {
+                     "lit": "GET /api/sessions/{sid}/tasks/{tid}"
+                    }
+                   ]
+                  }
+                 ]
+                },
+                {
+                 "fn": "==",
+                 "args": [
+                  {
+                   "ref": "Name"
+                  },
+                  {
+                   "lit": "GET /api/sessions/{sid}/tasks/{tid}/events"
+                  }
+                 ]
+                }
+               ]
+              },
+              {
+               "fn": "==",
+               "args": [
+                {
+                 "ref": "Name"
+                },
+                {
+                 "lit": "GET /api/sessions/{sid}/tasks/{tid}/diff"
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "lit": "tasks"
+            },
+            {
+             "lit": ""
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "requestsKnown",
+   "verb": "where",
+   "condition": {
+    "fn": "!=",
+    "args": [
+     {
+      "ref": "group"
+     },
+     {
+      "lit": ""
+     }
+    ]
+   }
+  },
+  {
+   "id": "requestsRecent",
+   "verb": "retain",
+   "retain": {
+    "time": "TimeGenerated",
+    "age": "5m"
+   }
+  },
+  {
+   "id": "requestCalls",
+   "verb": "summarize",
+   "by": {
+    "group": {
+     "ref": "group"
+    }
+   },
+   "aggregates": {
+    "failed": {
+     "fn": "countif",
+     "args": [
+      {
+       "fn": ">=",
+       "args": [
+        {
+         "fn": "todecimal",
+         "args": [
+          {
+           "ref": "ResultCode"
+          }
+         ]
+        },
+        {
+         "lit": 500
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "requestFailures",
+   "verb": "project",
+   "columns": {
+    "computation": {
+     "ref": "group"
+    },
+    "measure": {
+     "lit": "failures"
+    },
+    "value": {
+     "fn": "todecimal",
+     "args": [
+      {
+       "ref": "failed"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "activity",
+   "verb": "rows",
+   "source": "activity"
+  },
+  {
+   "id": "activityGroups",
+   "verb": "extend",
+   "columns": {
+    "group": {
+     "fn": "iff",
+     "args": [
+      {
+       "fn": "==",
+       "args": [
+        {
+         "ref": "CategoryValue"
+        },
+        {
+         "lit": "ServiceHealth"
+        }
+       ]
+      },
+      {
+       "lit": "serviceHealth"
+      },
+      {
+       "fn": "iff",
+       "args": [
+        {
+         "fn": "and",
+         "args": [
+          {
+           "fn": "==",
+           "args": [
+            {
+             "ref": "CategoryValue"
+            },
+            {
+             "lit": "Administrative"
+            }
+           ]
+          },
+          {
+           "fn": "==",
+           "args": [
+            {
+             "fn": "lower",
+             "args": [
+              {
+               "ref": "ResourceGroup"
+              }
+             ]
+            },
+            {
+             "fn": "lower",
+             "args": [
+              {
+               "param": "modelResourceGroup"
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "lit": "admin"
+        },
+        {
+         "fn": "iff",
+         "args": [
+          {
+           "fn": "==",
+           "args": [
+            {
+             "ref": "CategoryValue"
+            },
+            {
+             "lit": "Alert"
+            }
+           ]
+          },
+          {
+           "lit": "alert"
+          },
+          {
+           "lit": ""
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "activityKnown",
+   "verb": "where",
+   "condition": {
+    "fn": "!=",
+    "args": [
+     {
+      "ref": "group"
+     },
+     {
+      "lit": ""
+     }
+    ]
+   }
+  },
+  {
+   "id": "activityCounted",
+   "verb": "extend",
+   "columns": {
+    "counted": {
+     "fn": "iff",
+     "args": [
+      {
+       "fn": "==",
+       "args": [
+        {
+         "ref": "group"
+        },
+        {
+         "lit": "serviceHealth"
+        }
+       ]
+      },
+      {
+       "fn": "or",
+       "args": [
+        {
+         "fn": "==",
+         "args": [
+          {
+           "ref": "Level"
+          },
+          {
+           "lit": "Error"
+          }
+         ]
+        },
+        {
+         "fn": "==",
+         "args": [
+          {
+           "ref": "Level"
+          },
+          {
+           "lit": "Critical"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "fn": "iff",
+       "args": [
+        {
+         "fn": "==",
+         "args": [
+          {
+           "ref": "group"
+          },
+          {
+           "lit": "admin"
+          }
+         ]
+        },
+        {
+         "fn": "or",
+         "args": [
+          {
+           "fn": "==",
+           "args": [
+            {
+             "ref": "ActivityStatusValue"
+            },
+            {
+             "lit": "Failed"
+            }
+           ]
+          },
+          {
+           "fn": "==",
+           "args": [
+            {
+             "ref": "ActivityStatusValue"
+            },
+            {
+             "lit": "Failure"
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "lit": true
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "activityRecent",
+   "verb": "retain",
+   "retain": {
+    "time": "TimeGenerated",
+    "age": "15m"
+   }
+  },
+  {
+   "id": "activityEvents",
+   "verb": "summarize",
+   "by": {
+    "group": {
+     "ref": "group"
+    }
+   },
+   "aggregates": {
+    "failed": {
+     "fn": "countif",
+     "args": [
+      {
+       "ref": "counted"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "activityFailures",
+   "verb": "project",
+   "columns": {
+    "computation": {
+     "ref": "group"
+    },
+    "measure": {
+     "lit": "failures"
+    },
+    "value": {
+     "fn": "todecimal",
+     "args": [
+      {
+       "ref": "failed"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "metrics",
+   "verb": "rows",
+   "source": "metrics"
+  },
+  {
+   "id": "metricGroups",
+   "verb": "extend",
+   "columns": {
+    "group": {
+     "fn": "concat",
+     "args": [
+      {
+       "ref": "resource"
+      },
+      {
+       "fn": "concat",
+       "args": [
+        {
+         "lit": "/"
+        },
+        {
+         "ref": "metric"
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "blobMinutes",
+   "verb": "where",
+   "condition": {
+    "fn": "==",
+    "args": [
+     {
+      "ref": "resource"
+     },
+     {
+      "lit": "blob"
+     }
+    ]
+   }
+  },
+  {
+   "id": "blobRecent",
+   "verb": "retain",
+   "retain": {
+    "time": "at",
+    "age": "2m"
+   }
+  },
+  {
+   "id": "appMinutes",
+   "verb": "where",
+   "condition": {
+    "fn": "!=",
+    "args": [
+     {
+      "ref": "resource"
+     },
+     {
+      "lit": "blob"
+     }
+    ]
+   }
+  },
+  {
+   "id": "appRecent",
+   "verb": "retain",
+   "retain": {
+    "time": "at",
+    "age": "6m"
+   }
+  },
+  {
+   "id": "metricsRecent",
+   "verb": "union"
+  },
+  {
+   "id": "metricSamples",
+   "verb": "summarize",
+   "by": {
+    "group": {
+     "ref": "group"
+    }
+   },
+   "aggregates": {
+    "total": {
+     "fn": "sum",
+     "args": [
+      {
+       "ref": "total"
+      }
+     ]
+    },
+    "samples": {
+     "fn": "sum",
+     "args": [
+      {
+       "ref": "count"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "metricAverage",
+   "verb": "project",
+   "columns": {
+    "computation": {
+     "ref": "group"
+    },
+    "measure": {
+     "lit": "avg"
+    },
+    "value": {
+     "fn": "/",
+     "args": [
+      {
+       "ref": "total"
+      },
+      {
+       "ref": "samples"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "metricsSampled",
+   "verb": "where",
+   "condition": {
+    "fn": ">",
+    "args": [
+     {
+      "ref": "samples"
+     },
+     {
+      "lit": 0
+     }
+    ]
+   }
+  },
+  {
+   "id": "metricTotal",
+   "verb": "project",
+   "columns": {
+    "computation": {
+     "ref": "group"
+    },
+    "measure": {
+     "lit": "sum"
+    },
+    "value": {
+     "ref": "total"
+    }
+   }
+  },
+  {
+   "id": "computed",
+   "verb": "union"
+  },
+  {
+   "id": "computedValues",
+   "verb": "where",
+   "condition": {
+    "fn": "isnotnull",
+    "args": [
+     {
+      "ref": "value"
+     }
+    ]
+   }
+  },
+  {
+   "id": "signals",
+   "verb": "values",
+   "values": {
+    "key": "signal",
+    "columns": {
+     "signal": "Text",
+     "entity": "Text",
+     "readsComputation": "Text",
+     "readsMeasure": "Text",
+     "above": "Boolean",
+     "hasDegraded": "Boolean",
+     "degraded": "Decimal",
+     "unhealthy": "Decimal"
+    },
+    "rows": [
+     {
+      "signal": "container-app-apply/azureLogAnalytics/availability-test",
+      "entity": "container-app-apply",
+      "readsComputation": "webTest",
+      "readsMeasure": "ratio",
+      "above": false,
+      "hasDegraded": true,
+      "degraded": 100.0,
+      "unhealthy": 67.0
+     },
+     {
+      "signal": "container-app-apply/azureResource/cpu-percentage",
+      "entity": "container-app-apply",
+      "readsComputation": "webApp/CpuPercentage",
+      "readsMeasure": "avg",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 80.0,
+      "unhealthy": 95.0
+     },
+     {
+      "signal": "container-app-apply/azureResource/memory-percentage",
+      "entity": "container-app-apply",
+      "readsComputation": "webApp/MemoryPercentage",
+      "readsMeasure": "avg",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 80.0,
+      "unhealthy": 95.0
+     },
+     {
+      "signal": "container-app-apply/azureResource/response-time",
+      "entity": "container-app-apply",
+      "readsComputation": "webApp/ResponseTime",
+      "readsMeasure": "avg",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 3000.0,
+      "unhealthy": 5000.0
+     },
+     {
+      "signal": "container-app-apply/azureResource/restart-count",
+      "entity": "container-app-apply",
+      "readsComputation": "webApp/RestartCount",
+      "readsMeasure": "sum",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 0.0,
+      "unhealthy": 1.0
+     },
+     {
+      "signal": "container-app-reports/azureLogAnalytics/availability-test",
+      "entity": "container-app-reports",
+      "readsComputation": "webTest",
+      "readsMeasure": "ratio",
+      "above": false,
+      "hasDegraded": true,
+      "degraded": 100.0,
+      "unhealthy": 67.0
+     },
+     {
+      "signal": "container-app-reports/azureResource/cpu-percentage",
+      "entity": "container-app-reports",
+      "readsComputation": "webApp/CpuPercentage",
+      "readsMeasure": "avg",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 80.0,
+      "unhealthy": 95.0
+     },
+     {
+      "signal": "container-app-reports/azureResource/memory-percentage",
+      "entity": "container-app-reports",
+      "readsComputation": "webApp/MemoryPercentage",
+      "readsMeasure": "avg",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 80.0,
+      "unhealthy": 95.0
+     },
+     {
+      "signal": "container-app-reports/azureResource/response-time",
+      "entity": "container-app-reports",
+      "readsComputation": "webApp/ResponseTime",
+      "readsMeasure": "avg",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 3000.0,
+      "unhealthy": 5000.0
+     },
+     {
+      "signal": "container-app-reports/azureResource/restart-count",
+      "entity": "container-app-reports",
+      "readsComputation": "webApp/RestartCount",
+      "readsMeasure": "sum",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 0.0,
+      "unhealthy": 1.0
+     },
+     {
+      "signal": "container-app-tasks/azureLogAnalytics/availability-test",
+      "entity": "container-app-tasks",
+      "readsComputation": "webTest",
+      "readsMeasure": "ratio",
+      "above": false,
+      "hasDegraded": true,
+      "degraded": 100.0,
+      "unhealthy": 67.0
+     },
+     {
+      "signal": "container-app-tasks/azureResource/cpu-percentage",
+      "entity": "container-app-tasks",
+      "readsComputation": "webApp/CpuPercentage",
+      "readsMeasure": "avg",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 80.0,
+      "unhealthy": 95.0
+     },
+     {
+      "signal": "container-app-tasks/azureResource/memory-percentage",
+      "entity": "container-app-tasks",
+      "readsComputation": "webApp/MemoryPercentage",
+      "readsMeasure": "avg",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 80.0,
+      "unhealthy": 95.0
+     },
+     {
+      "signal": "container-app-tasks/azureResource/response-time",
+      "entity": "container-app-tasks",
+      "readsComputation": "webApp/ResponseTime",
+      "readsMeasure": "avg",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 3000.0,
+      "unhealthy": 5000.0
+     },
+     {
+      "signal": "container-app-tasks/azureResource/restart-count",
+      "entity": "container-app-tasks",
+      "readsComputation": "webApp/RestartCount",
+      "readsMeasure": "sum",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 0.0,
+      "unhealthy": 1.0
+     },
+     {
+      "signal": "container-app/azureLogAnalytics/availability-test",
+      "entity": "container-app",
+      "readsComputation": "webTest",
+      "readsMeasure": "ratio",
+      "above": false,
+      "hasDegraded": true,
+      "degraded": 100.0,
+      "unhealthy": 67.0
+     },
+     {
+      "signal": "container-app/azureResource/cpu-percentage",
+      "entity": "container-app",
+      "readsComputation": "webApp/CpuPercentage",
+      "readsMeasure": "avg",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 80.0,
+      "unhealthy": 95.0
+     },
+     {
+      "signal": "container-app/azureResource/memory-percentage",
+      "entity": "container-app",
+      "readsComputation": "webApp/MemoryPercentage",
+      "readsMeasure": "avg",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 80.0,
+      "unhealthy": 95.0
+     },
+     {
+      "signal": "container-app/azureResource/response-time",
+      "entity": "container-app",
+      "readsComputation": "webApp/ResponseTime",
+      "readsMeasure": "avg",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 3000.0,
+      "unhealthy": 5000.0
+     },
+     {
+      "signal": "container-app/azureResource/restart-count",
+      "entity": "container-app",
+      "readsComputation": "webApp/RestartCount",
+      "readsMeasure": "sum",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 0.0,
+      "unhealthy": 1.0
+     },
+     {
+      "signal": "foundry-account/azureResource/client-errors",
+      "entity": "foundry-account",
+      "readsComputation": "foundry/ClientErrors",
+      "readsMeasure": "sum",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 2.0,
+      "unhealthy": 10.0
+     },
+     {
+      "signal": "foundry-account/azureResource/server-errors",
+      "entity": "foundry-account",
+      "readsComputation": "foundry/ServerErrors",
+      "readsMeasure": "sum",
+      "above": true,
+      "hasDegraded": false,
+      "degraded": 0.0,
+      "unhealthy": 0.0
+     },
+     {
+      "signal": "hosted-agent/azureLogAnalytics/agent-task-failures",
+      "entity": "hosted-agent",
+      "readsComputation": "agent",
+      "readsMeasure": "failures",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 0.0,
+      "unhealthy": 2.0
+     },
+     {
+      "signal": "hosted-agent/azureLogAnalytics/agent-task-latency",
+      "entity": "hosted-agent",
+      "readsComputation": "agent",
+      "readsMeasure": "p95",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 450000.0,
+      "unhealthy": 570000.0
+     },
+     {
+      "signal": "mcp-server/azureLogAnalytics/availability-test",
+      "entity": "mcp-server",
+      "readsComputation": "mcpTest",
+      "readsMeasure": "ratio",
+      "above": false,
+      "hasDegraded": true,
+      "degraded": 100.0,
+      "unhealthy": 67.0
+     },
+     {
+      "signal": "mcp-server/azureResource/cpu-percentage",
+      "entity": "mcp-server",
+      "readsComputation": "mcpApp/CpuPercentage",
+      "readsMeasure": "avg",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 80.0,
+      "unhealthy": 95.0
+     },
+     {
+      "signal": "mcp-server/azureResource/memory-percentage",
+      "entity": "mcp-server",
+      "readsComputation": "mcpApp/MemoryPercentage",
+      "readsMeasure": "avg",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 80.0,
+      "unhealthy": 95.0
+     },
+     {
+      "signal": "mcp-server/azureResource/response-time",
+      "entity": "mcp-server",
+      "readsComputation": "mcpApp/ResponseTime",
+      "readsMeasure": "avg",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 7000.0,
+      "unhealthy": 10000.0
+     },
+     {
+      "signal": "mcp-server/azureResource/restart-count",
+      "entity": "mcp-server",
+      "readsComputation": "mcpApp/RestartCount",
+      "readsMeasure": "sum",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 0.0,
+      "unhealthy": 1.0
+     },
+     {
+      "signal": "platform-context/azureLogAnalytics/failed-arm-operations",
+      "entity": "platform-context",
+      "readsComputation": "admin",
+      "readsMeasure": "failures",
+      "above": true,
+      "hasDegraded": false,
+      "degraded": 0.0,
+      "unhealthy": 0.0
+     },
+     {
+      "signal": "platform-context/azureLogAnalytics/platform-alerts",
+      "entity": "platform-context",
+      "readsComputation": "alert",
+      "readsMeasure": "failures",
+      "above": true,
+      "hasDegraded": false,
+      "degraded": 0.0,
+      "unhealthy": 20.0
+     },
+     {
+      "signal": "platform-context/azureLogAnalytics/service-health",
+      "entity": "platform-context",
+      "readsComputation": "serviceHealth",
+      "readsMeasure": "failures",
+      "above": true,
+      "hasDegraded": false,
+      "degraded": 0.0,
+      "unhealthy": 0.0
+     },
+     {
+      "signal": "session-storage-apply/azureResource/availability",
+      "entity": "session-storage-apply",
+      "readsComputation": "blob/Availability",
+      "readsMeasure": "avg",
+      "above": false,
+      "hasDegraded": true,
+      "degraded": 99.9,
+      "unhealthy": 99.0
+     },
+     {
+      "signal": "session-storage-apply/azureResource/end-to-end-latency",
+      "entity": "session-storage-apply",
+      "readsComputation": "blob/SuccessE2ELatency",
+      "readsMeasure": "avg",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 2000.0,
+      "unhealthy": 5000.0
+     },
+     {
+      "signal": "session-storage/azureResource/availability",
+      "entity": "session-storage",
+      "readsComputation": "blob/Availability",
+      "readsMeasure": "avg",
+      "above": false,
+      "hasDegraded": true,
+      "degraded": 99.9,
+      "unhealthy": 99.0
+     },
+     {
+      "signal": "session-storage/azureResource/end-to-end-latency",
+      "entity": "session-storage",
+      "readsComputation": "blob/SuccessE2ELatency",
+      "readsMeasure": "avg",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 2000.0,
+      "unhealthy": 5000.0
+     },
+     {
+      "signal": "system-app-hosting-reports/azureLogAnalytics/report-route-failures",
+      "entity": "system-app-hosting-reports",
+      "readsComputation": "reports",
+      "readsMeasure": "failures",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 0.0,
+      "unhealthy": 2.0
+     },
+     {
+      "signal": "system-app-hosting-tasks/azureLogAnalytics/task-route-failures",
+      "entity": "system-app-hosting-tasks",
+      "readsComputation": "tasks",
+      "readsMeasure": "failures",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 0.0,
+      "unhealthy": 2.0
+     },
+     {
+      "signal": "system-app-hosting/azureLogAnalytics/view-route-failures",
+      "entity": "system-app-hosting",
+      "readsComputation": "view",
+      "readsMeasure": "failures",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 0.0,
+      "unhealthy": 2.0
+     },
+     {
+      "signal": "system-apply-state/azureLogAnalytics/apply-state-failures",
+      "entity": "system-apply-state",
+      "readsComputation": "store",
+      "readsMeasure": "failures",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 0.0,
+      "unhealthy": 2.0
+     },
+     {
+      "signal": "system-apply-state/azureLogAnalytics/apply-state-latency",
+      "entity": "system-apply-state",
+      "readsComputation": "store",
+      "readsMeasure": "p95",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 2000.0,
+      "unhealthy": 10000.0
+     },
+     {
+      "signal": "system-model-read/azureLogAnalytics/model-read-failures",
+      "entity": "system-model-read",
+      "readsComputation": "read",
+      "readsMeasure": "failures",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 0.0,
+      "unhealthy": 2.0
+     },
+     {
+      "signal": "system-model-read/azureLogAnalytics/model-read-latency",
+      "entity": "system-model-read",
+      "readsComputation": "read",
+      "readsMeasure": "p95",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 5000.0,
+      "unhealthy": 40000.0
+     },
+     {
+      "signal": "system-model-write/azureLogAnalytics/apply-request-failures",
+      "entity": "system-model-write",
+      "readsComputation": "apply",
+      "readsMeasure": "failures",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 0.0,
+      "unhealthy": 2.0
+     },
+     {
+      "signal": "system-report-ingest/azureLogAnalytics/report-ingest-failures",
+      "entity": "system-report-ingest",
+      "readsComputation": "report",
+      "readsMeasure": "failures",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 0.0,
+      "unhealthy": 2.0
+     },
+     {
+      "signal": "system-session-store/azureLogAnalytics/session-store-failures",
+      "entity": "system-session-store",
+      "readsComputation": "store",
+      "readsMeasure": "failures",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 0.0,
+      "unhealthy": 2.0
+     },
+     {
+      "signal": "system-session-store/azureLogAnalytics/session-store-latency",
+      "entity": "system-session-store",
+      "readsComputation": "store",
+      "readsMeasure": "p95",
+      "above": true,
+      "hasDegraded": true,
+      "degraded": 2000.0,
+      "unhealthy": 10000.0
+     }
+    ]
+   }
+  },
+  {
+   "id": "signalValues",
+   "verb": "join",
+   "kind": "inner",
+   "on": [
+    {
+     "left": "computation",
+     "right": "readsComputation"
+    },
+    {
+     "left": "measure",
+     "right": "readsMeasure"
+    }
+   ]
+  },
+  {
+   "id": "signalEvaluated",
+   "verb": "project",
+   "columns": {
+    "signal": {
+     "ref": "signal"
+    },
+    "entity": {
+     "ref": "entity"
+    },
+    "value": {
+     "ref": "value"
+    },
+    "order": {
+     "lit": 1
+    },
+    "rank": {
+     "fn": "iff",
+     "args": [
+      {
+       "fn": "iff",
+       "args": [
+        {
+         "ref": "above"
+        },
+        {
+         "fn": ">",
+         "args": [
+          {
+           "ref": "value"
+          },
+          {
+           "ref": "unhealthy"
+          }
+         ]
+        },
+        {
+         "fn": "<",
+         "args": [
+          {
+           "ref": "value"
+          },
+          {
+           "ref": "unhealthy"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "lit": 3
+      },
+      {
+       "fn": "iff",
+       "args": [
+        {
+         "fn": "and",
+         "args": [
+          {
+           "ref": "hasDegraded"
+          },
+          {
+           "fn": "iff",
+           "args": [
+            {
+             "ref": "above"
+            },
+            {
+             "fn": ">",
+             "args": [
+              {
+               "ref": "value"
+              },
+              {
+               "ref": "degraded"
+              }
+             ]
+            },
+            {
+             "fn": "<",
+             "args": [
+              {
+               "ref": "value"
+              },
+              {
+               "ref": "degraded"
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "lit": 2
+        },
+        {
+         "lit": 1
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "signalDefaults",
+   "verb": "project",
+   "columns": {
+    "signal": {
+     "ref": "signal"
+    },
+    "entity": {
+     "ref": "entity"
+    },
+    "order": {
+     "lit": 0
+    },
+    "rank": {
+     "fn": "iff",
+     "args": [
+      {
+       "fn": "==",
+       "args": [
+        {
+         "ref": "readsMeasure"
+        },
+        {
+         "lit": "failures"
+        }
+       ]
+      },
+      {
+       "lit": 1
+      },
+      {
+       "lit": 0
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "signalRanks",
+   "verb": "project",
+   "columns": {
+    "signal": {
+     "ref": "signal"
+    },
+    "entity": {
+     "ref": "entity"
+    },
+    "order": {
+     "ref": "order"
+    },
+    "rank": {
+     "ref": "rank"
+    }
+   }
+  },
+  {
+   "id": "signalCandidates",
+   "verb": "union"
+  },
+  {
+   "id": "signalStates",
+   "verb": "summarize",
+   "by": {
+    "signal": {
+     "ref": "signal"
+    },
+    "entity": {
+     "ref": "entity"
+    }
+   },
+   "aggregates": {
+    "rank": {
+     "fn": "arg_max",
+     "args": [
+      {
+       "ref": "order"
+      },
+      {
+       "ref": "rank"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "countSignals",
+   "verb": "where",
+   "condition": {
+    "fn": "==",
+    "args": [
+     {
+      "ref": "readsMeasure"
+     },
+     {
+      "lit": "failures"
+     }
+    ]
+   }
+  },
+  {
+   "id": "countDefaults",
+   "verb": "project",
+   "columns": {
+    "signal": {
+     "ref": "signal"
+    },
+    "order": {
+     "lit": 0
+    },
+    "value": {
+     "lit": 0.0
+    }
+   }
+  },
+  {
+   "id": "evaluatedValues",
+   "verb": "project",
+   "columns": {
+    "signal": {
+     "ref": "signal"
+    },
+    "order": {
+     "ref": "order"
+    },
+    "value": {
+     "ref": "value"
+    }
+   }
+  },
+  {
+   "id": "valueCandidates",
+   "verb": "union"
+  },
+  {
+   "id": "signalReadings",
+   "verb": "summarize",
+   "by": {
+    "signal": {
+     "ref": "signal"
+    }
+   },
+   "aggregates": {
+    "value": {
+     "fn": "arg_max",
+     "args": [
+      {
+       "ref": "order"
+      },
+      {
+       "ref": "value"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "signalState",
+   "verb": "nodes",
+   "rule": "signalState",
+   "target": {
+    "nodes": [
+     {
+      "var": "s",
+      "label": "Signal",
+      "id": {
+       "identity": "signal",
+       "args": [
+        {
+         "ref": "signal"
+        }
+       ]
+      },
+      "props": {
+       "name": {
+        "ref": "signal"
+       },
+       "state": {
+        "fn": "iff",
+        "args": [
+         {
+          "fn": "==",
+          "args": [
+           {
+            "ref": "rank"
+           },
+           {
+            "lit": 3
+           }
+          ]
+         },
+         {
+          "lit": "Unhealthy"
+         },
+         {
+          "fn": "iff",
+          "args": [
+           {
+            "fn": "==",
+            "args": [
+             {
+              "ref": "rank"
+             },
+             {
+              "lit": 2
+             }
+            ]
+           },
+           {
+            "lit": "Degraded"
+           },
+           {
+            "fn": "iff",
+            "args": [
+             {
+              "fn": "==",
+              "args": [
+               {
+                "ref": "rank"
+               },
+               {
+                "lit": 1
+               }
+              ]
+             },
+             {
+              "lit": "Healthy"
+             },
+             {
+              "lit": "Unknown"
+             }
+            ]
+           }
+          ]
+         }
+        ]
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "id": "signalValue",
+   "verb": "nodes",
+   "rule": "signalValue",
+   "target": {
+    "nodes": [
+     {
+      "var": "s",
+      "label": "Signal",
+      "id": {
+       "identity": "signal",
+       "args": [
+        {
+         "ref": "signal"
+        }
+       ]
+      },
+      "props": {
+       "value": {
+        "ref": "value"
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "id": "signalOf",
+   "verb": "edges",
+   "rule": "signalOf",
+   "target": {
+    "nodes": [
+     {
+      "var": "e",
+      "label": "Entity",
+      "id": {
+       "identity": "entity",
+       "args": [
+        {
+         "ref": "entity"
+        }
+       ]
+      }
+     },
+     {
+      "var": "s",
+      "label": "Signal",
+      "id": {
+       "identity": "signal",
+       "args": [
+        {
+         "ref": "signal"
+        }
+       ]
+      }
+     }
+    ],
+    "edges": [
+     {
+      "var": "h",
+      "label": "HasSignal",
+      "from": "e",
+      "to": "s"
+     }
+    ]
+   }
+  },
+  {
+   "id": "entities",
+   "verb": "values",
+   "values": {
+    "key": "entity",
+    "columns": {
+     "entity": "Text"
+    },
+    "rows": [
+     {
+      "entity": "container-app"
+     },
+     {
+      "entity": "container-app-apply"
+     },
+     {
+      "entity": "container-app-reports"
+     },
+     {
+      "entity": "container-app-tasks"
+     },
+     {
+      "entity": "discovered-app-topology"
+     },
+     {
+      "entity": "flow-apply-health-model-changes"
+     },
+     {
+      "entity": "flow-run-agent-tasks"
+     },
+     {
+      "entity": "flow-send-health-reports"
+     },
+     {
+      "entity": "flow-view-health-model"
+     },
+     {
+      "entity": "foundry-account"
+     },
+     {
+      "entity": "hosted-agent"
+     },
+     {
+      "entity": "id-5cfa67aeab88"
+     },
+     {
+      "entity": "id-92ab8cd23685"
+     },
+     {
+      "entity": "mcp-server"
+     },
+     {
+      "entity": "model-root"
+     },
+     {
+      "entity": "platform-context"
+     },
+     {
+      "entity": "session-storage"
+     },
+     {
+      "entity": "session-storage-apply"
+     },
+     {
+      "entity": "system-agent-runtime"
+     },
+     {
+      "entity": "system-ai-inference"
+     },
+     {
+      "entity": "system-app-hosting"
+     },
+     {
+      "entity": "system-app-hosting-apply"
+     },
+     {
+      "entity": "system-app-hosting-reports"
+     },
+     {
+      "entity": "system-app-hosting-tasks"
+     },
+     {
+      "entity": "system-apply-state"
+     },
+     {
+      "entity": "system-model-read"
+     },
+     {
+      "entity": "system-model-write"
+     },
+     {
+      "entity": "system-report-ingest"
+     },
+     {
+      "entity": "system-session-store"
+     }
+    ]
+   }
+  },
+  {
+   "id": "children",
+   "verb": "values",
+   "values": {
+    "columns": {
+     "parent": "Text",
+     "child": "Text",
+     "impact": "Text"
+    },
+    "rows": [
+     {
+      "parent": "flow-apply-health-model-changes",
+      "child": "system-app-hosting-apply",
+      "impact": "Standard"
+     },
+     {
+      "parent": "flow-apply-health-model-changes",
+      "child": "system-apply-state",
+      "impact": "Standard"
+     },
+     {
+      "parent": "flow-apply-health-model-changes",
+      "child": "system-model-write",
+      "impact": "Standard"
+     },
+     {
+      "parent": "flow-run-agent-tasks",
+      "child": "system-agent-runtime",
+      "impact": "Standard"
+     },
+     {
+      "parent": "flow-run-agent-tasks",
+      "child": "system-ai-inference",
+      "impact": "Standard"
+     },
+     {
+      "parent": "flow-run-agent-tasks",
+      "child": "system-app-hosting-tasks",
+      "impact": "Standard"
+     },
+     {
+      "parent": "flow-run-agent-tasks",
+      "child": "system-session-store",
+      "impact": "Standard"
+     },
+     {
+      "parent": "flow-send-health-reports",
+      "child": "system-app-hosting-reports",
+      "impact": "Standard"
+     },
+     {
+      "parent": "flow-send-health-reports",
+      "child": "system-report-ingest",
+      "impact": "Standard"
+     },
+     {
+      "parent": "flow-view-health-model",
+      "child": "system-app-hosting",
+      "impact": "Standard"
+     },
+     {
+      "parent": "flow-view-health-model",
+      "child": "system-model-read",
+      "impact": "Standard"
+     },
+     {
+      "parent": "id-92ab8cd23685",
+      "child": "id-5cfa67aeab88",
+      "impact": "Standard"
+     },
+     {
+      "parent": "model-root",
+      "child": "discovered-app-topology",
+      "impact": "Suppressed"
+     },
+     {
+      "parent": "model-root",
+      "child": "flow-apply-health-model-changes",
+      "impact": "Standard"
+     },
+     {
+      "parent": "model-root",
+      "child": "flow-run-agent-tasks",
+      "impact": "Standard"
+     },
+     {
+      "parent": "model-root",
+      "child": "flow-send-health-reports",
+      "impact": "Standard"
+     },
+     {
+      "parent": "model-root",
+      "child": "flow-view-health-model",
+      "impact": "Standard"
+     },
+     {
+      "parent": "model-root",
+      "child": "platform-context",
+      "impact": "Limited"
+     },
+     {
+      "parent": "system-agent-runtime",
+      "child": "hosted-agent",
+      "impact": "Standard"
+     },
+     {
+      "parent": "system-agent-runtime",
+      "child": "mcp-server",
+      "impact": "Standard"
+     },
+     {
+      "parent": "system-ai-inference",
+      "child": "foundry-account",
+      "impact": "Standard"
+     },
+     {
+      "parent": "system-app-hosting",
+      "child": "container-app",
+      "impact": "Standard"
+     },
+     {
+      "parent": "system-app-hosting-apply",
+      "child": "container-app-apply",
+      "impact": "Standard"
+     },
+     {
+      "parent": "system-app-hosting-reports",
+      "child": "container-app-reports",
+      "impact": "Standard"
+     },
+     {
+      "parent": "system-app-hosting-tasks",
+      "child": "container-app-tasks",
+      "impact": "Standard"
+     },
+     {
+      "parent": "system-apply-state",
+      "child": "session-storage-apply",
+      "impact": "Standard"
+     },
+     {
+      "parent": "system-session-store",
+      "child": "session-storage",
+      "impact": "Standard"
+     }
+    ]
+   }
+  },
+  {
+   "id": "entityUnknown",
+   "verb": "project",
+   "columns": {
+    "key": {
+     "ref": "entity"
+    },
+    "rank": {
+     "lit": 0
+    }
+   }
+  },
+  {
+   "id": "signalWorst",
+   "verb": "project",
+   "columns": {
+    "key": {
+     "ref": "entity"
+    },
+    "rank": {
+     "ref": "rank"
+    }
+   }
+  },
+  {
+   "id": "ownCandidates",
+   "verb": "union"
+  },
+  {
+   "id": "ownState",
+   "verb": "summarize",
+   "by": {
+    "key": {
+     "ref": "key"
+    }
+   },
+   "aggregates": {
+    "rank": {
+     "fn": "max",
+     "args": [
+      {
+       "ref": "rank"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "rollup",
+   "verb": "fixpoint",
+   "fixpoint": {
+    "key": "key",
+    "value": "rank",
+    "order": [
+     0,
+     1,
+     2,
+     3
+    ],
+    "edges": {
+     "from": "parent",
+     "to": "child"
+    },
+    "through": {
+     "by": "impact",
+     "maps": {
+      "Limited": [
+       0,
+       1,
+       1,
+       2
+      ],
+      "Suppressed": [
+       0,
+       1,
+       1,
+       1
+      ]
+     }
+    }
+   }
+  },
+  {
+   "id": "entityState",
+   "verb": "nodes",
+   "rule": "entityState",
+   "target": {
+    "nodes": [
+     {
+      "var": "n",
+      "label": "Entity",
+      "id": {
+       "identity": "entity",
+       "args": [
+        {
+         "ref": "key"
+        }
+       ]
+      },
+      "props": {
+       "name": {
+        "ref": "key"
+       },
+       "state": {
+        "fn": "iff",
+        "args": [
+         {
+          "fn": "==",
+          "args": [
+           {
+            "ref": "rank"
+           },
+           {
+            "lit": 3
+           }
+          ]
+         },
+         {
+          "lit": "Unhealthy"
+         },
+         {
+          "fn": "iff",
+          "args": [
+           {
+            "fn": "==",
+            "args": [
+             {
+              "ref": "rank"
+             },
+             {
+              "lit": 2
+             }
+            ]
+           },
+           {
+            "lit": "Degraded"
+           },
+           {
+            "fn": "iff",
+            "args": [
+             {
+              "fn": "==",
+              "args": [
+               {
+                "ref": "rank"
+               },
+               {
+                "lit": 1
+               }
+              ]
+             },
+             {
+              "lit": "Healthy"
+             },
+             {
+              "lit": "Unknown"
+             }
+            ]
+           }
+          ]
+         }
+        ]
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "id": "contains",
+   "verb": "edges",
+   "rule": "contains",
+   "target": {
+    "nodes": [
+     {
+      "var": "p",
+      "label": "Entity",
+      "id": {
+       "identity": "entity",
+       "args": [
+        {
+         "ref": "parent"
+        }
+       ]
+      }
+     },
+     {
+      "var": "c",
+      "label": "Entity",
+      "id": {
+       "identity": "entity",
+       "args": [
+        {
+         "ref": "child"
+        }
+       ]
+      }
+     }
+    ],
+    "edges": [
+     {
+      "var": "e",
+      "label": "Contains",
+      "from": "p",
+      "to": "c"
+     }
+    ]
+   }
+  }
+ ],
+ "wires": [
+  {
+   "from": "availability",
+   "to": "availabilityTests"
+  },
+  {
+   "from": "availabilityTests",
+   "to": "availabilityGroups"
+  },
+  {
+   "from": "availabilityGroups",
+   "to": "availabilityRecent"
+  },
+  {
+   "from": "availabilityRecent",
+   "to": "availabilityRuns"
+  },
+  {
+   "from": "availabilityRuns",
+   "to": "availabilityRatio"
+  },
+  {
+   "from": "dependencies",
+   "to": "dependenciesOfRole"
+  },
+  {
+   "from": "dependenciesOfRole",
+   "to": "dependencyGroups"
+  },
+  {
+   "from": "dependencyGroups",
+   "to": "dependenciesKnown"
+  },
+  {
+   "from": "dependenciesKnown",
+   "to": "dependenciesRecent"
+  },
+  {
+   "from": "dependenciesRecent",
+   "to": "dependencyCalls"
+  },
+  {
+   "from": "dependencyCalls",
+   "to": "dependencyFailures"
+  },
+  {
+   "from": "dependencyCalls",
+   "to": "dependencyP95"
+  },
+  {
+   "from": "requests",
+   "to": "requestsOfRole"
+  },
+  {
+   "from": "requestsOfRole",
+   "to": "requestGroups"
+  },
+  {
+   "from": "requestGroups",
+   "to": "requestsKnown"
+  },
+  {
+   "from": "requestsKnown",
+   "to": "requestsRecent"
+  },
+  {
+   "from": "requestsRecent",
+   "to": "requestCalls"
+  },
+  {
+   "from": "requestCalls",
+   "to": "requestFailures"
+  },
+  {
+   "from": "activity",
+   "to": "activityGroups"
+  },
+  {
+   "from": "activityGroups",
+   "to": "activityKnown"
+  },
+  {
+   "from": "activityKnown",
+   "to": "activityCounted"
+  },
+  {
+   "from": "activityCounted",
+   "to": "activityRecent"
+  },
+  {
+   "from": "activityRecent",
+   "to": "activityEvents"
+  },
+  {
+   "from": "activityEvents",
+   "to": "activityFailures"
+  },
+  {
+   "from": "metrics",
+   "to": "metricGroups"
+  },
+  {
+   "from": "metricGroups",
+   "to": "blobMinutes"
+  },
+  {
+   "from": "blobMinutes",
+   "to": "blobRecent"
+  },
+  {
+   "from": "metricGroups",
+   "to": "appMinutes"
+  },
+  {
+   "from": "appMinutes",
+   "to": "appRecent"
+  },
+  {
+   "from": "blobRecent",
+   "to": "metricsRecent"
+  },
+  {
+   "from": "appRecent",
+   "to": "metricsRecent"
+  },
+  {
+   "from": "metricsRecent",
+   "to": "metricSamples"
+  },
+  {
+   "from": "metricSamples",
+   "to": "metricAverage"
+  },
+  {
+   "from": "metricSamples",
+   "to": "metricsSampled"
+  },
+  {
+   "from": "metricsSampled",
+   "to": "metricTotal"
+  },
+  {
+   "from": "availabilityRatio",
+   "to": "computed"
+  },
+  {
+   "from": "dependencyFailures",
+   "to": "computed"
+  },
+  {
+   "from": "dependencyP95",
+   "to": "computed"
+  },
+  {
+   "from": "requestFailures",
+   "to": "computed"
+  },
+  {
+   "from": "activityFailures",
+   "to": "computed"
+  },
+  {
+   "from": "metricAverage",
+   "to": "computed"
+  },
+  {
+   "from": "metricTotal",
+   "to": "computed"
+  },
+  {
+   "from": "computed",
+   "to": "computedValues"
+  },
+  {
+   "from": "computedValues",
+   "to": "signalValues",
+   "port": "left"
+  },
+  {
+   "from": "signals",
+   "to": "signalValues",
+   "port": "right"
+  },
+  {
+   "from": "signalValues",
+   "to": "signalEvaluated"
+  },
+  {
+   "from": "signals",
+   "to": "signalDefaults"
+  },
+  {
+   "from": "signalEvaluated",
+   "to": "signalRanks"
+  },
+  {
+   "from": "signalRanks",
+   "to": "signalCandidates"
+  },
+  {
+   "from": "signalDefaults",
+   "to": "signalCandidates"
+  },
+  {
+   "from": "signalCandidates",
+   "to": "signalStates"
+  },
+  {
+   "from": "signals",
+   "to": "countSignals"
+  },
+  {
+   "from": "countSignals",
+   "to": "countDefaults"
+  },
+  {
+   "from": "signalEvaluated",
+   "to": "evaluatedValues"
+  },
+  {
+   "from": "evaluatedValues",
+   "to": "valueCandidates"
+  },
+  {
+   "from": "countDefaults",
+   "to": "valueCandidates"
+  },
+  {
+   "from": "valueCandidates",
+   "to": "signalReadings"
+  },
+  {
+   "from": "signalStates",
+   "to": "signalState"
+  },
+  {
+   "from": "signalReadings",
+   "to": "signalValue"
+  },
+  {
+   "from": "signals",
+   "to": "signalOf"
+  },
+  {
+   "from": "entities",
+   "to": "entityUnknown"
+  },
+  {
+   "from": "signalStates",
+   "to": "signalWorst"
+  },
+  {
+   "from": "entityUnknown",
+   "to": "ownCandidates"
+  },
+  {
+   "from": "signalWorst",
+   "to": "ownCandidates"
+  },
+  {
+   "from": "ownCandidates",
+   "to": "ownState"
+  },
+  {
+   "from": "ownState",
+   "to": "rollup"
+  },
+  {
+   "from": "children",
+   "to": "rollup",
+   "port": "edges"
+  },
+  {
+   "from": "rollup",
+   "to": "entityState"
+  },
+  {
+   "from": "children",
+   "to": "contains"
+  }
+ ]
+}
