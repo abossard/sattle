@@ -19,7 +19,7 @@ flowchart LR
 | `⟦p⟧` (R1) | A program is a finite acyclic graph of verbs; wires carry weighted rows with named columns. `⟦p⟧` is the composition of the functions of its verbs along the wires (a loop in the wires is refused: recursion is the `fixpoint` verb). Every expression has a value on every row: a failing expression (division by zero, overflow, a missing property) is absent, absent propagates, a filter drops a row whose predicate is absent, and only `coalesce` and `isPresent` take an optional argument. |
 | `⊢ p` (R3) | Lowering refuses a malformed program; the checker then types the schema of every step, checks the wiring, and checks the sinks against the output ontology: declared, non abstract types and properties, required properties, edge endpoint types, one rule per property or relationship type where a rule is editable, telemetry keys no finer than the identity. A program with an error is not run. |
 | presentation (R6) | The lowering writes the kernel graph (one kernel operator per step, its ports and wires) from the program alone; the engine compiles it to one physical operator per step. The key functions below are read from the verb's fields. |
-| values | Decimals are numbers: 2.5 and 2.50 are one value and one key. |
+| values | Decimals are numbers: 2.5 and 2.50 are one value and one key, and an operator that keeps one of several equal decimals keeps the number without trailing zeros (G5, which is #161). |
 | time (R8) | The clock is the only "now". A rows input may declare its `time` column and its `lateness` (Def. 6.1). |
 
 ## Verbs
@@ -39,7 +39,7 @@ One row per verb. "Fails" is the requirement that fails if the row is wrong.
 | `summarize` | K; per aggregate below | `κ` = the `by` columns; a row with an absent key is dropped | per key the state of each aggregate | R1, R6 |
 | `window` | L: a row goes to every window of `period`, one every `hop`, that holds `time(e)` | none | nothing | R8 |
 | `summarize` after `window` | K, then T | `κ` = (`by`, window start); `s` = window end, `u = ∞` | per key and window | R6, R8 |
-| `series` | J of element rows and telemetry windows, then T | `κ₁` = the element column, `κ₂` = the window's element; `s = −∞`, `u` = window start + `lookback`; `fill` and `freshness`: see time | per element its rows and `since` | R1, R6, R8 |
+| `series` | J of element rows and telemetry windows, then T; with `fill`: K, J, L, T (see time) | `κ₁` = the element column, `κ₂` = the window's element; `s = −∞`, `u` = window start + `lookback` | per element its rows and `since` | R1, R6, R8 |
 | `hysteresis` | K, not summarised: a state machine over the windows of a key, in window order | `κ` = the `by` columns; a window two rows of one key hold has no reading until one row holds it (G2) | per key its windows in the look-back and one carried state | R1, R6 |
 | `retain` | T | `s = −∞`, `u = time(e) + age`, against the clock | the rows by time | R8 |
 | `traverse` | J unrolled at most `max` times, then K | J: rows keyed by start, edges keyed by the frontier id; K: (start, reached id), keeping the least depth; `0 ≤ min ≤ max ≤ 64` | rows by start; depth per (start, id), both ways | R5, R6 |
@@ -93,17 +93,19 @@ After a change `fixpoint` evaluates only the changed keys and the nodes that rea
 | windowed `summarize` | T, `s` = window end, `u = ∞`; a window is kept until its end plus the largest lateness of its upstream event inputs (D1 on #159) |
 | `retain` | T, `s = −∞`, `u = time(e) + age` |
 | `series` | T, `u` = window start + `lookback`; `since` is the clock at the end of which the element first had rows, sampled at the end of each clock (D3 on #159) |
+| `series` with `fill` | the progress of a source is a recorded input, records (source, until), not a time: the greatest `until` per source (K), joined with the sources that feed the window (J), window end at or before `until` less the hop lag (L), and window end at or before the clock (T) |
+| `series` with `freshness` | the no-data record of an element: T with `s = S + freshness`, `S` the later of `since` and the end of its newest record, until a newer record; it sits at the window that holds `S + freshness`. A roll-up in no data: K by the roll-up key, at the greatest window of its members' records |
 | `hysteresis` | reads the window start of its rows; the look-back edge comes from the series upstream |
 
 ## Gaps
 
 Fixed in #159: G1 link withdrawal (D4), G2 hysteresis rows per key and window, G3 series `since` (D3), G4 exact sums.
 
-Open, found by this note (listed on #159 before code):
+Found by this note (second pass, listed on #159 before code):
 
-| # | Construct | What is wrong | Requirement |
-|---|---|---|---|
-| G5 | decimals in `distinct`, `join`, keys, `min`, `max`, `arg_max` | equal decimals are one value, but the output shows the scale of the first that arrived | R1 |
-| G6 | `series` with `fill` | a window is filled when the clock and the progress of its source pass it; the progress of a source is a second time, not the clock | R8 |
-| G7 | `series` no-data marker | the marker row carries the window before the clock, a value made from the clock | R8 |
-| G8 | windowed `summarize`, `hysteresis` without a declared lateness | the state is dropped at a host horizon, not at a lateness of the program; a later withdrawal is lost | R1 |
+| # | Construct | What was wrong | Requirement | Now |
+|---|---|---|---|---|
+| G5 | decimals in `min`, `max`, `arg_max`, `arg_min`, keys, `distinct` | the output kept the digits of the first equal value that arrived | R1 | fixed with #161 (D7) |
+| G6 | `series` with `fill` | the progress of a source looked like a second time | R8 | not a gap: progress is a recorded input (D7); see time |
+| G7 | `series` no-data record | it sat at a window made from the clock | R8 | fixed (D8); no output changed, the window is not observable |
+| G8 | windowed `summarize`, `hysteresis` without a declared lateness | the state is dropped at a host horizon, not at a lateness of the program | R1 | with a declared lateness: `hysteresis` to use it, open (D5); without one: moved to #142 (D1 (b), D5) |
