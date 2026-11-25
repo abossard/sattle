@@ -250,6 +250,7 @@ def _arm_changes(envelopes):
             return {
                 "source": "records:" + row_type,
                 "capturedAt": at,
+                "meta": {"source": "resource-graph:inventory", "position": at},
                 "payload": {"key": key, **({"values": values} if values is not None else {"deleted": True})},
             }
 

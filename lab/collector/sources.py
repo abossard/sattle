@@ -2,7 +2,7 @@
 readings(stream, response), a calculation that turns the response into readings: {key, position, values}.
 
 The position is a time in the source, used to resume: the ingestion time of a Log Analytics row, the sample
-time of a Prometheus point, the scrape time of a metrics API reading. Event time is a value column of the row.
+time of a Prometheus point, the scrape time of a metrics API reading, the enqueued time of an Event Hubs event. Event time is a value column of the row.
 A reading the source does not have is not made up: a gap stays a gap, a null stays null, and a measured zero
 stays zero. Prometheus NaN and infinities have no Decimal, so they become null.
 """
@@ -10,8 +10,10 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import math
+from pathlib import Path
 import re
 import subprocess
+from tempfile import TemporaryDirectory
 import time
 from urllib.parse import urlencode
 
@@ -215,10 +217,54 @@ def kubernetes_metrics_readings(stream, response):
     return out
 
 
+# Azure Monitor metrics through Event Hubs: the AllMetrics records a diagnostic setting sends to a hub
+
+CONSUME = Path(__file__).parent.parent / "capture" / "eh-consume.mjs"
+AGGREGATES = ("total", "average", "minimum", "maximum", "count")
+
+
+def grain(text):
+    """An ISO 8601 time grain such as PT1M, in seconds."""
+    m = re.fullmatch(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?", text)
+    if not m:
+        raise ValueError("not a time grain")
+    h, mi, s = (float(n or 0) for n in m.groups())
+    return h * 3600 + mi * 60 + s
+
+
+def azure_monitor_hub_fetch(stream, window, options):
+    """The events enqueued since the window start, read to the end the hub holds now."""
+    with TemporaryDirectory() as d:
+        out = Path(d) / "events.ndjson"
+        done = subprocess.run(["node", str(CONSUME), "--namespace", options["eventhubs"], "--hub", stream["hub"],
+                               "--out", str(out), "--from", iso(window[0]), "--seconds", "5"],
+                              capture_output=True, text=True, timeout=300)
+        if done.returncode != 0:
+            raise ReadError("ConsumeFailed")
+        return [json.loads(line) for line in out.read_text().splitlines() if line.strip()] if out.exists() else []
+
+
+def azure_monitor_hub_readings(stream, response):
+    out = []
+    for event in response or []:
+        position = instant(event["meta"]["enqueuedTimeUtc"])
+        for r in (event.get("payload") or {}).get("records", []):
+            if "metricName" not in r:
+                continue
+            values = {"resourceId": r["resourceId"].lower(), "metric": r["metricName"], "at": iso(instant(r["time"])),
+                      "grain": grain(r["timeGrain"])}
+            values.update({a: r[a] if isinstance(r.get(a), (int, float)) and math.isfinite(r[a]) else None
+                           for a in AGGREGATES})
+            key = compact([values["resourceId"], values["metric"], values["at"], values["grain"]])
+            out.append({"key": key, "position": position, "values": values})
+    return out
+
+
 PLUGINS = {
     "log-analytics": (log_analytics_fetch, log_analytics_readings),
     "prometheus": (prometheus_fetch, prometheus_readings),
     "kubernetes-metrics": (kubernetes_metrics_fetch, kubernetes_metrics_readings),
+    "azure-monitor-hub": (azure_monitor_hub_fetch, azure_monitor_hub_readings),
 }
 
 

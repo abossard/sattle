@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Append every event received from one hub to NDJSON as envelopes. Runs until SIGINT/SIGTERM, or --seconds plus a drain.
-// usage: eh-consume.mjs --namespace <name> --hub <hub> --out <file> [--from earliest|latest] [--seconds N]
+// usage: eh-consume.mjs --namespace <name> --hub <hub> --out <file> [--from earliest|latest|<ISO time enqueued>] [--seconds N]
 import { appendFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { consumer, earliestEventPosition, latestEventPosition } from './lib/eventhub.mjs';
@@ -11,7 +11,7 @@ const { values: a } = parseArgs({
   options: { namespace: { type: 'string' }, hub: { type: 'string' }, out: { type: 'string' }, from: { type: 'string', default: 'earliest' }, seconds: { type: 'string' } },
 });
 const client = consumer(a.namespace, a.hub);
-const startPosition = a.from === 'latest' ? latestEventPosition : earliestEventPosition;
+const startPosition = a.from === 'latest' ? latestEventPosition : a.from === 'earliest' ? earliestEventPosition : { enqueuedOn: new Date(a.from) };
 
 let seq = 0;
 let lastEventAt = Date.now();

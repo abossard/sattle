@@ -2,7 +2,7 @@
 """One collector outside the engine: source plugins turn readings into the engine's record envelope.
 
   collect.py --streams FILE --out FILE [--every SECONDS] [--polls N] [--record DIR]
-             [--workspace ID] [--prometheus URL] [--context NAME]
+             [--workspace ID] [--prometheus URL] [--context NAME] [--eventhubs NAMESPACE]
   collect.py --streams FILE --out FILE --replay DIR
 
 A stream is one query of one plugin (sources.py) and the row type its records feed. Each poll writes the new
@@ -39,7 +39,7 @@ def label(stream):
 
 def envelope(stream, captured_at, reading):
     return {"v": 1, "source": "records:" + stream["rows"], "capturedAt": captured_at,
-            "key": stream["name"] + "/" + reading["key"],
+            "key": reading["key"],
             "meta": {"source": label(stream), "position": iso(reading["position"])},
             "payload": {"key": reading["key"], "values": reading["values"]}}
 
@@ -90,7 +90,9 @@ def window(stream, cursor, now):
 
 def poll(stream, cursor, captured_at, response):
     """Envelopes for one source response and the stream's cursor after them."""
-    fresh, cursor = admit(cursor, setting(stream, "overlap"), sources.readings(stream, response))
+    # the stream name keeps the keys of two streams of one row type apart
+    readings = [{**r, "key": stream["name"] + "/" + r["key"]} for r in sources.readings(stream, response)]
+    fresh, cursor = admit(cursor, setting(stream, "overlap"), readings)
     envelopes = [envelope(stream, captured_at, r) for r in fresh] or [heartbeat(stream, captured_at)]
     return envelopes, cursor
 
@@ -203,12 +205,13 @@ def main(argv):
     p.add_argument("--workspace")
     p.add_argument("--prometheus")
     p.add_argument("--context")
+    p.add_argument("--eventhubs")
     a = p.parse_args(argv)
     streams = json.loads(a.streams.read_text())
     if a.replay:
         ticks = replay_ticks(streams, a.replay)
     else:
-        options = {"workspace": a.workspace, "prometheus": a.prometheus, "context": a.context}
+        options = {"workspace": a.workspace, "prometheus": a.prometheus, "context": a.context, "eventhubs": a.eventhubs}
         ticks = live_ticks(streams, options, a.every, a.polls, a.record)
     run(streams, a.out, ticks)
 

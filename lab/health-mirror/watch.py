@@ -21,8 +21,10 @@ def run_python(script, *args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("scope", help="Azure resource group or captured health model ARM ID")
-    parser.add_argument("namespace")
-    parser.add_argument("hub")
+    parser.add_argument("namespace", nargs="?")
+    parser.add_argument("hub", nargs="?")
+    parser.add_argument("--out", type=Path, help="append the records to this file (a running engine follows it) "
+                        "instead of sending them to the hub")
     parser.add_argument("--fixture", type=Path, required=True)
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--interval", type=int, default=300, help="seconds between successful reads")
@@ -30,14 +32,19 @@ def main():
     args = parser.parse_args()
     if args.interval < 1:
         parser.error("--interval must be positive")
-    key = hashlib.sha256(json.dumps([args.scope.lower(), args.namespace.lower(), args.hub.lower()]).encode()).hexdigest()[:20]
+    if not args.out and not (args.namespace and args.hub):
+        parser.error("give a namespace and hub, or --out")
+    key = hashlib.sha256(json.dumps([args.scope.lower(), *([str(args.out)] if args.out else [args.namespace.lower(), args.hub.lower()])]).encode()).hexdigest()[:20]
     state = args.work / "watch" / key
     state.mkdir(parents=True, exist_ok=True)
     pending = state / "inventory-pending.ndjson"
     history = state / "inventory.ndjson"
 
     def send(file):
-        if file.exists() and file.stat().st_size:
+        if file.exists() and file.stat().st_size and args.out:
+            with args.out.open("a") as out:
+                out.write(file.read_text())
+        elif file.exists() and file.stat().st_size:
             subprocess.run(["node", str(HERE / "publish.mjs"), args.namespace, args.hub, str(file)], check=True)
         file.unlink(missing_ok=True)
 

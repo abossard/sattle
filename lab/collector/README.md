@@ -7,6 +7,7 @@ flowchart LR
   LA[Log Analytics<br/>raw table rows] --> C
   P[Prometheus<br/>range query points] --> C
   K[Kubernetes metrics API<br/>node and pod usage] --> C
+  H[Event Hubs<br/>Azure Monitor AllMetrics] --> C
   C[collect.py<br/>one poll per stream] -->|records:RowType<br/>appended| O[(output ndjson)]
   O -->|read back on start| C
   O -->|serve --live --follow<br/>or replay| E[engine]
@@ -16,12 +17,13 @@ flowchart LR
 
 ```sh
 python3 -B lab/collector/collect.py --streams lab/collector/streams.json --out OUT.ndjson \
-  --workspace WORKSPACE_ID --prometheus QUERY_ENDPOINT [--context KUBE_CONTEXT] [--every 60] [--polls N] [--record DIR]
+  --workspace WORKSPACE_ID --prometheus QUERY_ENDPOINT --eventhubs NAMESPACE [--context KUBE_CONTEXT] \
+  [--every 60] [--polls N] [--record DIR]
 python3 -B lab/collector/collect.py --streams lab/collector/streams.json --out OUT.ndjson --replay lab/collector/recordings
 python3 -B lab/collector/test_collect.py
 ```
 
-Sign in with `az login` first. The metrics API is read with `kubectl get --raw`.
+Sign in with `az login` first. The metrics API is read with `kubectl get --raw`, a hub with `lab/capture/eh-consume.mjs` (consumer group `sattle-capture`, from the window start to the end the hub holds).
 
 ## Streams
 
@@ -31,6 +33,7 @@ A stream is one query of one plugin and the row type its records feed (`streams.
 |---|---|---|---|---|
 | `log-analytics` | `table`, `columns`, optional `where`, `key` | one row, the columns as values | the `TimeGenerated` column | ingestion time |
 | `prometheus` | `query`, `step`, `labels` | one point: `metric`, `at`, `value`, the listed labels | `at` | sample time |
+| `azure-monitor-hub` | `hub` (a diagnostic setting sends `AllMetrics` there) | one metric record: `resourceId`, `metric`, `at`, `grain` (s), `total`, `average`, `minimum`, `maximum`, `count` | `at` | enqueued time |
 | `kubernetes-metrics` | `kind` (`nodes` or `pods`) | one node or pod container: `kind`, `namespace`, `name`, `container`, `at`, `window`, `cpu` (cores), `memory` (bytes) | `at` | scrape time |
 
 Every record carries `meta.source` (`plugin:stream`) and `meta.position`. The payload key is the reading's identity: `_ItemId` or a hash of the row, the label set and time, or the object and scrape time.

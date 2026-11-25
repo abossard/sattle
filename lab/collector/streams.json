@@ -6,5 +6,6 @@
   {"name": "container-memory", "plugin": "prometheus", "rows": "SampleRow", "step": 60,
    "query": "sum by (namespace, pod) (container_memory_working_set_bytes{container!=\"\"})", "labels": ["namespace", "pod"]},
   {"name": "node-usage", "plugin": "kubernetes-metrics", "rows": "UsageRow", "kind": "nodes"},
-  {"name": "pod-usage", "plugin": "kubernetes-metrics", "rows": "UsageRow", "kind": "pods"}
+  {"name": "pod-usage", "plugin": "kubernetes-metrics", "rows": "UsageRow", "kind": "pods"},
+  {"name": "app-metrics", "plugin": "azure-monitor-hub", "rows": "MetricRow", "hub": "sattle-demo-metrics"}
 ]

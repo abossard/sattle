@@ -15,7 +15,7 @@ import sources
 
 HERE = Path(__file__).parent
 STREAMS = json.loads((HERE / "streams.json").read_text())
-EVENT_TIME = {"log-analytics": "TimeGenerated", "prometheus": "at", "kubernetes-metrics": "at"}
+EVENT_TIME = {"log-analytics": "TimeGenerated", "prometheus": "at", "kubernetes-metrics": "at", "azure-monitor-hub": "at"}
 
 
 def ticks(stream):
@@ -37,6 +37,9 @@ def source_readings(stream, line):
     if stream["plugin"] == "prometheus":
         return {(json.dumps(s["metric"], sort_keys=True), v[0]) for s in (r or {}).get("data", {}).get("result", [])
                 for v in s["values"]}
+    if stream["plugin"] == "azure-monitor-hub":
+        return {(m["resourceId"].lower(), m["metricName"], m["time"], m["timeGrain"]) for e in r
+                for m in e["payload"]["records"]}
     return {(i["metadata"].get("namespace"), i["metadata"]["name"], c.get("name"), i["timestamp"])
             for i in r["items"] for c in (i.get("containers") or [{}])}
 
@@ -60,6 +63,15 @@ class ReplayTests(unittest.TestCase):
                     sources.instant(e["meta"]["position"])
                     sources.instant(e["payload"]["values"][EVENT_TIME[stream["plugin"]]])
                     self.assertTrue(e["payload"]["key"])
+
+
+    def test_streams_of_one_row_type_never_share_a_key(self):
+        with TemporaryDirectory() as d:
+            out = replay(Path(d) / "out.ndjson", list(collect.replay_ticks(STREAMS, HERE / "recordings")))
+            records = [(e["source"], e["payload"]["key"]) for e in out if e["payload"]]
+            shared = {s["rows"] for s in STREAMS if sum(t["rows"] == s["rows"] for t in STREAMS) > 1}
+            self.assertTrue(shared, "the recordings have two streams of one row type")
+            self.assertEqual(len(set(records)), len(records))
 
 
 class ResumeTests(unittest.TestCase):
