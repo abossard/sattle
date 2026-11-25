@@ -6,7 +6,7 @@
 - Support follows: whether an element is in the output is decided by the lineages of the rows that give it its id.
 - Lifting a graph along a map of its nodes has a presentation of the classes of Ch. 7. Sums over the lifted edges equal sums over the edges below, and lifting twice is lifting once along the composed map.
 - A program can be replaced, and the output of the new one follows from the input state. It need not follow from what the old program kept.
-- Counting rule instances does not keep a recursion right when rows are removed. Related work: incremental view maintenance, Datalog, graph transformation and XSLT.
+- Counting rule instances does not keep a recursion right when rows are removed. A program that stamps policies from a graph at clock ends need not meet R1; with the stamps made by the source as an event input it is held to R1 like any other. Related work: incremental view maintenance, Datalog, graph transformation and XSLT.
 
 ```mermaid
 flowchart LR
@@ -17,9 +17,9 @@ flowchart LR
 
 **Question.** What else follows from the requirements, what do they leave out, and how does this work relate to earlier work?
 
-**What you can state at the end.** In a circuit of linear steps, joins and clock selections, every wire is a polynomial in the input weights (Lemma 8.1), and an output row keeps its weight when the input is cut down to its lineage, also through one grouping of which each output row reads one group (Theorem 8.2), which gives support (Corollary 8.3). A grouping read across groups breaks this (Proposition 8.4). Lifting along a map of nodes keeps sums, composes, and has a presentation of the classes of Ch. 7 (Proposition 8.5). Replacing a program needs the input state; the kept state of the old program need not suffice (Proposition 8.6). Counting rule instances fails on cycles (Proposition 8.7).
+**What you can state at the end.** In a circuit of linear steps, joins and clock selections, every wire is a polynomial in the input weights (Lemma 8.1), and an output row keeps its weight when the input is cut down to its lineage, also through one grouping of which each output row reads one group (Theorem 8.2), which gives support (Corollary 8.3). A grouping read across groups breaks this (Proposition 8.4). Lifting along a map of nodes keeps sums, composes, and has a presentation of the classes of Ch. 7 (Proposition 8.5). Replacing a program needs the input state; the kept state of the old program need not suffice (Proposition 8.6). Counting rule instances fails on cycles (Proposition 8.7). A program that stamps a graph input at clock ends itself need not meet R1, and with the stamps made by the source as an event input the stamps are input data (Proposition 8.8).
 
-This chapter uses weighted sets and restriction (Ch. 4), graphs (Ch. 3), ids (Ch. 2), runs and meanings (Ch. 5), lateness and totals over a time range (Ch. 6), and from Ch. 7 the classes of steps, circuits, presentations, R1 to R8 and the step-wise evaluator.
+This chapter uses weighted sets and restriction (Ch. 4), graphs (Ch. 3), ids (Ch. 2), runs and meanings (Ch. 5), lateness, totals over a time range, clock ends and stamped policy rows (Ch. 6), and from Ch. 7 the classes of steps, circuits, presentations, R1 to R8 and the step-wise evaluator.
 
 **Running example.** The registry of Ch. 7, with downloads as events and `Report` as output.
 
@@ -91,6 +91,14 @@ So in general the rows a new program needs must be kept outside the program that
 *Proof.* A package is *reached* if the root package depends on it, or if a reached package depends on it. Take a registry in which the root depends on `web`, `web` on `ui` and `ui` on `web`. Then `web` has two instances (from the root and from `ui`) and `ui` one (from `web`). Remove the edge from the root to `web`. Then `web` keeps one instance, from `ui`, and `ui` one, from `web`. Both stay, and neither is reached. ∎
 
 [gupta1993] maintain views without recursion by counting and recursive views by deleting and deriving again. The fixpoint step of Def. 7.3 (F) does not count: Theorem 7.6 solves the equations of the affected keys again from `⊥`, which removes both.
+
+**Proposition 8.8 (a stamp read from a graph at clock ends).** Let a program read a graph input, stamp policy rows of it (Ch. 6, Def. 6.6) and fold over them (Def. 6.5), with a fact in its output for each selected transition row whose state holds `since_n`.
+
+1. Such a program need not meet R1: two of its runs can end in the same input state with different outputs. Then it has no meaning, and R2 to R8 and Theorems 7.1 and 7.3, which are about a meaning, say nothing about it.
+2. If its output after a run is a function of `xᵗ` and `Ŝᵗ`, two runs with the same states at their clock ends have the same output.
+3. Let the source instead add, at each clock end, each newly stamped row as an event row with `time = arr = since`, and remove a stamped row when its stamp is removed. On the run of the clock ends this is an event input of a run (Def. 5.3), and a program that reads it is held to R1 to R8 like any other; the stamps are input data, as arrival times are.
+
+*Proof.* (1) Let the fold have one key `k`, a policy fact with `since` read from its stamp, and window 0 with `close(0) = c₀`. In run A, `x⁰` holds the policy fact and an on-time event of window 0, with clock 0, and `x¹` changes only the clock, to `c₀`. Run B is the same, except that `x⁰` has no policy fact and `x¹` adds it as it moves the clock to `c₀`. Both end in the same state. In A the stamp is 0 `< c₀`, the policy is in force at window 0, and `tr(k, 0)` is selected at `c₀`. In B the stamp is `c₀`, so every window with a policy in force in B closes after `c₀`, and no row of `k` is selected at `c₀`. (2) By Proposition 6.9 (1), `Ŝᵗ` is the same for both runs, and the last index of a run is a clock end, so `xᵗ` is the same too. (3) By Proposition 6.9 (3), the clock end states form a run with strictly increasing clocks on which a stamped row that is new at an index has `since` equal to its clock, so each added event row has `arr` equal to the clock of the state it enters, as Def. 5.3 asks. ∎
 
 Not covered by this paper:
 
