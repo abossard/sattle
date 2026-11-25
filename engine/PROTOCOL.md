@@ -668,6 +668,10 @@ The text editor of a projection reads and checks its `.kql` text through these c
 - **Digest per graph.** Each entry of `GET /health` `graphs` has `digest`: the graph's digest at its head (Def. 3.5, the `digest` of a preview's graphs), from the pass that makes the state digest. The catalog's too.
 - **Telemetry port (no wire change).** `ITelemetryStore.ScanGraph` hands every window of a graph in a range to a visitor, also the windows of an element that left; without a visitor it counts them and allocates nothing. `SeriesCount`, `PartialWindows` and `MergeConflicts` are on the port. `InMemoryTelemetryStore.Dump` and `WindowCount` are gone.
 
+## Version 3.64: a decimal is kept by its number (#161, #159 G5)
+- **Values.** Where an operator keeps one of several equal decimals (2.5 and 2.50), it keeps the number without trailing zeros: `min`, `max`, `arg_max`, `arg_min`, a decimal key of `summarize` and `join`, and the row `distinct` emits. Before, the digits that came first were kept, so the output depended on the order of the rows (Ch. 7, R1).
+- **Kernel and wire.** No change.
+
 ## Version 3.63: a withdrawn link splits its class (#159)
 - **Identity.** A link is present while its rows have a positive weight (Ch. 2, Def. 2.5); a key's class is the connected part of the present links, named by its smallest own id, as before. When every row of a link is retracted, its class may split: the part without the representative is named by its own smallest id, and what was written under keys of that part (entities, relationships at them, telemetry windows, lineage) moves to that id. Before, a retracted link row was ignored and a class never split.
 - **Binding records.** A split appends one forwarding record (`Domain` `~forward`) per id of the part that leaves, from the id to the part's representative; the representative's record forwards to itself and ends its forwarding. Records stay history: nothing is restored from them. The record shape is unchanged.

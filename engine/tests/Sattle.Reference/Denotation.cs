@@ -306,6 +306,7 @@ public static class Denotation
     {
         var valued = a.Value is null ? [] : rows.Select(r => (Value: Expressions.Eval(a.Value, r.Read), r.Read, r.Weight)).Where(r => r.Value is not NullValue).ToImmutableArray();
         IEnumerable<Value> Present() => valued.GroupBy(r => Canon.Of(r.Value)).Where(g => g.Sum(r => r.Weight) > 0).Select(g => g.First().Value);
+        static Value? Number(Value? v) => v is DecimalValue d ? Value.Decimal(decimal.Parse(Norm.Decimal(d.Q), System.Globalization.CultureInfo.InvariantCulture)) : v;
         var decimalOut = a.Out.Ty.Tag == Tag.Decimal;
         switch (a.Fn)
         {
@@ -328,8 +329,9 @@ public static class Denotation
                     var at = counted.First(x => (rank -= x.Weight) <= 0).Number;
                     return decimalOut ? Value.Decimal(decimal.Parse(Norm.Decimal(at), System.Globalization.CultureInfo.InvariantCulture)) : Value.Integer(new BigInteger(at));
                 }
-            case "min": return Present().OrderBy(v => v, Comparer<Value>.Create(Canon.Compare)).FirstOrDefault() ?? Value.Null;
-            case "max": return Present().OrderByDescending(v => v, Comparer<Value>.Create(Canon.Compare)).FirstOrDefault() ?? Value.Null;
+            // a decimal extreme is its number, whatever digits came first (#161)
+            case "min": return Number(Present().OrderBy(v => v, Comparer<Value>.Create(Canon.Compare)).FirstOrDefault()) ?? Value.Null;
+            case "max": return Number(Present().OrderByDescending(v => v, Comparer<Value>.Create(Canon.Compare)).FirstOrDefault()) ?? Value.Null;
             case "mean":
                 {
                     var n = valued.Sum(r => r.Weight);

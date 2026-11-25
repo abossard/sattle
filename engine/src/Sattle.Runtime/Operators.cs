@@ -371,7 +371,8 @@ sealed class KeyTable
     }
 
     /// <summary>The digits of a decimal in two 64-bit halves, and back.</summary>
-    static (long A, long B) Pack(decimal d) { Span<int> bits = stackalloc int[4]; decimal.GetBits(d, bits); return ((uint)bits[0] | (long)bits[1] << 32, (uint)bits[2] | (long)bits[3] << 32); }
+    /// <summary>A decimal as two longs, by its number: 2.5 and 2.50 are kept alike, so no value depends on which digits came first (#161).</summary>
+    static (long A, long B) Pack(decimal d) { Span<int> bits = stackalloc int[4]; decimal.GetBits(DecimalKey.Normal(d), bits); return ((uint)bits[0] | (long)bits[1] << 32, (uint)bits[2] | (long)bits[3] << 32); }
     static decimal Unpack(long a, long b) => new([(int)a, (int)(a >> 32), (int)b, (int)(b >> 32)]);
 
     /// <summary>Marks a slot touched in this step; true the first time, when the operator retracts what the slot emitted.</summary>
@@ -404,7 +405,7 @@ sealed class KeyTable
             rows.Set(slot, accL + a, best);
         }
     }
-    /// <summary>Adds a weight to a decimal of a multiset: 2.5 and 2.50 are one value, kept as it was first written. The change of the number of distinct values (+1, -1 or 0).</summary>
+    /// <summary>Adds a weight to a decimal of a multiset: 2.5 and 2.50 are one value, kept by its number. The change of the number of distinct values (+1, -1 or 0).</summary>
     public int AddDecimal(int slot, int a, decimal v, long w)
     {
         var (lo, hi) = DecimalKey.Of(v);
@@ -1301,7 +1302,7 @@ sealed class UnionOp : PhysOp
 sealed class DecimalCodes
 {
     readonly Dictionary<decimal, long> codes = []; readonly List<decimal> values = [];
-    public long Code(decimal d) { if (!codes.TryGetValue(d, out var c)) { codes[d] = c = values.Count; values.Add(d); } return c; }
+    public long Code(decimal d) { if (!codes.TryGetValue(d, out var c)) { codes[d] = c = values.Count; values.Add(DecimalKey.Normal(d)); } return c; }
     public decimal Value(long code) => values[(int)code];
 }
 
@@ -1311,9 +1312,11 @@ static class DecimalKey
     public static (long Lo, long Hi) Of(decimal d)
     {
         Span<int> bits = stackalloc int[4];
-        decimal.GetBits(d / 1.0000000000000000000000000000m, bits);      // dividing by one at full scale drops trailing zeros
+        decimal.GetBits(Normal(d), bits);
         return (((long)bits[0] << 32) | (uint)bits[1], ((long)bits[2] << 32) | (uint)bits[3]);
     }
+    /// <summary>The decimal without trailing zeros: dividing by one at full scale drops them.</summary>
+    public static decimal Normal(decimal d) => d / 1.0000000000000000000000000000m;
     /// <summary>The number of a key: the decimal without trailing zeros.</summary>
     public static decimal Number(long lo, long hi) => new([(int)(lo >> 32), (int)lo, (int)(hi >> 32), (int)hi]);
 }
@@ -1362,7 +1365,7 @@ sealed class DistinctOp : PhysOp
             {
                 var col = b.Cols[c]; var dst = bb.Batch.Cols[c];
                 if (!col.Present(src)) { bb.Absent(row, c); continue; }
-                if (dst.IsDec) dst.D[row] = col.D[src]; else dst.L[row] = col.L[src];
+                if (dst.IsDec) dst.D[row] = DecimalKey.Normal(col.D[src]); else dst.L[row] = col.L[src];
             }
         }
         return bb.Build();
