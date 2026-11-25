@@ -115,7 +115,7 @@ static partial class Bench
         var podCode = Enumerable.Range(0, pods).Select(i => (long)it.Intern($"pod-{i}")).ToArray();
         var nsCode = Enumerable.Range(0, 5).Select(i => (long)it.Intern($"ns{i}")).ToArray();
         long cl = it.Intern("synth"), fwd = it.Intern("FORWARDED"), drp = it.Intern("DROPPED");
-        int cTime = layout.Index("time"), cCl = layout.Index("cluster"), cVe = layout.Index("verdict"), cSn = layout.Index("srcNamespace"), cSp = layout.Index("srcPod"), cDn = layout.Index("dstNamespace"), cDp = layout.Index("dstPod");
+        int cTime = layout.Index("time"), cCl = layout.Index("site"), cVe = layout.Index("verdict"), cSn = layout.Index("srcNamespace"), cSp = layout.Index("srcInstance"), cDn = layout.Index("dstNamespace"), cDp = layout.Index("dstInstance");
         var t0 = 1_794_300_000_000_000_000L / Min * Min; long seq = 1000; long rows = 0;
         var close = new List<double>(); var ingestS = 0.0; long liveAtFull = 0;
         var set = new[] { cTime, cCl, cVe, cSn, cSp, cDn, cDp };
@@ -208,7 +208,7 @@ static partial class Bench
         var nsCode = Enumerable.Range(0, 5).Select(i => (long)it.Intern($"ns{i}")).ToArray();
         long cl = it.Intern("synth"), fwd = it.Intern("FORWARDED"), drp = it.Intern("DROPPED");
         const int batchRows = 50_000;
-        int cTime = layout.Index("time"), cCl = layout.Index("cluster"), cVe = layout.Index("verdict"), cSn = layout.Index("srcNamespace"), cSp = layout.Index("srcPod"), cDn = layout.Index("dstNamespace"), cDp = layout.Index("dstPod");
+        int cTime = layout.Index("time"), cCl = layout.Index("site"), cVe = layout.Index("verdict"), cSn = layout.Index("srcNamespace"), cSp = layout.Index("srcInstance"), cDn = layout.Index("dstNamespace"), cDp = layout.Index("dstInstance");
         for (var k = 0; k < 4; k++)
         {
             var b = new Batch(layout, batchRows) { N = batchRows };
@@ -267,7 +267,7 @@ static partial class Bench
     /// <summary>A hand-written fused loop for the same query (filter, window, group count and sum): the ceiling a compiled delegate could reach on this layout.</summary>
     static void HandFused(List<Batch> pool, Layout layout, int pods)
     {
-        var cSp = layout.Index("srcPod"); var cDp = layout.Index("dstPod"); var cVe = layout.Index("verdict"); var cTime = layout.Index("time");
+        var cSp = layout.Index("srcInstance"); var cDp = layout.Index("dstInstance"); var cVe = layout.Index("verdict"); var cTime = layout.Index("time");
         var table = new Dictionary<(long, long, long), (long Count, long Drops)>(pods * 8);
         long drop = pool[0].Cols[cVe].L.Max();
         var sw = Stopwatch.StartNew(); long n = 0;
