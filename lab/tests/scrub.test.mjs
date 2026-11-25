@@ -3,6 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHmac } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -386,3 +387,51 @@ for (const [missing, absent] of [
     for (const k of absent) assert.ok(!(k in a), `${k} was invented`);
     assert.ok('aksName' in a);
   });
+
+// ---------- #176: one scrub module makes every alias ----------
+const LAB = join(FIXTURES_DIR, '..');
+const aliasesOf = (salt, inputs) => {
+  const r = spawnSync(process.execPath, [join(FIXTURES_DIR, 'scrub.mjs'), 'aliases'],
+    { encoding: 'utf8', input: [salt, ...inputs.map((x) => JSON.stringify(x))].join('\n') + '\n' });
+  assert.equal(r.status, 0, r.stderr);
+  return r.stdout.trim().split('\n').map((x) => JSON.parse(x));
+};
+for (const [name, kind, value] of [
+  ['a resource group', 'group', 'zq-fakerg'],
+  ['an availability test', 'test', 'zq-web-test'],
+  ['an id', 'id', REAL.sub],
+]) {
+  test(`the aliases command gives the export's kind-<12 hex> HMAC under the salt: ${name}`, () => {
+    const hex = createHmac('sha256', 'salt-a').update(`${kind}:${value.toLowerCase()}`).digest('hex').slice(0, 12);
+    const [lower, upper, other] = aliasesOf('salt-a', [[kind, value], [kind, value.toUpperCase()], [kind + 'x', value]]);
+    assert.equal(lower, `${kind}-${hex}`);
+    assert.equal(upper, lower);
+    assert.notEqual(other.slice(-12), hex);
+    assert.notEqual(aliasesOf('salt-b', [[kind, value]])[0], lower);
+  });
+}
+test('no lab file but scrub/core.mjs computes an HMAC, so every alias comes from it', () => {
+  const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.name === 'node_modules' || e.name.startsWith('.') ? []
+    : e.isDirectory() ? walk(join(d, e.name)) : /\.(py|mjs|js|sh)$/.test(e.name) ? [join(d, e.name)] : []));
+  const makers = walk(LAB).filter((f) => !f.endsWith(join('tests', 'scrub.test.mjs')) && /createHmac|\bimport hmac\b|hmac\.new/.test(readFileSync(f, 'utf8')));
+  assert.deepEqual(makers, [join(FIXTURES_DIR, 'scrub', 'core.mjs')]);
+});
+test('two recordings of one resource scrubbed into one directory give it one alias, wherever each was recorded', () => {
+  const root = mkdtempSync(join(tmpdir(), 'scrub-recording-'));
+  const id = `/subscriptions/${REAL.sub}/resourceGroups/${REAL.rg}/providers/Microsoft.App/containerApps/zq-app`;
+  const out = join(root, 'set', 'recordings');
+  for (const [run, stream, response] of [
+    ['first', 'hub', [{ payload: { records: [{ resourceId: id.toUpperCase() }] } }]],
+    ['later/rerun', 'platform', { value: [{ id: `${id}/providers/Microsoft.Insights/metrics/Requests` }] }],
+  ]) {
+    mkdirSync(join(root, run, 'rec'), { recursive: true });
+    writeFileSync(join(root, run, 'rec', `${stream}.ndjson`), JSON.stringify({ stream, response }) + '\n');
+    const r = spawnSync(process.execPath, [join(FIXTURES_DIR, 'scrub.mjs'), 'recording', join(root, run, 'rec'), out],
+      { encoding: 'utf8', env: { ...process.env, SCRUB_NAMES: `${REAL.rg}\nzq-app`, SCRUB_LITERALS: '' } });
+    assert.equal(r.status, 0, r.stderr);
+  }
+  const hub = JSON.parse(readFileSync(join(out, 'hub.ndjson'), 'utf8')).response[0].payload.records[0].resourceId.toLowerCase();
+  const platform = JSON.parse(readFileSync(join(out, 'platform.ndjson'), 'utf8')).response.value[0].id.toLowerCase().split('/providers/microsoft.insights/')[0];
+  assert.equal(hub, platform);
+  assert.ok(!hub.includes('zq-app') && !hub.includes(REAL.rg));
+});

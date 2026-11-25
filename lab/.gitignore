@@ -2,3 +2,5 @@
 .azure/
 # written by fixtures/build.sh next to the generated fixtures
 fixtures/space-arguments.json
+# the local salts of the scrubber (fixtures/scrub.mjs): secret, never committed
+.scrub-salt

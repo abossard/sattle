@@ -15,16 +15,14 @@ from pathlib import Path
 import sys
 
 HERE = Path(__file__).parent
+sys.path.insert(0, str(HERE.parent / "collector"))
+from sources import iso  # noqa: E402  the lab's one instant and time helpers
 T0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
 FIELDS = ("revision", "above", "below", "enterAfter", "exitAfter", "gap", "missing")
 
 
 def at(minute, second=0):
     return T0 + timedelta(minutes=minute, seconds=second)
-
-
-def iso(moment):
-    return moment.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def policy(key, revision=1, enter=2, exit=3, gap=1000, minute=-1, second=30):

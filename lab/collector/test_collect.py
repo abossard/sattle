@@ -5,6 +5,7 @@ lab/fixtures/scrub.mjs recording). Replaying them must give every source reading
 restart and across a crash in the middle of a write.
 """
 from datetime import datetime, timedelta, timezone
+import importlib.util
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -76,6 +77,28 @@ class ReplayTests(unittest.TestCase):
             shared = {s["rows"] for s in STREAMS if sum(t["rows"] == s["rows"] for t in STREAMS) > 1}
             self.assertTrue(shared, "the recordings have two streams of one row type")
             self.assertEqual(len(set(records)), len(records))
+
+    def test_one_resource_has_one_alias_in_every_stream(self):
+        """#176 A3: the recordings are scrubbed into one directory under one salt, so a resource the hub and the
+        platform metric stream both report carries one alias and their readings join on resourceId."""
+        def resources(plugin):
+            return {r["values"]["resourceId"] for s in STREAMS if s["plugin"] == plugin
+                    for _, _, get in ticks(s) for r in sources.readings(s, get(None))}
+        hub, platform = resources("azure-monitor-hub"), resources("azure-metrics")
+        self.assertTrue(platform)
+        self.assertLessEqual(platform, hub)
+
+    def test_platform_readings_carry_the_hub_values_and_the_resource_name(self):
+        """#176 A5, as the README's stream table says: the values of azure-monitor-hub and `resource`; the
+        aggregates not asked for are null."""
+        def readings(plugin):
+            return [r["values"] for s in STREAMS if s["plugin"] == plugin for _, _, get in ticks(s)
+                    for r in sources.readings(s, get(None))]
+        hub, platform = readings("azure-monitor-hub"), readings("azure-metrics")
+        for values in platform:
+            with self.subTest(metric=values["metric"], at=values["at"]):
+                self.assertEqual(set(values), set(hub[0]) | {"resource"})
+                self.assertEqual([values[a] for a in ("average", "minimum", "maximum")], [None] * 3)
 
 
 class ResumeTests(unittest.TestCase):
@@ -301,6 +324,19 @@ class MeanTests(unittest.TestCase):
         conditions = [v["condition"] for v in chain if v["verb"] == "where"]
         self.assertIn({"fn": ">", "args": [{"fn": "coalesce", "args": [{"ref": "count"}, {"lit": 0.0}]}, {"lit": 0.0}]},
                       conditions)
+
+
+class OnePlaceTests(unittest.TestCase):
+    """#176 A4: the collector, the checkpoint compare and the case check read and write instants with one helper."""
+    def test_the_checkpoint_compare_and_the_case_check_use_the_collectors_time_helpers(self):
+        for path, names in [(HERE.parent / "health-model" / "checkpoint.py", ("instant", "iso")),
+                            (HERE.parent / "health-policy" / "cases.py", ("iso",))]:
+            spec = importlib.util.spec_from_file_location(path.stem, path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            for name in names:
+                with self.subTest(file=path.name, helper=name):
+                    self.assertIs(getattr(module, name), getattr(sources, name))
 
 
 if __name__ == "__main__":

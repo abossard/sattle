@@ -65,6 +65,8 @@ export function aliases(salt) {
     // a name keeps nothing of its text; `mc_` marks the AKS node resource group and carries no information
     name: (n) => `${/^mc_/i.test(n) ? 'mc_' : 'res-'}${h('name', n).slice(0, 8)}`,
     value: (v) => `redacted-${h('value', v).slice(0, 8)}`,
+    // a name of the health model's export and checkpoints (export-model.py, checkpoint.py): its kind and 12 hex digits
+    tagged: (kind, n) => `${kind}-${h(kind, n).slice(0, 12)}`,
   };
 }
 

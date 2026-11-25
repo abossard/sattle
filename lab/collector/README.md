@@ -34,7 +34,7 @@ A stream is one query of one plugin and the row type its records feed (`streams.
 | `log-analytics` | `table`, `columns`, optional `where`, `key` | one row, the columns as values | the `TimeGenerated` column | ingestion time |
 | `prometheus` | `query`, `step`, `labels` | one point: `metric`, `at`, `value`, the listed labels | `at` | sample time |
 | `azure-monitor-hub` | `hub` (a diagnostic setting sends `AllMetrics` there; a name in `--resources FILE` maps it to the hub's own name) | one metric record: `resourceId`, `metric`, `at`, `grain` (s), `total`, `average`, `minimum`, `maximum`, `count` | `at` | enqueued time |
-| `azure-metrics` | `resource` (a name in `--resources FILE`, which maps it to the ARM id), `namespace`, `metrics`, optional `aggregations` (default Total, Count), `grain`, `settle`, `filter` | one bucket with any aggregate: same values as `azure-monitor-hub` | `at` | bucket time |
+| `azure-metrics` | `resource` (a name in `--resources FILE`, which maps it to the ARM id), `namespace`, `metrics`, optional `aggregations` (default Total, Count), `grain`, `settle`, `filter` | one bucket with any aggregate: the values of `azure-monitor-hub` and `resource`, the stream's name for it. Compared with the hub it adds metrics a diagnostic setting does not export, any grain, and one bucket per dimension value a `filter` splits by (the values only in the key); it drops the metrics not listed and the aggregates not asked for (`null`, so `average` is `null` by default and the mean is `total / count`) | `at` | bucket time |
 | `kubernetes-metrics` | `kind` (`nodes` or `pods`) | one node or pod container: `kind`, `namespace`, `name`, `container`, `at`, `window`, `cpu` (cores), `memory` (bytes) | `at` | scrape time |
 
 Every record carries `meta.source` (`plugin:stream`) and `meta.position`. The payload key is the reading's identity: `_ItemId` or a hash of the row, the label set and time, or the object and scrape time.
@@ -54,7 +54,7 @@ sequenceDiagram
   end
 ```
 
-- A poll asks from the last position minus the stream's `overlap` (default 300 s), so late readings inside the overlap are still found. A reading at or behind the overlap, or with a key already written, is dropped.
+- A poll asks from the last position minus the stream's `overlap` (default 300 s), so late readings inside the overlap are still found. A reading at or behind the overlap, or with a key already written with the same values, is dropped. A reading whose values changed since (a platform metric bucket or a Prometheus point the source revised) is written again under its key; its later `capturedAt` makes the engine replace the first. So the overlap must cover how long a source revises a reading, and lie within the lateness of the input that reads it.
 - The first poll reaches back `backfill` (default 900 s).
 - The output is the only state. A torn last line from a crash is cut on start, and the next poll writes what is missing. A restart writes what one uninterrupted run writes (test).
 - A failed read writes nothing; the next poll covers its window.
@@ -63,4 +63,4 @@ sequenceDiagram
 
 ## Recordings
 
-`recordings/` holds source responses of a live run (`--record`), scrubbed with `node lab/fixtures/scrub.mjs recording RAW OUT` (names in `SCRUB_NAMES`, one per line). The tests replay them.
+`recordings/` holds source responses of live runs (`--record`), scrubbed with `node lab/fixtures/scrub.mjs recording RAW lab/collector/recordings` (names in `SCRUB_NAMES`, one per line). The salt lies next to the output (`lab/collector/.scrub-salt`, git-ignored), so recordings of different runs give one resource one alias and the hub and platform readings join. The tests replay them.

@@ -126,7 +126,7 @@ Run in `lab/`, with the prerequisites above.
 
 What stays on your machine, and why none of it is committed (all git-ignored):
 - `captures/<timestamp>/` (about 1 GB): the raw capture, with real subscription, tenant, resource, user and address values.
-- `captures/.scrub-salt`: the secret the aliases are derived from. With it an alias could be linked back to a real value.
+- `captures/.scrub-salt` and `collector/.scrub-salt`: the secrets the aliases of the fixtures and of the collector recordings are derived from. With one an alias could be linked back to a real value.
 - `fixtures/**/*.ndjson`: scrubbed, but derived from one real environment. Its shape (which resource types, how many nodes, which operations ran when) still describes that environment, and a scrub rule can miss a field no one has seen yet. The public tests use the synthetic estate instead.
 - `fixtures/space-arguments.json`: the aliases of this capture's cluster and groups for the engine's space. It only fits the fixtures next to it.
 - `.azure/` and `.kube/config`: the azd environment and the lab's kubeconfig.

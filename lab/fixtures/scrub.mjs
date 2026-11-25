@@ -4,6 +4,8 @@
 //   scrub.mjs tutorial <captureDir> <fixturesDir> scrub the full ARG inventory and its matched Azure Monitor observations
 //   scrub.mjs verify <captureDir> <fixturesDir>   fail if any identifying value of the capture survives in the fixtures
 //   scrub.mjs recording <recordingDir> <outDir>    scrub a collector recording (lab/collector), names from SCRUB_NAMES
+//   scrub.mjs aliases                             stdin: the salt, then one JSON [kind, name] per line; stdout: one
+//                                                 JSON alias per line (the aliases of lab/health-mirror/export-model.py)
 // Optional extra values to scrub (for example the signed-in user) come in SCRUB_LITERALS, one per line; the capture
 // itself already names its tenant, subscription, resources and people.
 // Aliases are HMACs under a local secret salt (captures/.scrub-salt, gitignored): the same input always maps to
@@ -248,12 +250,14 @@ async function verify(captureDir, fixturesDir) {
 
 // A collector recording (lab/collector, --record): every value as text, the names come from SCRUB_NAMES (one per
 // line: cluster, resource group, nodes, apps) and SCRUB_LITERALS. Fails when one of them, an id of the recording
-// or a public address survives; reports counts only.
+// or a public address survives; reports counts only. The salt lies next to <outDir>, not next to the raw recording,
+// so every recording scrubbed into one directory gives one resource one alias, whatever run recorded it.
 async function recording(recordingDir, outDir) {
   const list = (v) => (process.env[v] ?? '').split('\n').map((x) => x.trim()).filter(Boolean);
   const names = list('SCRUB_NAMES');
   const literals = list('SCRUB_LITERALS');
-  const scrub = makeScrubber({ salt: saltFor(recordingDir), names, clusters: names, literals });
+  mkdirSync(outDir, { recursive: true });
+  const scrub = makeScrubber({ salt: saltFor(outDir), names, clusters: names, literals });
   const deny = new Set([...names, ...literals].map((x) => x.toLowerCase()));
   const ids = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
   let records = 0;
@@ -278,7 +282,18 @@ async function recording(recordingDir, outDir) {
 
 // Run as a program, also from a path with spaces or through a link
 const isMain = () => { try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url); } };
-if (isMain()) {
+// One alias per input line, so a caller in another language asks this module for every alias of a run
+async function aliasLines() {
+  let alias;
+  for await (const line of createInterface({ input: process.stdin, crlfDelay: Infinity })) {
+    if (!alias) { alias = aliases(line.trim()); continue; }
+    const [kind, name] = JSON.parse(line);
+    process.stdout.write(`${JSON.stringify(alias.tagged(kind, name))}\n`);
+  }
+}
+
+if (isMain() && process.argv[2] === 'aliases') await aliasLines();
+else if (isMain()) {
   const [cmd, captureDir, fixturesDir] = process.argv.slice(2);
   const actions = { build, tutorial, verify, recording };
   if (!actions[cmd] || !captureDir || !fixturesDir) { console.error('usage: scrub.mjs build|tutorial|verify|recording <captureDir> <fixturesDir>'); process.exit(2); }

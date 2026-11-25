@@ -36,15 +36,9 @@ _spec = importlib.util.spec_from_file_location("export_model", Path(__file__).pa
 _export_model = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_export_model)
 alias = _export_model.alias
+sys.path.insert(0, str(Path(__file__).parents[1] / "collector"))
+from sources import instant, iso  # noqa: E402  the lab's one instant and time helpers
 SELECTS = re.compile(r'\bName\s+(==|in|startswith)\s+(\([^)]*\)|"[^"]*")')
-
-
-def instant(text):
-    return datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(timezone.utc)
-
-
-def iso(moment):
-    return moment.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def vocabulary(model):

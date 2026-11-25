@@ -2,8 +2,6 @@
 """Export an existing Azure Monitor health model, its bindings and separate reference states."""
 import argparse
 import fcntl
-import hashlib
-import hmac
 import json
 import os
 import re
@@ -26,9 +24,21 @@ SECRET_FIELD = re.compile(r"(?:apiKey|accountKey|password|clientSecret|secretVal
 AVAILABILITY_TEST = re.compile(r'AppAvailabilityResults\b.*?\bName\s*==\s*"([^"]+)"', re.S)
 
 
+SCRUB = Path(__file__).parents[1] / "fixtures" / "scrub.mjs"
+_scrubbers = {}  # salt -> the scrub module's process that makes its aliases
+
+
 def alias(salt, kind, name):
-    """kind-<12 hex>: an HMAC under a local secret salt, so a guessed name cannot be confirmed from the alias."""
-    return kind + "-" + hmac.new(salt.encode(), f"{kind}:{name.casefold()}".encode(), hashlib.sha256).hexdigest()[:12]
+    """kind-<12 hex>: an HMAC under a local secret salt, so a guessed name cannot be confirmed from the alias. The
+    lab's one scrub module makes it (lab/fixtures/scrub/core.mjs, tagged), one process per salt for a whole run."""
+    scrubber = _scrubbers.get(salt)
+    if scrubber is None:
+        scrubber = _scrubbers[salt] = subprocess.Popen(["node", str(SCRUB), "aliases"], stdin=subprocess.PIPE,
+                                                       stdout=subprocess.PIPE, text=True)
+        scrubber.stdin.write(salt + "\n")
+    scrubber.stdin.write(json.dumps([kind, name]) + "\n")
+    scrubber.stdin.flush()
+    return json.loads(scrubber.stdout.readline())
 
 
 def read_json(path):
