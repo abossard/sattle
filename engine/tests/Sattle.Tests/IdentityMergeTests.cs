@@ -88,6 +88,8 @@ public class IdentityMergeTests
     [InlineData("+pq -pq +pq", "pq")]                  // withdrawn and asserted again
     [InlineData("+pq +rs +qr -qr", "pq|rs")]           // two classes joined and parted again
     [InlineData("-pq +pq", "p|q")]                     // a retraction before its insertion: the link is not present
+    [InlineData("+pq -pq", "p|q")]                     // withdrawn: no id keeps a link
+    [InlineData("+pq +qr -pq -qr", "p|q|r")]           // all withdrawn after a chain
     public void A_withdrawn_link_splits_a_class_unless_another_path_holds_it(string changes, string classes)
     {
         var (c, a, _, it) = Make();
@@ -97,6 +99,8 @@ public class IdentityMergeTests
         var own = "pqrs".ToDictionary(k => k, k => OwnId(a, k.ToString()));
         foreach (var part in classes.Split('|'))
             foreach (var k in part) Assert.Equal(part.Select(x => own[x]).Min(StringComparer.Ordinal), it.Get(R(c, a, it, k.ToString())));
+        var present = changes.Split(' ').GroupBy(ch => ch[1..]).Where(g => g.Sum(ch => ch[0] == '+' ? 1 : -1) > 0).SelectMany(g => g.Key).Distinct().Count();
+        Assert.Equal(present, c.Linked);                                                                            // an id no longer linked keeps no entry (#175 A6)
         foreach (var (rep, n, members) in splits)
         {
             Assert.DoesNotContain(rep, members);                                                                     // the representative stays

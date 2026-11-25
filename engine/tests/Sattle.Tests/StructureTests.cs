@@ -1,3 +1,4 @@
+using System.Globalization;
 using Sattle.Core;
 using Sattle.Language;
 using Sattle.Runtime;
@@ -379,5 +380,27 @@ public class StructureTests
         var t = new Table([8, 8], 1);
         var r = t.Add([5], 1);
         Assert.Throws<InvalidOperationException>(() => t.Set(r, 0, 6));
+    }
+
+    /// <summary>#175 A6: a decimal identity component is cached by its value as integers and instants are by their number: a value at another scale is the same key,
+    /// another value is not, and a hit allocates nothing.</summary>
+    [Theory]
+    [InlineData("1.5", "1.50", true)]
+    [InlineData("1.5", "1.5", true)]
+    [InlineData("0", "0.000", true)]
+    [InlineData("1.5", "1.6", false)]
+    [InlineData("-2.25", "2.25", false)]
+    public void A_code_cache_finds_a_decimal_by_its_value(string set, string get, bool hit)
+    {
+        var c = new CodeCache();
+        decimal s = decimal.Parse(set, CultureInfo.InvariantCulture), g = decimal.Parse(get, CultureInfo.InvariantCulture);
+        Assert.False(c.TryGet(g, out _));
+        c.Set(s, 7);
+        var allocated = GC.GetAllocatedBytesForCurrentThread();
+        var found = c.TryGet(g, out var code);
+        Assert.Equal(0L, GC.GetAllocatedBytesForCurrentThread() - allocated);
+        Assert.Equal(hit, found);
+        if (hit) Assert.Equal(7, code);
+        Assert.False(c.TryGet((long)s, out _));          // a decimal key and an integer key are apart
     }
 }

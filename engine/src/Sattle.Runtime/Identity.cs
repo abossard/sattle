@@ -44,6 +44,8 @@ public sealed class IdentityCatalog(string tenant, Interner it)
     readonly Dictionary<int, int> rep = [];
     readonly Dictionary<int, List<int>> members = [];
     public IReadOnlyDictionary<int, List<int>> Classes => members;
+    /// <summary>The own ids that have a present link.</summary>
+    public int Linked => near.Count;
     /// <summary>Called when two classes merge (loser, survivor): the engine moves what it has emitted under the loser.</summary>
     public Action<int, int>? OnMerge { get; set; }
     /// <summary>Called when a class splits (its representative, the representative of the part that leaves, whether an own id is in that part): the engine moves what it has emitted from keys of that part.</summary>
@@ -122,8 +124,10 @@ public sealed class IdentityCatalog(string tenant, Interner it)
         if (weight == 0) links.Remove(pair);
         if (was == now) return;
         if (now) { Near(a).Add(b); Near(b).Add(a); Aliased++; Join(a, b); }
-        else { Near(a).Remove(b); Near(b).Remove(a); Part(a, b); }
+        else { Unlink(a, b); Unlink(b, a); Part(a, b); }
     }
+    /// <summary>`b` is no longer linked to `a`; an id linked to none keeps no entry.</summary>
+    void Unlink(int a, int b) { if (near.TryGetValue(a, out var l) && l.Remove(b) && l.Count == 0) near.Remove(a); }
 
     List<int> Near(int h) { ref var l = ref CollectionsMarshal.GetValueRefOrAddDefault(near, h, out _); return l ??= []; }
     List<int> MembersOf(int r) => members.TryGetValue(r, out var m) ? m : [r];
@@ -333,7 +337,14 @@ sealed class VId : VExpr
     {
         if (scalars[k] is { } ty)
         {
-            if (c.IsDec) return it.Intern(Norm.Decimal(c.D[row]));
+            if (c.IsDec)
+            {
+                var d = c.D[row];
+                if (caches[k].TryGet(d, out var dec)) return dec;
+                var normal = it.Intern(Norm.Decimal(d));
+                caches[k].Set(d, normal);
+                return normal;
+            }
             var raw = c.L[row];
             if (caches[k].TryGet(raw, out var hit)) return hit;
             var made = it.Intern(Norm.Text(Codec.ToValue(raw, ty, it))!);

@@ -230,6 +230,21 @@ public sealed class CodeCache
     static int Slot(long key) => (int)((ulong)key * 0x9E3779B97F4A7C15UL >> 52);
     public bool TryGet(long key, out int value) { var i = Slot(key); value = values[i]; return keys[i] == key && key != long.MinValue; }
     public void Set(long key, int value) { var i = Slot(key); keys[i] = key; values[i] = value; }
+    /// <summary>The entries for decimal keys, made at the first one; a key is told apart by its value, so 1.0 and 1.00 are one key.</summary>
+    decimal[]? decKeys; int[]? decValues; bool[]? decSet;
+    static int Slot(decimal key) => Slot((long)key.GetHashCode());
+    public bool TryGet(decimal key, out int value)
+    {
+        value = 0;
+        if (decKeys is null) return false;
+        var i = Slot(key); value = decValues![i];
+        return decSet![i] && decKeys[i] == key;
+    }
+    public void Set(decimal key, int value)
+    {
+        decKeys ??= new decimal[Size]; decValues ??= new int[Size]; decSet ??= new bool[Size];
+        var i = Slot(key); decKeys[i] = key; decValues[i] = value; decSet[i] = true;
+    }
 }
 
 /// <summary>A Z-set of rows: fixed-width columns (4 or 8 bytes) in segments, one `i64` weight per row (a column of 8 bytes and the weight take 4 bytes per entry until a value needs 8, and are then copied to 8 once), and one open-addressing index on the key columns, which come first. Adding a weight to a key finds or creates its row; a row whose weight reaches zero is removed and its number is reused. Iteration order is not part of the contract. A row is found through the index on its whole key; a table with no key columns has no index, and its caller keeps the row numbers (`Insert`, `AddAt`). An `Arrangement` is a second way in, by some of the key columns, for the callers that want every row with one value.</summary>
