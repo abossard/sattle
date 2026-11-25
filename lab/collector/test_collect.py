@@ -15,6 +15,7 @@ import sources
 
 HERE = Path(__file__).parent
 STREAMS = json.loads((HERE / "streams.json").read_text())
+INGEST = json.loads((HERE / "definitions" / "collector.ingest.gkql.json").read_text())
 EVENT_TIME = {"log-analytics": "TimeGenerated", "prometheus": "at", "kubernetes-metrics": "at", "azure-monitor-hub": "at", "azure-metrics": "at"}
 
 
@@ -111,6 +112,16 @@ def at(minute):
     return datetime(2026, 11, 25, 10, minute, tzinfo=timezone.utc)
 
 
+def platform(*points):
+    return {"value": [{"id": "/x/providers/Microsoft.Insights/metrics/Requests", "name": {"value": "Requests"},
+                       "timeseries": [{"metadatavalues": [], "data": list(points)}]}]}
+
+
+def prometheus(*points):
+    return {"status": "success", "data": {"resultType": "matrix", "result": [
+        {"metric": {"pod": "a"}, "values": [[at(m).timestamp(), v] for m, v in points]}]}}
+
+
 class MissingStaysMissingTests(unittest.TestCase):
     PROMETHEUS = {"name": "p", "plugin": "prometheus", "rows": "SampleRow", "labels": ["pod"]}
     LOGS = {"name": "l", "plugin": "log-analytics", "rows": "RequestRow", "key": ["id"]}
@@ -118,12 +129,10 @@ class MissingStaysMissingTests(unittest.TestCase):
     PLATFORM = {"name": "a", "plugin": "azure-metrics", "rows": "MetricRow", "resource": "r"}
 
     def platform(self, *points):
-        return {"value": [{"id": "/x/providers/Microsoft.Insights/metrics/Requests", "name": {"value": "Requests"},
-                           "timeseries": [{"metadatavalues": [], "data": list(points)}]}]}
+        return platform(*points)
 
     def prometheus(self, *points):
-        return {"status": "success", "data": {"resultType": "matrix", "result": [
-            {"metric": {"pod": "a"}, "values": [[at(m).timestamp(), v] for m, v in points]}]}}
+        return prometheus(*points)
 
     def logs(self, value):
         return {"tables": [{"name": "PrimaryResult", "columns": [
@@ -188,6 +197,110 @@ class WindowTests(unittest.TestCase):
         for name, window, grid in cases:
             with self.subTest(name):
                 self.assertEqual(sources.prometheus_range({"step": 60}, window), grid)
+
+
+class RevisionTests(unittest.TestCase):
+    """#176 A1: a point or bucket the source revises after the first read is asked again while it is inside the
+    stream's overlap and written again under its key; the later capturedAt makes it replace the first record."""
+    STREAMS = [{"name": "p", "plugin": "prometheus", "rows": "SampleRow", "labels": ["pod"]},
+               {"name": "a", "plugin": "azure-metrics", "rows": "MetricRow", "resource": "r"}]
+    ASKED = {"prometheus": lambda w: (lambda g: g and (g[0], g[1] + 1))(sources.prometheus_range({}, w)),
+             "azure-metrics": lambda w: (lambda s: s and (s[0].timestamp(), s[1].timestamp()))(
+                 sources.azure_metrics_window({}, w))}
+    ANSWER = {"prometheus": lambda points: prometheus(*[(m, str(v)) for m, v in points]),
+              "azure-metrics": lambda points: platform(*[{"timeStamp": sources.iso(at(m)), "total": v, "count": 1}
+                                                         for m, v in points])}
+
+    def ticks(self, stream, polls):
+        """One tick per poll: (minute of the poll, {minute: value the source holds then}); the source answers only
+        the minutes the plugin asks for."""
+        for now, held in polls:
+            def get(w, held=held):
+                span = self.ASKED[stream["plugin"]](w)
+                return self.ANSWER[stream["plugin"]](
+                    sorted((m, v) for m, v in held.items() if span and span[0] <= at(m).timestamp() < span[1]))
+            yield stream, sources.iso(at(now)), get
+
+    def test_one_poll_writes_the_latest_reading_of_a_key(self):
+        def reading(minute, value):
+            return {"key": "k", "position": at(minute), "values": {"value": value}}
+        cases = [("revised in the poll", [reading(1, 1), reading(2, 5)], [5]),
+                 ("revision first in the response", [reading(2, 5), reading(1, 1)], [5]),
+                 ("delivered twice", [reading(1, 1), reading(1, 1)], [1])]
+        for name, readings, expected in cases:
+            with self.subTest(name):
+                fresh, _ = collect.admit(collect.Cursor(None, {}), timedelta(seconds=300), readings)
+                self.assertEqual([r["values"]["value"] for r in fresh], expected)
+
+    def test_a_revision_inside_the_overlap_replaces_the_first_value(self):
+        cases = [
+            ("revised once", [(5, {2: 1}), (6, {2: 2}), (7, {2: 2})], [(2, 1), (2, 2)]),
+            ("revised twice", [(5, {2: 1}), (6, {2: 2}), (7, {2: 3})], [(2, 1), (2, 2), (2, 3)]),
+            ("revised back", [(5, {2: 1}), (6, {2: 2}), (7, {2: 1})], [(2, 1), (2, 2), (2, 1)]),
+            ("unchanged", [(5, {2: 1}), (6, {2: 1}), (7, {2: 1})], [(2, 1)]),
+            ("behind the overlap", [(5, {2: 1}), (15, {2: 1, 12: 1}), (16, {2: 9, 12: 1})], [(2, 1), (12, 1)]),
+        ]
+        for stream in self.STREAMS:
+            field = "value" if stream["plugin"] == "prometheus" else "total"
+            for name, polls, expected in cases:
+                for restart in range(len(polls)):
+                    with self.subTest(stream=stream["plugin"], case=name, restart_after=restart), TemporaryDirectory() as d:
+                        out = Path(d) / "out.ndjson"
+                        ticks = list(self.ticks(stream, polls))
+                        collect.run([stream], out, iter(ticks[:restart]))
+                        collect.run([stream], out, iter(ticks[restart:]))
+                        records = [json.loads(x) for x in out.read_text().splitlines()]
+                        records = [e for e in records if e["payload"]]
+                        self.assertEqual([(sources.instant(e["payload"]["values"]["at"]).minute, e["payload"]["values"][field])
+                                          for e in records], expected)
+                        latest = {}
+                        for e in records:
+                            self.assertGreater(sources.instant(e["capturedAt"]),
+                                               latest.get(e["payload"]["key"], (at(0),))[0])
+                            latest[e["payload"]["key"]] = (sources.instant(e["capturedAt"]), e["payload"]["values"][field])
+                        self.assertEqual(sorted(v for _, v in latest.values()),
+                                         sorted({m: v for m, v in expected}.values()))
+
+
+class MeanTests(unittest.TestCase):
+    """#176 A2: the mean of a metric per minute is its total over its count, so it is defined for streams that carry
+    only total and count (azure-metrics) and weights each bucket by its count, not a mean of per-bucket averages."""
+    VERBS = {v["id"]: v for v in INGEST["verbs"]}
+    FEEDS = {w["to"]: w["from"] for w in INGEST["wires"]}
+
+    def source(self, at, expr):
+        """The expression at the input of verb `at` with every column it reads replaced by its definition upstream,
+        down to the fields of the source rows."""
+        if "fn" in expr:
+            return {**expr, "args": [self.source(at, a) for a in expr["args"]]}
+        if "ref" not in expr:
+            return expr
+        verb = self.VERBS[self.FEEDS[at]]
+        while verb["verb"] != "rows":
+            defined = verb.get("columns") or verb.get("aggregates") or {}
+            if expr["ref"] in defined:
+                return self.source(verb["id"], defined[expr["ref"]])
+            verb = self.VERBS[self.FEEDS[verb["id"]]]
+        return expr
+
+    def test_the_metric_properties_read_the_source_fields(self):
+        def total(field):
+            return {"fn": "sum", "args": [{"ref": field}]}
+        cases = [("name", {"ref": "metric"}),
+                 ("average", {"fn": "/", "args": [total("total"), total("count")]})]
+        [prop] = [n["props"] for n in self.VERBS["showMetric"]["target"]["nodes"]]
+        for name, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(self.source("showMetric", prop[name]), expected)
+
+    def test_a_bucket_without_samples_is_not_counted(self):
+        chain, at = [], "showMetric"
+        while at in self.FEEDS:
+            at = self.FEEDS[at]
+            chain.append(self.VERBS[at])
+        conditions = [v["condition"] for v in chain if v["verb"] == "where"]
+        self.assertIn({"fn": ">", "args": [{"fn": "coalesce", "args": [{"ref": "count"}, {"lit": 0.0}]}, {"lit": 0.0}]},
+                      conditions)
 
 
 if __name__ == "__main__":

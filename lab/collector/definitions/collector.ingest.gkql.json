@@ -1,7 +1,7 @@
 {
   "graph": "ingest",
   "ontology": "collector",
-  "description": "Which inventoried resource reports which Azure Monitor metric, and its mean per minute.",
+  "description": "Which inventoried resource reports which Azure Monitor metric, and its mean per minute: the total over the count of its samples.",
   "history": 100,
   "inputs": [
     {
@@ -65,6 +65,29 @@
       }
     },
     {
+      "id": "sampled",
+      "verb": "where",
+      "condition": {
+        "fn": ">",
+        "args": [
+          {
+            "fn": "coalesce",
+            "args": [
+              {
+                "ref": "count"
+              },
+              {
+                "lit": 0.0
+              }
+            ]
+          },
+          {
+            "lit": 0.0
+          }
+        ]
+      }
+    },
+    {
       "id": "perMetric",
       "verb": "summarize",
       "by": {
@@ -79,11 +102,36 @@
         }
       },
       "aggregates": {
-        "mean": {
-          "fn": "avg",
+        "total": {
+          "fn": "sum",
           "args": [
             {
-              "ref": "average"
+              "ref": "total"
+            }
+          ]
+        },
+        "samples": {
+          "fn": "sum",
+          "args": [
+            {
+              "ref": "count"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "mean",
+      "verb": "extend",
+      "columns": {
+        "mean": {
+          "fn": "/",
+          "args": [
+            {
+              "ref": "total"
+            },
+            {
+              "ref": "samples"
             }
           ]
         }
@@ -177,14 +225,22 @@
     },
     {
       "from": "minutes",
+      "to": "sampled"
+    },
+    {
+      "from": "sampled",
       "to": "perMetric"
     },
     {
       "from": "perMetric",
+      "to": "mean"
+    },
+    {
+      "from": "mean",
       "to": "reports"
     },
     {
-      "from": "perMetric",
+      "from": "mean",
       "to": "showMetric"
     }
   ]

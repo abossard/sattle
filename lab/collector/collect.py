@@ -9,7 +9,8 @@
 A stream is one query of one plugin (sources.py) and the row type its records feed. Each poll writes the new
 records of a stream to the end of --out, or a heartbeat when there are none. The output is also the collector's
 state: on start it is read back to find, per stream, the last source position written and the keys written
-within the stream's overlap behind it. --record keeps every source response; --replay polls from such a
+within the stream's overlap behind it, with a digest of their values: a reading the source revises inside the
+overlap is written again under its key, and the later record replaces the first. --record keeps every source response; --replay polls from such a
 recording instead of the sources.
 """
 from argparse import ArgumentParser
@@ -22,9 +23,9 @@ import sys
 import time
 
 import sources
-from sources import ReadError, compact, instant, iso
+from sources import ReadError, compact, digest, instant, iso
 
-Cursor = namedtuple("Cursor", "last seen")  # last position written, {key: position} not behind the overlap
+Cursor = namedtuple("Cursor", "last seen")  # last position written, {key: (position, digest of values)} not behind the overlap
 DEFAULTS = {"overlap": 300, "backfill": 900}
 
 
@@ -58,7 +59,7 @@ def prune(cursor, overlap):
     floor = cursor.last - overlap
     seen = cursor.seen
     drop = 0
-    for position in seen.values():
+    for position, _ in seen.values():
         if position > floor:
             break
         drop += 1
@@ -68,15 +69,21 @@ def prune(cursor, overlap):
 
 
 def admit(cursor, overlap, readings):
-    """The readings not written yet, in position order, and the cursor after writing them."""
+    """The readings not written yet or revised since, in position order, and the cursor after writing them."""
     floor = cursor.last - overlap if cursor.last else None
     seen = dict(cursor.seen)
     last = cursor.last
     fresh = []
+    latest = {}  # one record per key and poll: the engine refuses two values of one key at one capturedAt
     for reading in sorted(readings, key=lambda r: r["position"]):
-        if (floor is not None and reading["position"] <= floor) or reading["key"] in seen:
+        latest.pop(reading["key"], None)
+        latest[reading["key"]] = reading
+    for reading in latest.values():
+        mark = digest(reading["values"])
+        if (floor is not None and reading["position"] <= floor) or seen.get(reading["key"], (None, None))[1] == mark:
             continue
-        seen[reading["key"]] = reading["position"]
+        seen.pop(reading["key"], None)  # a revision moves to the end, so the keys stay in write order
+        seen[reading["key"]] = (reading["position"], mark)
         last = reading["position"] if last is None else max(last, reading["position"])
         fresh.append(reading)
     if not fresh:
@@ -113,7 +120,8 @@ def resume(streams, lines):
         if stream is not None and "position" in meta:
             position = instant(meta["position"])
             cursor = cursors[stream["name"]]
-            cursor.seen[env["payload"]["key"]] = position
+            cursor.seen.pop(env["payload"]["key"], None)
+            cursor.seen[env["payload"]["key"]] = (position, digest(env["payload"]["values"]))
             cursors[stream["name"]] = Cursor(position if cursor.last is None else max(cursor.last, position),
                                              cursor.seen)
         if n % 1000 == 0:
