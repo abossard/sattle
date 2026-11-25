@@ -34,6 +34,7 @@ A stream is one query of one plugin and the row type its records feed (`streams.
 | `log-analytics` | `table`, `columns`, optional `where`, `key` | one row, the columns as values | the `TimeGenerated` column | ingestion time |
 | `prometheus` | `query`, `step`, `labels` | one point: `metric`, `at`, `value`, the listed labels | `at` | sample time |
 | `azure-monitor-hub` | `hub` (a diagnostic setting sends `AllMetrics` there) | one metric record: `resourceId`, `metric`, `at`, `grain` (s), `total`, `average`, `minimum`, `maximum`, `count` | `at` | enqueued time |
+| `azure-metrics` | `resource` (a name in `--resources FILE`, which maps it to the ARM id), `namespace`, `metrics`, optional `aggregations` (default Total, Count), `grain`, `settle`, `filter` | one bucket with any aggregate: same values as `azure-monitor-hub` | `at` | bucket time |
 | `kubernetes-metrics` | `kind` (`nodes` or `pods`) | one node or pod container: `kind`, `namespace`, `name`, `container`, `at`, `window`, `cpu` (cores), `memory` (bytes) | `at` | scrape time |
 
 Every record carries `meta.source` (`plugin:stream`) and `meta.position`. The payload key is the reading's identity: `_ItemId` or a hash of the row, the label set and time, or the object and scrape time.
@@ -58,7 +59,7 @@ sequenceDiagram
 - The output is the only state. A torn last line from a crash is cut on start, and the next poll writes what is missing. A restart writes what one uninterrupted run writes (test).
 - A failed read writes nothing; the next poll covers its window.
 - A missing reading stays missing: a gap in Prometheus is no record, NaN and infinities are `null`, a Log Analytics null is `null`, a quantity the metrics API leaves out is `null`. A measured zero stays `0`. Declare such fields `optional` in the row type.
-- Prometheus points are asked on a fixed step grid that ends one step before now, so a point is read once it has settled.
+- Prometheus points are asked on a fixed step grid that ends one step before now, so a point is read once it has settled. Platform metric buckets are read once they closed `settle` seconds ago (default 60). A bucket without any aggregate is no reading.
 
 ## Recordings
 

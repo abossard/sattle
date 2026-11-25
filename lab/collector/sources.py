@@ -2,7 +2,8 @@
 readings(stream, response), a calculation that turns the response into readings: {key, position, values}.
 
 The position is a time in the source, used to resume: the ingestion time of a Log Analytics row, the sample
-time of a Prometheus point, the scrape time of a metrics API reading, the enqueued time of an Event Hubs event. Event time is a value column of the row.
+time of a Prometheus point, the scrape time of a metrics API reading, the enqueued time of an Event Hubs event, the bucket time of a
+platform metric. Event time is a value column of the row.
 A reading the source does not have is not made up: a gap stays a gap, a null stays null, and a measured zero
 stays zero. Prometheus NaN and infinities have no Decimal, so they become null.
 """
@@ -260,11 +261,62 @@ def azure_monitor_hub_readings(stream, response):
     return out
 
 
+# Azure Monitor platform metrics, polled: one-minute buckets of one resource
+
+METRICS_API_VERSION = "2023-10-01"
+
+
+def azure_metrics_window(stream, window):
+    """Whole buckets that closed at least `settle` seconds ago, so a bucket is read once Azure has filled it."""
+    grain_s = grain(stream.get("grain", "PT1M"))
+    settle = timedelta(seconds=stream.get("settle", 60))
+    start = math.floor(window[0].timestamp() / grain_s) * grain_s
+    end = math.floor((window[1] - settle).timestamp() / grain_s) * grain_s
+    if end <= start:
+        return None
+    return datetime.fromtimestamp(start, timezone.utc), datetime.fromtimestamp(end, timezone.utc)
+
+
+def azure_metrics_fetch(stream, window, options):
+    span = azure_metrics_window(stream, window)
+    if span is None:
+        return None
+    query = {"api-version": METRICS_API_VERSION, "metricnamespace": stream["namespace"],
+             "metricnames": ",".join(stream["metrics"]), "interval": stream.get("grain", "PT1M"),
+             "aggregation": ",".join(stream.get("aggregations", ["Total", "Count"])),
+             "timespan": f"{iso(span[0])}/{iso(span[1])}"}
+    if stream.get("filter"):
+        query["$filter"] = stream["filter"]
+    resource = options["resources"][stream["resource"]]
+    return az_rest("https://management.azure.com" + resource + "/providers/Microsoft.Insights/metrics?"
+                   + urlencode(query))
+
+
+def azure_metrics_readings(stream, response):
+    """A bucket without any aggregate is no reading; a bucket with count 0 is a measured zero."""
+    out = []
+    for metric in (response or {}).get("value", []):
+        resource = metric["id"].lower().split("/providers/microsoft.insights/metrics/")[0]
+        for series in metric.get("timeseries", []):
+            dims = {d["name"]["value"]: d["value"] for d in series.get("metadatavalues", [])}
+            for point in series.get("data", []):
+                aggregates = {a: point.get(a) for a in AGGREGATES}
+                if all(v is None for v in aggregates.values()):
+                    continue
+                at = instant(point["timeStamp"])
+                values = {"resourceId": resource, "metric": metric["name"]["value"], "at": iso(at),
+                          "grain": grain(stream.get("grain", "PT1M")), **aggregates}
+                key = compact([resource, values["metric"], sorted(dims.items()), values["at"]])
+                out.append({"key": key, "position": at, "values": values})
+    return out
+
+
 PLUGINS = {
     "log-analytics": (log_analytics_fetch, log_analytics_readings),
     "prometheus": (prometheus_fetch, prometheus_readings),
     "kubernetes-metrics": (kubernetes_metrics_fetch, kubernetes_metrics_readings),
     "azure-monitor-hub": (azure_monitor_hub_fetch, azure_monitor_hub_readings),
+    "azure-metrics": (azure_metrics_fetch, azure_metrics_readings),
 }
 
 

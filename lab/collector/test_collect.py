@@ -15,7 +15,7 @@ import sources
 
 HERE = Path(__file__).parent
 STREAMS = json.loads((HERE / "streams.json").read_text())
-EVENT_TIME = {"log-analytics": "TimeGenerated", "prometheus": "at", "kubernetes-metrics": "at", "azure-monitor-hub": "at"}
+EVENT_TIME = {"log-analytics": "TimeGenerated", "prometheus": "at", "kubernetes-metrics": "at", "azure-monitor-hub": "at", "azure-metrics": "at"}
 
 
 def ticks(stream):
@@ -37,6 +37,9 @@ def source_readings(stream, line):
     if stream["plugin"] == "prometheus":
         return {(json.dumps(s["metric"], sort_keys=True), v[0]) for s in (r or {}).get("data", {}).get("result", [])
                 for v in s["values"]}
+    if stream["plugin"] == "azure-metrics":
+        return {(m["name"]["value"], p["timeStamp"]) for m in (r or {}).get("value", []) for t in m["timeseries"]
+                for p in t["data"] if set(p) - {"timeStamp"}}
     if stream["plugin"] == "azure-monitor-hub":
         return {(m["resourceId"].lower(), m["metricName"], m["time"], m["timeGrain"]) for e in r
                 for m in e["payload"]["records"]}
@@ -112,6 +115,11 @@ class MissingStaysMissingTests(unittest.TestCase):
     PROMETHEUS = {"name": "p", "plugin": "prometheus", "rows": "SampleRow", "labels": ["pod"]}
     LOGS = {"name": "l", "plugin": "log-analytics", "rows": "RequestRow", "key": ["id"]}
     METRICS = {"name": "k", "plugin": "kubernetes-metrics", "rows": "UsageRow", "kind": "pods"}
+    PLATFORM = {"name": "a", "plugin": "azure-metrics", "rows": "MetricRow", "resource": "r"}
+
+    def platform(self, *points):
+        return {"value": [{"id": "/x/providers/Microsoft.Insights/metrics/Requests", "name": {"value": "Requests"},
+                           "timeseries": [{"metadatavalues": [], "data": list(points)}]}]}
 
     def prometheus(self, *points):
         return {"status": "success", "data": {"resultType": "matrix", "result": [
@@ -134,12 +142,18 @@ class MissingStaysMissingTests(unittest.TestCase):
             ("log analytics null", self.LOGS, self.logs(None), "DurationMs", None),
             ("metrics api zero", self.METRICS, self.pod({"cpu": "0", "memory": "0"}), "cpu", 0),
             ("metrics api absent", self.METRICS, self.pod({"cpu": "5m"}), "memory", None),
+            ("platform zero", self.PLATFORM, self.platform({"timeStamp": "2026-11-25T10:00:00Z", "total": 0}), "total", 0),
+            ("platform absent", self.PLATFORM, self.platform({"timeStamp": "2026-11-25T10:00:00Z", "total": 0}),
+             "average", None),
         ]
         for name, stream, response, field, expected in cases:
             with self.subTest(name):
                 [reading] = sources.readings(stream, response)
                 self.assertIn(field, reading["values"])
                 self.assertEqual(reading["values"][field], expected)
+
+    def test_an_empty_platform_bucket_is_no_reading(self):
+        self.assertEqual(sources.readings(self.PLATFORM, self.platform({"timeStamp": "2026-11-25T10:00:00Z"})), [])
 
     def test_a_gap_in_the_source_is_no_record_and_no_zero(self):
         stream = self.PROMETHEUS

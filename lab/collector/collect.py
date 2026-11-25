@@ -3,6 +3,7 @@
 
   collect.py --streams FILE --out FILE [--every SECONDS] [--polls N] [--record DIR]
              [--workspace ID] [--prometheus URL] [--context NAME] [--eventhubs NAMESPACE]
+             [--resources FILE]
   collect.py --streams FILE --out FILE --replay DIR
 
 A stream is one query of one plugin (sources.py) and the row type its records feed. Each poll writes the new
@@ -206,12 +207,14 @@ def main(argv):
     p.add_argument("--prometheus")
     p.add_argument("--context")
     p.add_argument("--eventhubs")
+    p.add_argument("--resources", type=Path, help="JSON map from a stream's resource name to its ARM id")
     a = p.parse_args(argv)
     streams = json.loads(a.streams.read_text())
     if a.replay:
         ticks = replay_ticks(streams, a.replay)
     else:
-        options = {"workspace": a.workspace, "prometheus": a.prometheus, "context": a.context, "eventhubs": a.eventhubs}
+        options = {"workspace": a.workspace, "prometheus": a.prometheus, "context": a.context, "eventhubs": a.eventhubs,
+                   "resources": json.loads(a.resources.read_text()) if a.resources else {}}
         ticks = live_ticks(streams, options, a.every, a.polls, a.record)
     run(streams, a.out, ticks)
 
