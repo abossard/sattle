@@ -181,6 +181,16 @@ public class BatchInvarianceTests
         Assert.Single(h.Engine.Master.State.Entities);
     }
 
+    /// <summary>#169 D1: a lateness beyond the window retention (48 h) is refused at activation: the window would be revisable after it is let go (Def. 7.13).</summary>
+    [Theory]
+    [InlineData("1h", "49h")] [InlineData("24h", "72h")]
+    public void A_lateness_beyond_the_window_retention_is_refused_at_activation(string width, string lateness)
+    {
+        List<Sattle.Language.SourceFile> files = [new("d.module.gkql.json", Wide), new("d.ingest.gkql.json", WideIngest.Replace("WIDTH", width).Replace("LATENESS", lateness)), new("ds.module.gkql.json", WideSpace)];
+        var e = Assert.Throws<InvalidOperationException>(() => new SpaceHost(files, new HostOptions { Projections = Repo.Projections }).Dispose());
+        Assert.EndsWith($"keeps a window revisable for {lateness} after its end, and windows are retained for 48h (Def. 7.13)", e.Message);
+    }
+
     /// <summary>The other side of B2: a late row inside its input's lateness revises the window (the lateness is the only thing that decides).</summary>
     [Theory]
     [InlineData(1)] [InlineData(2)]

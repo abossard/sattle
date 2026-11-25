@@ -203,7 +203,7 @@ public sealed class ProjectionChecker(Graph defs)
         {
             if (tp.WindowsOf(op).Lateness is not null) continue;
             var series = Upstream(op, tp).OfType<TSeries>().FirstOrDefault();
-            if (series is not null) { Err(op.Kind, op.Id, $"{op.Name} folds the windows of series {series.Name}, which declares no lateness"); continue; }
+            if (series is not null) { Err(op.Kind, op.Id, $"{op.Name} {(op is TFold ? "folds" : "summarizes")} the windows of series {series.Name}, which declares no lateness"); continue; }
             var window = Upstream(op, tp).OfType<TWindow>().FirstOrDefault();
             var undeclared = window is null ? [] : RowsPortsUpstream(window, tp).Where(p => p.LatenessNs is null).Select(p => p.Name).Distinct().ToList();
             Err(op.Kind, op.Id, undeclared.Count > 0
