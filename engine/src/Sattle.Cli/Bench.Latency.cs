@@ -133,14 +133,14 @@ static partial class Bench
         return (Pct(l, .5), Pct(l, .99), l.Max());
     }
 
-    public static int DurableReads(Program.Options o)
+    public static int DurableReads(Program.Options o, Extensions ext)
     {
         const int entities = 2000, hubs = 20, fan = 100, point = 1000, scans = 200;
-        var endpoint = o.Get("cosmos"); var runs = int.TryParse(o.Get("runs"), out var rn) ? rn : Runs;
+        var spec = o.Get("store"); var runs = int.TryParse(o.Get("runs"), out var rn) ? rn : Runs;
         Console.WriteLine($"# B7 durable reads: {entities:N0} entities, {hubs} hubs with {fan} outgoing relationships, per run {point:N0} point reads and {scans} one-hop scans of {fan} neighbours, {runs} runs");
         Environment();
         var stores = new List<(string, Func<IGraphHistory>)> { ("memory", () => new InMemoryGraphStore()), ("sqlite", () => new SqliteGraphStore(Path.Combine(Path.GetTempPath(), "sattle-b7-" + Guid.NewGuid().ToString("N") + ".db"))) };
-        if (endpoint is not null) stores.Add(("cosmos-emulator", () => CosmosGraphStore.Open(endpoint, "sattle-b7", true)));
+        if (spec is not null) stores.Add((spec.Split('=')[0], () => Program.OpenStore(spec, ext) ?? throw new ArgumentException($"--store {spec}: no durable store")));
         foreach (var (name, make) in stores)
         {
             using var store = make(); var key = new GraphKey("t", "state"); long head = 0;
@@ -165,7 +165,6 @@ static partial class Bench
             Console.WriteLine($"H7 {name} point read p50: {Spread(pp50, "ms")}");
             Console.WriteLine($"H7 {name} one-hop scan of {fan}, p99: {Spread(sp99, "ms")}  (target <= 20 ms)");
             Console.WriteLine($"H7 {name} one-hop scan of {fan}, p50: {Spread(sp50, "ms")}");
-            if (store is CosmosGraphStore c) foreach (var (kind, (calls, ru)) in c.Charges.OrderBy(x => x.Key)) Console.WriteLine($"  cosmos {kind}: {calls:N0} request(s), reported charge {ru:N1} (the emulator reports 1 per request, no RU accounting)");
         }
         return 0;
     }
@@ -178,7 +177,7 @@ static partial class Bench
         Console.WriteLine($"# B8 element view: structure at head joined with {windows} windows (1 h at 60 s) of {props} series for {n:N0} elements, hot plane only, {runs} runs");
         Environment();
         var g = new Graph(); var edits = new List<Edit>(n);
-        for (var i = 0; i < n; i++) edits.Add(Edit.Create(new Entity($"e{i:D6}", "d:m/entity:Pod", Props.Of(("d:m/prop:name", Value.Text("pod-" + i)), ("d:m/prop:namespace", Value.Text("ns" + i % 50))))));
+        for (var i = 0; i < n; i++) edits.Add(Edit.Create(new Entity($"e{i:D6}", "d:m/entity:Item", Props.Of(("d:m/prop:name", Value.Text("item-" + i)), ("d:m/prop:namespace", Value.Text("ns" + i % 50))))));
         g.Apply(edits);
         var ts = new InMemoryWindowStore(); var key = new GraphKey("t", "g"); var batch = new Sample[n * props];
         for (var w = 0; w < windows; w++)
@@ -264,7 +263,7 @@ static partial class Bench
     }
 
     /// <summary>H10: the space is built from the newest capture repeated with shifted time until its logical span reaches `--hours` (default 1), journaled in a SQLite store; then the process is "restarted" `--runs` times: a fresh host replays the journal, recomputes every commit and compares it with the stored one.</summary>
-    public static int Restart(Program.Options o)
+    public static int Restart(Program.Options o, Extensions ext)
     {
         var capture = Capture(o); var runs = int.TryParse(o.Get("runs"), out var rn) ? rn : Runs;
         var hours = double.TryParse(o.Get("hours"), NumberStyles.Float, CultureInfo.InvariantCulture, out var hh) ? hh : 1.0;
@@ -273,11 +272,12 @@ static partial class Bench
         var sealEvery = long.TryParse(o.Get("seal-every"), out var se) ? se : 0;
         var opts = new Sattle.Runtime.HostOptions { SealEvery = sealEvery, Projections = Program.Projections };
         var restartOpts = opts with { UseSeal = !o.Flags.Contains("no-seal") };
-        var cosmos = o.Get("cosmos"); var dbName = "b10" + Guid.NewGuid().ToString("N")[..10];
-        IDurableStore Open() => cosmos is null ? new SqliteGraphStore(path) : CosmosGraphStore.Open(cosmos, dbName, false);
-        Console.WriteLine($"# B10 cold start by restart: capture {Path.GetFileName(capture.TrimEnd('/'))} repeated to {hours} h of logical time, {(cosmos is null ? "SQLite" : "Cosmos emulator")} journal and log, {runs} restarts");
+        var spec = o.Get("store");
+        var repeat = (o.Get("repeat") ?? throw new ArgumentException("b10 needs --repeat SOURCE,SOURCE: the sources whose envelopes are events, replayed again in each later pass")).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet(StringComparer.Ordinal);
+        IDurableStore Open() => spec is null ? new SqliteGraphStore(path) : Program.OpenStore(spec, ext) ?? throw new ArgumentException($"--store {spec}: no durable store");
+        Console.WriteLine($"# B10 cold start by restart: capture {Path.GetFileName(capture.TrimEnd('/'))} repeated to {hours} h of logical time, {(spec is null ? "SQLite" : spec.Split('=')[0])} journal and log, {runs} restarts");
         Environment();
-        if (cosmos is not null || !File.Exists(path))
+        if (spec is not null || !File.Exists(path))
         {
             using var store = Open(); using var host = SpaceHost.OpenDurable(store, files, opts);
             var ro = Program.ReplayOptionsOf(Program.Options.Parse([]));
@@ -291,8 +291,8 @@ static partial class Bench
                 {
                     if (pf == 0) pf = env.CapturedNs; pl = env.CapturedNs;
                     // A later pass is later history only for events: its samples are replayed with their event times moved forward by the offset, like the capture clock.
-                    // Structure (Kubernetes, Resource Graph, authoring) and evidence (Activity Log, audit, the Event Hubs copies) are loaded once: the same rows again would be the same objects and events a second time, not history.
-                    if (pass > 0 && env.Source is not ("hubble" or "prometheus" or "azure-metrics" or "vnet-flow-log")) continue;
+                    // Only the sources of `--repeat` (events) are replayed again; every other source (structure, evidence) is loaded once: the same rows again would be the same objects a second time, not history.
+                    if (pass > 0 && !repeat.Contains(env.Source)) continue;
                     replay.TimeShiftNs = offset;
                     replay.Process(env with { CapturedNs = env.CapturedNs + offset, Seq = env.Seq + pass * 1_000_000_000L }, false);
                 }
@@ -305,7 +305,7 @@ static partial class Bench
             host.Finish();
             if (sealEvery > 0) Console.WriteLine($"seals: {host.SealsTaken} taken, {host.SealMilliseconds / Math.Max(1, host.SealsTaken)} ms each on average, the last {host.LastSealBytes / 1e6:F1} MB (compressed)");
             var revs = host.Engine.Graphs.Sum(g => g.Head);
-            Console.WriteLine($"built: {revs:N0} revisions in {host.Engine.Graphs.Count} graphs, journal {store.JournalCount:N0} entries, state digest {host.StateDigest()}{(cosmos is null ? $", store file {new FileInfo(path).Length / 1e6:F0} MB" : "")}");
+            Console.WriteLine($"built: {revs:N0} revisions in {host.Engine.Graphs.Count} graphs, journal {store.JournalCount:N0} entries, state digest {host.StateDigest()}{(spec is null ? $", store file {new FileInfo(path).Length / 1e6:F0} MB" : "")}");
         }
         var secs = new List<double>(); string? digest = null;
         for (var run = 0; run < runs; run++)
@@ -320,8 +320,7 @@ static partial class Bench
             Console.WriteLine($"restart {run + 1}: {t:F1} s ({(r.FromSeal ? $"seal at entry {r.SealPosition}, {r.EntriesReplayed:N0} entries replayed after it" : "journal replayed from the start")}{(r.FromSeal ? $", state loaded in {r.SealLoadMilliseconds} ms, tail replayed in {r.TailMilliseconds} ms" : "")}), {r.Recomputed:N0} revisions recomputed and compared with the stored log ({r.SealedRevisions:N0} came from the seal), sequence {host.Seq}, digest {host.StateDigest()[..19]}; load {LoadAvg()}");
         }
         Console.WriteLine($"H10 restart from the store (journal replay with verification of every commit), history of {hours} h: {Spread(secs, "s")}  (target at most 60 s)");
-        if (cosmos is not null) { using var drop = CosmosGraphStore.Open(cosmos, dbName, true); }
-        if (o.Get("db") is null && cosmos is null) foreach (var f in Directory.GetFiles(Path.GetTempPath(), Path.GetFileName(path) + "*")) File.Delete(f);
+        if (o.Get("db") is null && spec is null) foreach (var f in Directory.GetFiles(Path.GetTempPath(), Path.GetFileName(path) + "*")) File.Delete(f);
         return 0;
     }
 }

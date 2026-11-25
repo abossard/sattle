@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Sattle.Core;
 using Sattle.Runtime;
+using Sattle.Lab;
 
 namespace Sattle.Tests;
 
@@ -25,7 +26,7 @@ public class RestartTests
         public IDurableStore Open() => open = kind switch
         {
             "memory" => memory,
-            "cosmos" => Sattle.Cli.CosmosGraphStore.Open(StoreConformanceTests.CosmosEndpoint!, database, false),
+            "cosmos" => CosmosGraphStore.Open(StoreConformanceTests.CosmosEndpoint!, database, false),
             _ => new SqliteGraphStore(path),
         };
         public void Close() { if (kind != "memory") open?.Dispose(); open = null; }
@@ -33,7 +34,7 @@ public class RestartTests
         public void Dispose()
         {
             Close();
-            if (kind == "cosmos") { using var s = Sattle.Cli.CosmosGraphStore.Open(StoreConformanceTests.CosmosEndpoint!, database, true); }
+            if (kind == "cosmos") { using var s = CosmosGraphStore.Open(StoreConformanceTests.CosmosEndpoint!, database, true); }
             else foreach (var f in Directory.GetFiles(Path.GetTempPath(), Path.GetFileName(path) + "*")) File.Delete(f);
         }
     }

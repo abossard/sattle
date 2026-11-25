@@ -44,7 +44,7 @@ NS=$(cd lab && azd env get-value SATTLE_EVENTHUB_NAMESPACE)
 ```
 
 ```bash
-engine/src/Sattle.Cli/bin/Release/net11.0/sattle serve --live --eh-namespace "$NS" --group sattle-engine --from latest --overlay lab/captures/acme.space.module.gkql.json --store sqlite=tmp/live-stream/demo/space.db --live-out tmp/live-stream/demo --port 5080
+lab/sattle-lab/bin/Release/net11.0/sattle-lab serve --live --eh-namespace "$NS" --group sattle-engine --from latest --overlay lab/captures/acme.space.module.gkql.json --store sqlite=tmp/live-stream/demo/space.db --live-out tmp/live-stream/demo --port 5080
 ```
 
 - No state until the forwarder starts (step 2): its relist is the whole cluster.

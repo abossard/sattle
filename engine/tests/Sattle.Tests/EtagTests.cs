@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using Sattle.Runtime;
 using Sattle.Cli;
+using Sattle.Lab;
 
 namespace Sattle.Tests;
 

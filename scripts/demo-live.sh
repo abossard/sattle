@@ -23,10 +23,10 @@ done
 for tool in jq curl lsof kubectl azd az node dotnet; do
   command -v "$tool" >/dev/null 2>&1 || { echo "$tool is not on the PATH" >&2; exit 1; }
 done
-dll="$root/engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll"
+dll="$root/lab/sattle-lab/bin/Release/net11.0/sattle-lab.dll"   # the engine with the lab's Event Hubs input
 kubeconfig="$root/lab/.kube/config"
 overlay="$root/lab/captures/acme.space.module.gkql.json"
-[ -f "$dll" ] || { echo "no engine build at $dll: run dotnet build engine/src/Sattle.Cli -c Release" >&2; exit 1; }
+[ -f "$dll" ] || { echo "no lab build at $dll: run dotnet build lab/sattle-lab -c Release" >&2; exit 1; }
 [ -d "$root/canvas/node_modules" ] || { echo "no canvas packages: run npm --prefix canvas install" >&2; exit 1; }
 [ -d "$root/lab/capture/node_modules" ] || { echo "no forwarder packages: run npm --prefix lab/capture install" >&2; exit 1; }
 az account show >/dev/null 2>&1 || { echo "not logged in to Azure: run az login" >&2; exit 1; }

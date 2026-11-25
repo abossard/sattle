@@ -4,7 +4,7 @@ using Sattle.Runtime;
 namespace Sattle.Cli;
 
 /// <summary>Retained size of the engine by structure, measured by walking the object graph with reflection (no heap profiler on the machine). Sizes are estimates from the type layout (object header 16 bytes, fields, array and string payloads, 8-byte alignment); the total is compared with the GC's own count. Every object is counted once, for the first root that reaches it, so the order of the roots matters: shared lookups first, operator state last.</summary>
-static class Census
+public static class Census
 {
     sealed class Acc { public long Objects, Bytes; }
     static readonly Dictionary<Type, FieldInfo[]> fieldCache = [];

@@ -6,7 +6,7 @@ using Newtonsoft.Json.Linq;
 using Sattle.Core;
 using Sattle.Runtime;
 
-namespace Sattle.Cli;
+namespace Sattle.Lab;
 
 /// <summary>The storage port on Azure Cosmos DB for NoSQL, after paper/ch11 section 11.x and research 02 section 4: five containers (`log`, `state`, `identity`, `lens`, `leases`) with hierarchical partition keys led by tenant and graph. The commit point is the creation of the commit record `c:{r20}` in one transactional batch (a create fails with 409 when the revision exists, which is the conditional write); the state container is the materialization, one idempotent batch per element partition (update: history row and `cur` replaced under If-Match). Reads apply Theorem 11.3 in its simplest form: the commit call returns after materialization, so reads never overlay.
 /// Authentication: Entra (`DefaultAzureCredential`) for a real account. The emulator's well-known local key is used only for a localhost endpoint. No key is ever read from a file.</summary>

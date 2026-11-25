@@ -3,6 +3,7 @@ using Sattle.Core;
 using Sattle.Language;
 using Sattle.Runtime;
 using Sattle.Cli;
+using Sattle.Lab;
 
 namespace Sattle.Tests;
 

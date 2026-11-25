@@ -7,11 +7,15 @@ namespace Sattle.Cli;
 /// <summary>One event of a live source: its body as delivered (the envelope text, or that text encoded as a JSON string) and the position of the source after it (an opaque JSON text the source defines and understands).</summary>
 public sealed record LiveEvent(string Text, string Position);
 
-/// <summary>A source the live input reads: it yields events after a position (null: where the source starts by its own rule) in order, and null when it is idle for a moment (so the input can flush). It yields nothing before it has read from its medium once, so its first yield means that from then on nothing sent is missed. A source that fails throws; the input reads it again from the position the space has seen. Event Hubs is one; tests use a fake with the same contract.</summary>
+/// <summary>A source the live input reads: it yields events after a position (null: where the source starts by its own rule) in order, and null when it is idle for a moment (so the input can flush). It yields nothing before it has read from its medium once, so its first yield means that from then on nothing sent is missed. A source that fails throws; the input reads it again from the position the space has seen. A message queue is one; tests use a fake with the same contract.</summary>
 public interface ILiveSource
 {
     string Id { get; }
     IEnumerable<LiveEvent?> Read(string? after, CancellationToken ct);
+    /// <summary>Where the last read started, for the line that says the input is ready.</summary>
+    string Start => Id;
+    /// <summary>How far the space is behind the newest event of the source after the last batch it processed, when the source knows it.</summary>
+    LiveLag? Lag => null;
 }
 
 public sealed record LiveCounts(long Consumed, long Duplicates, long Rejected);
@@ -56,7 +60,7 @@ public sealed class FileRecording : ILiveRecording, IDisposable
 /// <summary>The live input loop, independent of the source. For each envelope the order is fixed: receive, journal (with the position of the source after it), record, process. The journal is the truth and is written first, so a kill leaves at most one envelope that is journaled and not processed, and the next start processes it from the journal (exactly once); the recording is written after the journal, so it never holds an envelope the journal lacks, and a start that finds the recording shorter than the journal appends the missing envelopes before it reads the source. After a kill and the next start the recording is therefore exactly the envelopes the space has, in order, and replaying it gives the state of the space. The pending chunk is flushed when the source goes idle or every `flushEvery`; a restart resumes after the last position the space has seen.</summary>
 public static class LiveInput
 {
-    /// <summary>The envelope text of a delivered body. The Node forwarder sends the envelope as text and its Event Hubs SDK encodes a string body as JSON, so the body is a JSON string whose value is the envelope; a body that is the envelope itself is taken as it is.</summary>
+    /// <summary>The envelope text of a delivered body. A forwarder may send the envelope as text through a client that encodes a string body as JSON, so the body is a JSON string whose value is the envelope; a body that is the envelope itself is taken as it is.</summary>
     public static string EnvelopeText(string body)
     {
         if (!body.StartsWith('"')) return body;
@@ -64,7 +68,7 @@ public static class LiveInput
         catch (System.Text.Json.JsonException) { return body; }
     }
 
-    /// <summary>Reads `source` after the position the space has seen until it ends or `ct` is cancelled, and returns the counts so far (a cancellation stops after the envelope in hand and is no error). `ready` is called after each first read of the source, when it yields its first event or idle mark: a source yields only after it reads, so from then on nothing sent to it is missed (Event Hubs resolves `latest` when its link opens on the first read). Without `retry` a failure ends the run with its exception (a kill, for the tests). With `retry` a failure (a network error after a laptop slept, an expired credential) is survived: after the n-th failure in a row the input waits `retry(e, n)` and reads again from the position the space has seen, so nothing is lost or processed twice; a source that got ready before it failed starts the count again.</summary>
+    /// <summary>Reads `source` after the position the space has seen until it ends or `ct` is cancelled, and returns the counts so far (a cancellation stops after the envelope in hand and is no error). `ready` is called after each first read of the source, when it yields its first event or idle mark: a source yields only after it reads, so from then on nothing sent to it is missed (a queue may resolve `latest` only when its link opens on the first read). Without `retry` a failure ends the run with its exception (a kill, for the tests). With `retry` a failure (a network error after a laptop slept, an expired credential) is survived: after the n-th failure in a row the input waits `retry(e, n)` and reads again from the position the space has seen, so nothing is lost or processed twice; a source that got ready before it failed starts the count again.</summary>
     public static LiveCounts Run(SpaceHost host, ILiveSource source, ReplayOptions options, CancellationToken ct, ILiveRecording? recording = null, TimeSpan? flushEvery = null, Action<string>? received = null, Action? ready = null, Func<Exception, int, TimeSpan>? retry = null)
     {
         host.StartLive(options);
@@ -106,7 +110,7 @@ public static class LiveInput
         return new LiveCounts(consumed, dup, bad);
     }
 
-    /// <summary>The events of a source that receives in batches (Event Hubs): an empty batch is an idle mark (null, the input flushes), a batch is its events in order, and `processed` gets the batch's lag once the input has asked for the event after the last one, that is after it processed the whole batch. An input that stops inside a batch never reports that batch's lag.</summary>
+    /// <summary>The events of a source that receives in batches (a message queue): an empty batch is an idle mark (null, the input flushes), a batch is its events in order, and `processed` gets the batch's lag once the input has asked for the event after the last one, that is after it processed the whole batch. An input that stops inside a batch never reports that batch's lag.</summary>
     public static IEnumerable<LiveEvent?> Batches(Func<(IReadOnlyList<LiveEvent> Events, LiveLag? Lag)> receive, Action<LiveLag> processed)
     {
         while (true)

@@ -8,6 +8,7 @@ internal sealed class AppendFileSource(string path) : ILiveSource
 {
     private readonly string file = Path.GetFullPath(path);
     public string Id => "file:" + file;
+    public string Start => "following " + file;
 
     public IEnumerable<LiveEvent?> Read(string? after, CancellationToken ct)
     {

@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Sattle.Core;
 using Sattle.Runtime;
+using Sattle.Lab;
 
 namespace Sattle.Tests;
 
@@ -15,7 +16,7 @@ public class StoreConformanceTests
     static IGraphHistory Make(string kind)
     {
         if (kind == "memory") return new InMemoryGraphStore();
-        if (kind == "cosmos") return Sattle.Cli.CosmosGraphStore.Open(CosmosEndpoint!, "t" + Guid.NewGuid().ToString("N")[..12], dropOnDispose: true);
+        if (kind == "cosmos") return CosmosGraphStore.Open(CosmosEndpoint!, "t" + Guid.NewGuid().ToString("N")[..12], dropOnDispose: true);
         var path = Path.Combine(Path.GetTempPath(), "sattle-test-" + Guid.NewGuid().ToString("N") + ".db");
         return new SqliteGraphStore(path);
     }
@@ -226,11 +227,11 @@ public class StoreConformanceTests
         readonly string database = "t" + Guid.NewGuid().ToString("N")[..12];
         readonly InMemoryGraphStore memory = new();
         readonly List<IDurableStore> opened = [];
-        public IDurableStore Open() { IDurableStore s = kind switch { "memory" => memory, "cosmos" => Sattle.Cli.CosmosGraphStore.Open(CosmosEndpoint!, database, false), _ => new SqliteGraphStore(path) }; opened.Add(s); return s; }
+        public IDurableStore Open() { IDurableStore s = kind switch { "memory" => memory, "cosmos" => CosmosGraphStore.Open(CosmosEndpoint!, database, false), _ => new SqliteGraphStore(path) }; opened.Add(s); return s; }
         public void Dispose()
         {
             foreach (var s in opened) if (kind != "memory") s.Dispose();
-            if (kind == "cosmos") { using var _ = Sattle.Cli.CosmosGraphStore.Open(CosmosEndpoint!, database, true); }
+            if (kind == "cosmos") { using var _ = CosmosGraphStore.Open(CosmosEndpoint!, database, true); }
             else foreach (var f in Directory.GetFiles(Path.GetTempPath(), Path.GetFileName(path) + "*")) File.Delete(f);
         }
     }
@@ -274,7 +275,7 @@ public class StoreConformanceTests
     public void Cosmos_lease_refuses_the_second_writer_even_with_the_right_head_until_the_first_lets_go_or_expires()
     {
         using var backing = new Backing("cosmos");
-        var a = (Sattle.Cli.CosmosGraphStore)backing.Open(); var b = (Sattle.Cli.CosmosGraphStore)backing.Open();
+        var a = (CosmosGraphStore)backing.Open(); var b = (CosmosGraphStore)backing.Open();
         a.LeaseMillis = 3000; b.LeaseMillis = 3000;
         Assert.Equal(new CommitResult.Committed(1), a.Commit(B(0, P(0, Edit.Create(E("a"))))));
         Assert.Equal(1, b.Head(G).Head);
@@ -291,11 +292,11 @@ public class StoreConformanceTests
     public void Cosmos_chunks_without_a_commit_record_are_not_a_commit()
     {
         using var backing = new Backing("cosmos");
-        var a = (Sattle.Cli.CosmosGraphStore)backing.Open();
+        var a = (CosmosGraphStore)backing.Open();
         a.InlineLimit = 100; a.ChunkChars = 50;                                  // force the chunk path with small data
         a.BeforeCommitRecord = _ => throw new InvalidOperationException("crash after the chunks, before the commit record");
         Assert.Throws<InvalidOperationException>(() => a.Commit(B(0, P(0, Edit.Create(E("a", "T1", new string('q', 400)))))));
-        var b = (Sattle.Cli.CosmosGraphStore)backing.Open();
+        var b = (CosmosGraphStore)backing.Open();
         a.Dispose();                                                            // releases the lease
         Assert.Equal(0, b.Head(G).Head);
         Assert.Empty(b.Follow(G, 0));

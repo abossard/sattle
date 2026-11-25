@@ -2,6 +2,8 @@
 
 Measured, not claimed. Each section names the command that produces its numbers; the first sections were measured in turn 2 on one machine, once per figure unless a range is given, and are reproduced by `sattle bench` and `sattle bench estate`. Targets are the hypotheses of research 02 section 5.1 and open question Q14 of research 03.
 
+Since #183 the engine names no domain, and the commands of the sections below run as follows. `sattle bench` (Q14) is `sattle-lab bench q14`; `sattle bench estate` and `sattle bench gen-estate` are `sattle-lab bench estate` and `sattle-lab bench gen-estate` (`dotnet lab/sattle-lab/bin/Release/net11.0/sattle-lab.dll`). `bench b7 --cosmos ENDPOINT` is `sattle-lab bench b7 --store cosmos=ENDPOINT,db=sattle-b7,drop`. `bench b10` names the sources it replays again: `--repeat hubble,prometheus,azure-metrics,vnet-flow-log` for the captures of these sections. `bench phases --census` gives its figures per master entity; per master node as below (pods, Services and Azure resources) is `--unit-types Pod,Service,AzureResource`.
+
 ## Machine and build
 - Apple M1 Max, 10 cores, 64 GB, macOS, .NET SDK 10.0.403, `dotnet build -c Release`, in-process engine, no other load.
 - Single writer thread: the engine processes inputs sequentially, as the design requires (ADR-017).

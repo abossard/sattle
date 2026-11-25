@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/lab/">
+    <Project Path="../lab/sattle-lab/Sattle.Lab.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Sattle.Cli/Sattle.Cli.csproj" />
     <Project Path="src/Sattle.Core/Sattle.Core.csproj" />

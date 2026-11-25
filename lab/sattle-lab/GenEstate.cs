@@ -1,9 +1,10 @@
 using System.Globalization;
 using System.Text.Json;
+using Sattle.Cli;
 
-namespace Sattle.Cli;
+namespace Sattle.Lab;
 
-static partial class Bench
+static partial class LabBench
 {
     /// <summary>One capture file being written: envelopes in the order they are added, which must be capture-time order (the reader merges files by capture time).</summary>
     sealed class CaptureFile(string path) : IDisposable

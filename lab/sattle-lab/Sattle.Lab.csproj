@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../../engine/Directory.Build.props" />
+  <PropertyGroup><OutputType>Exe</OutputType><AssemblyName>sattle-lab</AssemblyName></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../engine/src/Sattle.Cli/Sattle.Cli.csproj" />
+    <PackageReference Include="Azure.Messaging.EventHubs" Version="5.12.2" />
+    <PackageReference Include="Azure.Identity" Version="1.21.0" />
+    <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.64.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+  </ItemGroup>
+</Project>

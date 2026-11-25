@@ -19,14 +19,12 @@ public static class Program
     const string Usage = """
         sattle check  [--defs DIR] [--update-pins] [--plan]
         sattle replay CAPTURE [--defs DIR] [--overlay FILE] [--space NAME] [--speed N] [--advance-every 60s] [--lateness 60s] [--chunk N]
-                              [--store memory|sqlite=PATH|cosmos=ENDPOINT[,db=NAME][,drop]] [--until RFC3339] [--out DIR]
-        sattle serve  CAPTURE [replay options] [--port 5080] [--write-definitions] [--store sqlite=PATH|cosmos=ENDPOINT[,db=NAME]] [--seal-every ENTRIES] [--no-seal] [--verify-journal] [--retain-patches N] [--retain-events N]
-        sattle serve  --store sqlite=PATH|cosmos=ENDPOINT[,db=NAME] [--port 5080]       (restart from the journal of the store, no capture needed)
-        sattle serve  --live [--follow NDJSON | --eh-namespace NS] [--hub sattle-ingest] [--group $Default] [--from latest|earliest] [--seconds 300] [--live-out DIR]
-        sattle bench  [--rows N] [--pods N] [--services N] [--windows N]
-        sattle bench  gen-estate --nodes N [--minutes 10] [--pairs-per-node 0.24] --out DIR
-        sattle bench  phases [--capture DIR] [--census] [--timing-only] [--graph-workers N]
-        sattle bench  estate | b5 [--store memory|sqlite] | b7 [--cosmos ENDPOINT] | b8 | b10   [--capture DIR|latest] [--runs 10]
+                              [--store memory|sqlite=PATH] [--until RFC3339] [--out DIR]
+        sattle serve  CAPTURE [replay options] [--port 5080] [--write-definitions] [--store sqlite=PATH] [--seal-every ENTRIES] [--no-seal] [--verify-journal] [--retain-patches N] [--retain-events N]
+        sattle serve  --store sqlite=PATH [--port 5080]       (restart from the journal of the store, no capture needed)
+        sattle serve  --live --follow NDJSON [--from latest|earliest] [--seconds 300] [--live-out DIR]
+        sattle bench  phases [--capture DIR] [--census [--unit-types TYPE,TYPE]] [--timing-only] [--graph-workers N]
+        sattle bench  b5 [--store memory|sqlite] | b7 [--store KIND=SPEC] | b8 | b10-graphs | b10 --repeat SOURCE,SOURCE [--store KIND=SPEC]   [--capture DIR|latest] [--runs 10]
         CAPTURE is a capture directory, lab/fixtures, or "latest" (newest under lab/captures).
         --from is where a live run starts when its store has no saved position; with one it continues after it.
         """;
@@ -36,8 +34,11 @@ public static class Program
 
     public static int Main(string[] args) => Run(args, Console.Out);
 
+    /// <summary>`Run` with no extensions.</summary>
+    public static int Run(string[] args, TextWriter output) => Run(args, output, Extensions.None);
+
     /// <summary>The command line with the writer its report goes to (`check`, `replay` and what `serve` says before it listens). `Main` passes the console; a caller in the same process passes its own, so two calls never share an output. Errors go to the error stream of the console, the tables of `bench` to the console.</summary>
-    public static int Run(string[] args, TextWriter output)
+    public static int Run(string[] args, TextWriter output, Extensions ext)
     {
         try
         {
@@ -46,9 +47,9 @@ public static class Program
             return args[0] switch
             {
                 "check" => Check(o, output),
-                "replay" => Replay(o, serve: false, output),
-                "serve" => Replay(o, serve: true, output),
-                "bench" => Bench.Run(o),
+                "replay" => Replay(o, serve: false, output, ext),
+                "serve" => Replay(o, serve: true, output, ext),
+                "bench" => Bench.Run(o, ext),
                 _ => Fail($"unknown command '{args[0]}'\n{Usage}"),
             };
         }
@@ -128,7 +129,7 @@ public static class Program
     public static List<string> NotAsOnDisk(IReadOnlyList<SourceFile> files) =>
         [.. files.Where(f => !File.Exists(f.Path) || File.ReadAllText(f.Path) != f.Text).Select(f => Path.GetFileName(f.Path))];
 
-    /// <summary>The space binding for a capture that the tracked `acme.space` does not fit, applied when no `--overlay` was given. For a capture under `lab/captures` it is the gitignored `lab/captures/acme.space.module.gkql.json`.</summary>
+    /// <summary>The module documents for a capture that the tracked definitions do not fit, applied when no `--overlay` was given: for a capture in a folder named `captures`, the module documents (`*.module.gkql.json`) next to it there, each replacing the module of its name.</summary>
     static string? LocalCaptureOverlay(Options o)
     {
         if (o.Positional.Count == 0) return null;
@@ -137,8 +138,8 @@ public static class Program
         var parent = Path.GetDirectoryName(full);
         if (Path.GetFileName(parent) == "captures")
         {
-            var local = Path.Combine(parent!, "acme.space.module.gkql.json");
-            return File.Exists(local) ? local : null;
+            var local = Directory.EnumerateFiles(parent!, "*.module.gkql.json").Order(StringComparer.Ordinal).ToList();
+            return local.Count > 0 ? string.Join(',', local) : null;
         }
         return null;
     }
@@ -199,16 +200,17 @@ public static class Program
     // ---- replay and serve ----
 
 
-    /// <summary>`--store cosmos=<endpoint>[,db=<database>][,drop]`: Entra authentication for an account, the emulator's well-known key only for a localhost endpoint. `drop` deletes the database when the run ends.</summary>
-    static CosmosGraphStore? cosmos;
-    static CosmosGraphStore OpenCosmos(string spec)
+    /// <summary>The store of `--store`: none for `memory` (or no option), `sqlite=PATH`, or a kind an extension adds (`KIND=SPEC`).</summary>
+    public static IDurableStore? OpenStore(string? spec, Extensions ext)
     {
-        var parts = spec.Split(',');
-        string? Opt(string k) => parts.Skip(1).Select(x => x.Split('=', 2)).Where(x => x[0] == k && x.Length == 2).Select(x => x[1]).FirstOrDefault();
-        return cosmos = CosmosGraphStore.Open(parts[0], Opt("db") ?? "sattle", parts.Skip(1).Contains("drop"));
+        if (spec is null or "memory") return null;
+        var kind = spec.Split('=', 2);
+        if (kind.Length == 2 && kind[0] == "sqlite") return new SqliteGraphStore(kind[1]);
+        if (kind.Length == 2 && ext.Stores.TryGetValue(kind[0], out var open)) return open(kind[1]);
+        throw new ArgumentException($"unknown store '{spec}'");
     }
 
-    static int Replay(Options o, bool serve, TextWriter output)
+    static int Replay(Options o, bool serve, TextWriter output, Extensions ext)
     {
         var live = serve && o.Flags.Contains("live");
         if (live && o.Get("from") is { } from && from is not ("latest" or "earliest")) return Fail($"--from {from}: expected latest or earliest\n{Usage}");
@@ -216,7 +218,7 @@ public static class Program
         if (o.Positional.Count == 0 && !live && !resumeOnly) return Fail("a capture directory is needed\n" + Usage);
         var capture = live || resumeOnly ? "" : FindCapture(o.Positional[0]);
         if (!live && !resumeOnly && !Directory.Exists(capture)) return Fail($"capture directory {capture} does not exist");
-        if (resumeOnly) return Serve(o, "", output);
+        if (resumeOnly) return Serve(o, "", output, ext);
         var files = ReadDefinitions(o);
         if (serve && o.Flags.Contains("write-definitions") && NotAsOnDisk(files) is { Count: > 0 } bound)
             return Fail($"--write-definitions is refused: {string.Join(", ", bound)} would be written with the text of an overlay, not as the file is. Serve without --write-definitions, or without the overlay.");
@@ -224,7 +226,7 @@ public static class Program
         var load = cat.Load(files, updatePins: true);
         if (load.HasErrors) { Print(load.Diagnostics); return 1; }
         var spaceId = o.Get("space") is { } sn ? cat.Spaces.Keys.FirstOrDefault(k => Ids.Name(k) == sn) ?? throw new ArgumentException($"no graph space '{sn}'") : cat.Spaces.Keys.First();
-        if (serve) return Serve(o, capture, output);
+        if (serve) return Serve(o, capture, output, ext);
         var adapters = AdapterRegistry.Create(cat.Spaces[spaceId], cat);
         var bad = AdapterRegistry.Verify(cat, cat.Spaces[spaceId], adapters);
         if (bad.Count > 0) { Print(bad); return 1; }
@@ -232,7 +234,7 @@ public static class Program
         var opts = new EngineOptions
         {
             Tenant = "lab",
-            StoreFactory = _ => store.StartsWith("sqlite=", StringComparison.Ordinal) ? new SqliteGraphStore(store["sqlite=".Length..]) : store.StartsWith("cosmos=", StringComparison.Ordinal) ? OpenCosmos(store["cosmos=".Length..]) : new HeadOnlyGraphStore(),
+            StoreFactory = _ => OpenStore(store, ext) ?? (IGraphStore)new HeadOnlyGraphStore(),
         };
         var engine = new Engine(cat, spaceId, opts);
         engine.TrackAllocations = o.Flags.Contains("trace-alloc");
@@ -275,18 +277,7 @@ public static class Program
             output.WriteLine($"graph {g.Name}: revision {g.Head:N0}, {g.State.EntityCount:N0} entities, {g.State.RelCount:N0} relationships, event samples {samples:N0} ({elementWindows.Count:N0} element-windows, {partial} partial window(s))");
             output.WriteLine("  " + string.Join(", ", byType));
         }
-        var tree = e.Graphs.FirstOrDefault(g => g.Name == "serviceTree");
-        if (tree is not null)
-        {
-            var idToName = tree.State.Entities.ToDictionary(x => x.Id, x => x.Props.Text("d:acme.svc/prop:name") ?? x.Props.Text("d:acme.svc/prop:namespace") ?? x.Id);
-            var flows = new Dictionary<int, decimal>();
-            e.Windows.ScanGraph(tree.Key, (el, p, _, v) => { if (e.Interner.Get(p) == "d:acme.svc/prop:flows") flows[el] = flows.GetValueOrDefault(el) + v; });
-            var top = tree.State.Rels.Where(r => Ids.Name(r.Type) == "DependsOn").Select(r => (Rel: r, Flows: flows.GetValueOrDefault(e.Interner.TryFind(r.Id, out var h) ? h : -1))).OrderByDescending(x => x.Flows).Take(5).ToList();
-            output.WriteLine($"service tree: {tree.State.Entities.Count(x => Ids.Name(x.Type) == "ServiceGroup"):N0} group(s), {tree.State.Entities.Count(x => Ids.Name(x.Type) == "ServiceNode"):N0} service(s), {tree.State.Rels.Count(r => Ids.Name(r.Type) == "DependsOn"):N0} dependencies, {tree.State.Rels.Count(r => Ids.Name(r.Type) == "Contains"):N0} containment edges");
-            foreach (var (rel, f) in top) output.WriteLine($"  top dependency {idToName.GetValueOrDefault(rel.Source, rel.Source)} -> {idToName.GetValueOrDefault(rel.Target, rel.Target)}: {f:N0} flows, status {rel.Props.Text("d:acme.svc/prop:status") ?? "-"}");
-        }
-        if (cosmos is not null) foreach (var (kind, (calls, ru)) in cosmos.Charges.OrderBy(x => x.Key)) output.WriteLine($"cosmos {kind}: {calls:N0} request(s), charge {ru:N1}");
-        var c = e.Counters();          // the numbers `GET /health` serves under `counters`
+        var c = e.Counters();          // the numbers the liveness route serves under `counters`
         output.WriteLine($"identities: {c.Minted:N0} minted, {c.Aliased:N0} aliased, {c.Merged:N0} merged, {c.Conflicts:N0} conflict(s); runtime faults: {c.DivisionByZero} division by zero, {c.Overflow} overflow or canonicalization failure, {c.InvalidParameter} invalid parameter(s) (a fold that does not come to rest, a fixpoint value outside its order); late rows dropped {c.LateRows}; skipped emits {e.Graphs.Sum(g => g.Cx.SkippedEmits):N0}, uniqueness rejections {e.Graphs.Sum(g => g.Out.Counts.Rejections)}");
         output.WriteLine($"merges: {c.Merged:N0} in {e.EpochsWithMerge:N0} epoch(s) of {e.Epochs:N0}, at most {e.MostMergesInOneEpoch:N0} in one; windows written under two ids of one class {e.Graphs.Sum(g => g.Out.Counts.WindowsOfTwoIds):N0}, of them without a value by a merge conflict {e.Graphs.Sum(g => g.Out.Counts.MergeConflicts):N0}");
         output.WriteLine($"conflicts: {e.Graphs.Sum(g => g.Out.Counts.PropertyConflicts):N0} property, {e.Graphs.Sum(g => g.Out.Counts.ElementConflicts):N0} element, {e.Graphs.Sum(g => g.Out.Counts.WindowConflicts) + e.Graphs.Sum(g => e.Windows.MergeConflicts(g.Key)):N0} window, {e.Graphs.Sum(g => g.Out.Counts.Rejections):N0} uniqueness" + string.Concat(e.Graphs.Where(g => g.Out.Counts.PropertyConflicts + g.Out.Counts.WindowConflicts + g.Out.Counts.Rejections > 0).Select(g => $"; {g.Name} {g.Out.Counts.PropertyConflicts}/{g.Out.Counts.WindowConflicts}/{g.Out.Counts.Rejections}")));
@@ -300,17 +291,17 @@ public static class Program
     public static Sattle.Runtime.HostOptions HostOptionsFor(Options o, IDurableStore? durable) =>
         new Sattle.Runtime.HostOptions { SpaceName = o.Get("space"), SealEvery = o.Flags.Contains("no-seal") ? 0 : long.TryParse(o.Get("seal-every"), out var se) ? se : durable is null ? 0 : 5000, UseSeal = !o.Flags.Contains("verify-journal") && !o.Flags.Contains("no-seal"), VerifyJournal = o.Flags.Contains("verify-journal"), RetainPatches = int.TryParse(o.Get("retain-patches"), out var rp) ? rp : 2_000, RetainEvents = int.TryParse(o.Get("retain-events"), out var re) ? re : 20_000, Projections = Program.Projections };
 
-    static int Serve(Options o, string capture, TextWriter output)
+    static int Serve(Options o, string capture, TextWriter output, Extensions ext)
     {
         IReadOnlyList<SourceFile>? files = null;
         try { files = ReadDefinitions(o); } catch (ArgumentException) when (o.Get("store") is { } && o.Get("store") != "memory") { /* a store with a journal needs no definitions directory */ }
         var spec = o.Get("store");
-        IDurableStore? durable = spec is null || spec == "memory" ? null : spec.StartsWith("sqlite=", StringComparison.Ordinal) ? new SqliteGraphStore(spec["sqlite=".Length..]) : spec.StartsWith("cosmos=", StringComparison.Ordinal) ? OpenCosmos(spec["cosmos=".Length..]) : throw new ArgumentException($"unknown store '{spec}'");
+        var durable = OpenStore(spec, ext);
         var hopts = HostOptionsFor(o, durable);
         var host = durable is null ? new SpaceHost(files!, hopts) : SpaceHost.OpenDurable(durable, files, hopts);
         host.DefinitionsDir = files is null ? null : FindDefinitions(o); host.WriteDefinitions = o.Flags.Contains("write-definitions");
         if (host.Restart is not null) output.WriteLine($"restored from {spec}: {host.RestoreSummary()}. Sequence {host.Seq}, catalog revision {host.CatalogRevision}, state digest {host.StateDigest()}");
-        return Server.Run(host, o, capture, files ?? []);
+        return Server.Run(host, o, ext, capture, files ?? []);
     }
 }
 

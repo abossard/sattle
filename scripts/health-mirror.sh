@@ -72,7 +72,7 @@ case "${1:-help}" in
     if [[ "$1" = prepare-project ]]; then work="$work/project"; flags+=(--deployment-only); fi
     mkdir -p "$work"
     python3 -B "$mirror/build-space.py" --fixture "$fixture" --out "$work" ${flags[@]+"${flags[@]}"}
-    dotnet build "$root/engine/src/Sattle.Cli/Sattle.Cli.csproj" -c Release --nologo --disable-build-servers -m:1 -nr:false -p:NuGetAudit=false
+    dotnet build "$root/lab/sattle-lab/Sattle.Lab.csproj" -c Release --nologo --disable-build-servers -m:1 -nr:false -p:NuGetAudit=false
     dotnet "$dll" replay "$work/capture" --defs "$work/definitions" --space healthMirror --lateness 0s --out "$work/replay"
     ;;
   verify)
@@ -100,7 +100,8 @@ case "${1:-help}" in
       : "${2:?Pass the dedicated Event Hubs namespace}" "${3:?Pass a dedicated single-partition hub}"
       mkdir -p "$work/live-runs"
       stream="$(mktemp -d "$work/live-runs/run.XXXXXX")"
-      exec dotnet "$dll" serve --live "${args[@]}" --eh-namespace "$2" --hub "$3" --from "${MIRROR_FROM:-latest}" --live-out "$stream"
+      lab_dll="$root/lab/sattle-lab/bin/Release/net11.0/sattle-lab.dll"   # the engine with the lab's Event Hubs input
+      exec dotnet "$lab_dll" serve --live "${args[@]}" --eh-namespace "$2" --hub "$3" --from "${MIRROR_FROM:-latest}" --live-out "$stream"
     fi
     exec dotnet "$dll" serve "$work/capture" "${args[@]}"
     ;;

@@ -65,7 +65,7 @@ public static class Server
     static bool Allowed(string origin, IReadOnlySet<string> named) =>
         named.Contains(origin) || Uri.TryCreate(origin, UriKind.Absolute, out var u) && u.IsLoopback;
 
-    public static int Run(SpaceHost host, Program.Options o, string capture, IReadOnlyList<Sattle.Language.SourceFile> files)
+    public static int Run(SpaceHost host, Program.Options o, Extensions ext, string capture, IReadOnlyList<Sattle.Language.SourceFile> files)
     {
         _ = files;
         var port = int.TryParse(o.Get("port"), out var p) ? p : 5080;
@@ -78,7 +78,7 @@ public static class Server
         {
             try
             {
-                if (live) Live.Run(host, o, app.Lifetime);
+                if (live) Live.Run(host, o, ext, app.Lifetime);
                 else if (host.Restart is not null) { if (!host.Done) { host.Finish(); Console.WriteLine("the journal ends before the end of its input: the capture is not resumed, the space is closed"); } }
                 else
                 {

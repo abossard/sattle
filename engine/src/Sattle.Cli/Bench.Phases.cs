@@ -210,9 +210,10 @@ static partial class Bench
         Console.WriteLine($"state digest {digest ?? engine.StateDigest()}");
         if (o.Flags.Contains("census"))
         {
-            // the unit of the budgets: master nodes are the pods, Services and Azure resources of the master
-            var structure = engine.Master.State.Entities.LongCount(x => Ids.Name(x.Type) is "Pod" or "Service" or "AzureResource");
-            Census.Run($"after the replay, per master node = per pod, Service or Azure resource ({structure:N0})", Census.EngineRoots(engine), structure, engine.Master.State.RelCount, Console.Out);
+            // the unit of the per-node figures: the master entities, or with `--unit-types A,B` those of these types
+            var types = o.Get("unit-types")?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet(StringComparer.Ordinal);
+            var units = types is null ? engine.Master.State.EntityCount : engine.Master.State.Entities.LongCount(x => types.Contains(Ids.Name(x.Type)));
+            Census.Run($"after the replay, per master node = per {(types is null ? "master entity" : string.Join(", ", types.Order(StringComparer.Ordinal)))} ({units:N0})", Census.EngineRoots(engine), units, engine.Master.State.RelCount, Console.Out);
         }
         engine.Dispose();
         return 0;

@@ -6,23 +6,23 @@ The contract between `sattle serve` and the canvas. Everything is JSON over HTTP
 - Base URL `http://127.0.0.1:5080` (`--port`). All bodies UTF-8 JSON. Errors are `{ "error": { "code", "message", ... } }` with an HTTP status.
 - **Revisions** are positions in a per-graph log. On the wire they are decimal strings (`"17"`), never JSON numbers. `"0"` is the empty genesis state.
 - **Instants** are RFC 3339 UTC strings with 0 to 9 fractional digits (`"2026-11-10T10:41:00Z"`). **Durations and counts that can exceed 2^53** are decimal strings. Window values are JSON numbers (doubles) for display; exact decimals are in `valueText`.
-- **Graph ids**: `catalog` (the definitions), plus the graphs of the active space (`master`, `serviceTree`, `capabilities`, ...). One tenant per server.
-- **Element ids** of data graphs are opaque. Element ids of `catalog` are definition ids (`d:acme.svc/projection:serviceDeps/op:deps#0`).
-- **Shapes** of snapshots, patches, ontologies, descriptors and graph values are the shapes in `brainstorm/contracts/schemas` (`EntityState`, `RelationshipState`, `GraphPatch`, `GraphDescriptor`, `OntologyDefinition`) with revisions as strings in `{ "value": "17" }`. They are what the canvas `StaticSource` reads today. The kernel ontology exports its `Any` value kind (`Literal.value`) as `text`. Type and property ids in them are names (`Pod`, `flows`), qualified `module.name` when two modules use the same name.
+- **Graph ids**: `catalog` (the definitions), plus the graphs of the active space (`master`, `tree`, `categories`, ...). One tenant per server.
+- **Element ids** of data graphs are opaque. Element ids of `catalog` are definition ids (`d:m.items/projection:links/op:links#0`).
+- **Shapes** of snapshots, patches, ontologies, descriptors and graph values are the shapes in `brainstorm/contracts/schemas` (`EntityState`, `RelationshipState`, `GraphPatch`, `GraphDescriptor`, `OntologyDefinition`) with revisions as strings in `{ "value": "17" }`. They are what the canvas `StaticSource` reads today. The kernel ontology exports its `Any` value kind (`Literal.value`) as `text`. Type and property ids in them are names (`Item`, `count`), qualified `module.name` when two modules use the same name.
 - The server answers CORS preflights and sends `Access-Control-Allow-Origin: *` (it binds to 127.0.0.1 only).
 - Reads are consistent per request: the engine holds one lock per request. Writes are serialized.
 
 ## Space and graphs
 `GET /space`
 ```json
-{ "space": "operations", "protocol": "3",
+{ "space": "example", "protocol": "3",
   "catalogRevision": "10", "kernelDigest": "sha256:...",
   "graphs": [
     { "id": "catalog", "role": "catalog", "head": "10", "ontology": "sattle.kernel", "inputs": [], "direction": "readonly", "editable": false },
-    { "id": "master", "role": "master", "head": "146", "ontology": "acme.ops", "inputs": [], "direction": "mixed", "editable": true,
+    { "id": "master", "role": "master", "head": "146", "ontology": "m.ops", "inputs": [], "direction": "mixed", "editable": true,
       "descriptor": { }, "projection": "ingest" },
-    { "id": "serviceTree", "role": "projection", "head": "44", "ontology": "acme.svc", "inputs": ["master"], "direction": "forward", "editable": false, "projection": "serviceDeps",
-      "inputPorts": {"master": "master"}, "projectionFile": "acme.svc.serviceDeps.gkql.json" }
+    { "id": "tree", "role": "projection", "head": "44", "ontology": "m.items", "inputs": ["master"], "direction": "forward", "editable": false, "projection": "links",
+      "inputPorts": {"master": "master"}, "projectionFile": "m.items.links.gkql.json" }
   ],
   "input": { "mode": "replay|live", "logicalTime": "2026-11-10T10:41:00Z", "rows": "243457", "dropped": [] } }
 ```
@@ -43,9 +43,9 @@ The contract between `sattle serve` and the canvas. Everything is JSON over HTTP
 - `GET /graphs/{g}/ontology`, `GET /graphs/{g}/patches?after=r[&limit=n]` (NDJSON, one `GraphPatch` per line, `to` = `after+1 ...`).
 - `GET /graphs/{g}/meters` returns the event property declarations the definitions imply, for the canvas channel mapping:
 ```json
-{ "meters": [ { "id": "flows", "target": "edge", "label": "flows", "unit": "", "temporality": "delta",
+{ "meters": [ { "id": "count", "target": "edge", "label": "count", "unit": "", "temporality": "delta",
                 "combine": "sum", "periodSeconds": 60, "min": 0, "max": 812.0, "scale": "sqrt" } ],
-  "defaults": { "edge": { "width": "flows", "flow": "flows", "state": "dropRatio" }, "node": { "ring": "flowsOut", "size": "flowsOut", "state": "flowsOut" } } }
+  "defaults": { "edge": { "width": "count", "flow": "count", "state": "ratio" }, "node": { "ring": "countOut", "size": "countOut", "state": "countOut" } } }
 ```
 `min`/`max` are observed over the retained windows. A meter has no `warn` and the answer has no `thresholds` (3.67): a policy is data of a fold's policy rows.
 
@@ -55,27 +55,27 @@ Windows are keyed by **graph, element id, property id, window start instant**. T
   - `format=series` (default):
 ```json
 { "graph": "master", "from": "...", "to": "...",
-  "series": [ { "element": "r:ab12", "target": "edge", "property": "flows", "periodSeconds": 60,
+  "series": [ { "element": "r:ab12", "target": "edge", "property": "count", "periodSeconds": 60,
                 "completeness": "Complete",
                 "points": [ { "windowStart": "2026-11-10T10:41:00Z", "value": 7, "valueText": "7" } ] } ] }
 ```
-  `completeness` is `Complete` or `Partial(<reason>)` (`sourceLoss` after a Hubble `LostEvent`). Per window partial marks are in `partialWindows: [{windowStart, reason, count}]`.
+  `completeness` is `Complete` or `Partial(<reason>)` (`sourceLoss` after a loss mark of the input, `{"lost": n}`). Per window partial marks are in `partialWindows: [{windowStart, reason, count}]`.
   - `format=batches` returns NDJSON of the canvas `WindowBatch` shape, sparse (`ids` present), one line per (window, property): `{ "graph", "tick", "t", "windowStart", "target", "property", "ids", "values" }`. `tick` is the ordinal of the window among retained windows. **Ticks are not revisions.**
 - Live push: see WebSocket `windows` messages. A message carries one window of one property and the changed elements only. A revised (late) window is pushed again with the new values. A window that was retracted (its last supporting row went: a late retraction inside the lateness of its input, a rule change, an identity move) is pushed with the element under `removed: [ids]` of the batch, next to `ids` and `values` (which may then be empty); a client drops the value of that element, property and window.
 
 ## Lineage
 `GET /graphs/{g}/lineage?element=<id>` for a derived or master element:
 ```json
-{ "graph": "serviceTree", "element": "r:cd34", "kind": "relationship",
-  "projection": "serviceDeps", "sink": "emit.5", "rule": null, "direction": "forward",
-  "operators": ["deps#0", "deps", "emit.5"],
+{ "graph": "tree", "element": "r:cd34", "kind": "relationship",
+  "projection": "links", "sink": "emit.5", "rule": null, "direction": "forward",
+  "operators": ["links#0", "links", "emit.5"],
   "sources": [ { "graph": "master", "element": "r:ef56", "kind": "relationship", "role": "c" },
                { "graph": "master", "element": "e:12ab", "kind": "entity", "role": "a" } ],
   "sourceCount": "2", "complete": true,
   "groupKey": null }
 ```
 - `sources` are the input-graph elements bound by the row that last contributed the element (pattern variables of the `Match`), up to 16; `sourceCount` is the total. `role` is the pattern variable.
-- For elements emitted from an aggregation (`Group`), `sources` holds the elements named by the group key if they are element variables, otherwise it is empty, `complete` is false and `groupKey` holds the key values. For the master graph, `sources` is empty and `inputs` names the source row types: `{ "sources": [], "inputs": ["PodRow"] }`.
+- For elements emitted from an aggregation (`Group`), `sources` holds the elements named by the group key if they are element variables, otherwise it is empty, `complete` is false and `groupKey` holds the key values. For the master graph, `sources` is empty and `inputs` names the source row types: `{ "sources": [], "inputs": ["ItemRow"] }`.
 - `404 { "error": { "code": "UnknownElement" } }` when the element is not in the graph at the head.
 
 ## Checking and editing definitions
@@ -83,15 +83,15 @@ Definitions are text (`.sattle`), one module per call.
 
 `POST /check`
 ```json
-{ "module": "acme.svc", "text": "{ \"module\": \"acme.svc\", \"version\": \"1.0.0\", ... }" }
+{ "module": "m.items", "text": "{ \"module\": \"m.items\", \"version\": \"1.0.0\", ... }" }
 ```
 No state changes. Response `200`:
 ```json
 { "ok": false, "baseRevision": "10",
   "diagnostics": [ { "code": "UnknownField", "severity": "error", "message": "...", "line": 31, "column": 14,
-                     "element": "d:acme.svc/projection:serviceDeps/op:depWindows/assign:dropRatio" } ],
+                     "element": "d:m.items/projection:links/op:linkWindows/assign:ratio" } ],
   "patch": { "...GraphPatch on graph catalog from baseRevision to baseRevision+1, null when not ok..." },
-  "affected": { "modules": ["acme.svc", "acme.space"], "graphs": ["serviceTree"] } }
+  "affected": { "modules": ["m.items", "m.space"], "graphs": ["tree"] } }
 ```
 - `line` and `column` are 1-based positions in `text` (0 when the diagnostic is about an element without text position). `element` is a catalog element id when known, else `null`. Codes are those of `sattle check` (`Syntax`, `UnknownReference`, `UnknownField`, `Set`, `K1`..`K11`, `DirectionOverclaim`, `P2`, `S2`, `ImportPinMismatch`, ...).
 - The patch is the difference between the current catalog and the catalog with `text` replacing the module (dependent modules re-sealed: their release digests and import pins change, so they appear in the patch). It is a normal `GraphPatch`; the canvas diffs it with its definition-graph machinery.
@@ -101,7 +101,7 @@ No state changes. Response `200`:
 { "text": "...", "expectedRevision": "10" }
 ```
 Commits the catalog patch and re-activates the space as a configuration edit (ADR-064 to 071): the previous output graphs are kept as the base, the retained inputs are replayed once in order through the new plan, and **only the final difference per graph is emitted** as one patch per changed graph. Response:
-- `200 { "catalogRevision": "11", "activation": { "graphs": [ { "id": "serviceTree", "from": "44", "to": "45", "edits": "12" } ], "replayedRows": "243457", "milliseconds": "3100" } }`. The same facts are pushed on the WebSocket (`catalog` patch, graph patches, `activation`).
+- `200 { "catalogRevision": "11", "activation": { "graphs": [ { "id": "tree", "from": "44", "to": "45", "edits": "12" } ], "replayedRows": "243457", "milliseconds": "3100" } }`. The same facts are pushed on the WebSocket (`catalog` patch, graph patches, `activation`).
 - `409 { "error": { "code": "StaleRevision", "actual": "11" } }` when `expectedRevision` is not the catalog head. Nothing changes.
 - `422 { "error": { "code": "Invalid", "diagnostics": [ ... as /check ... ] } }`. Nothing changes.
 - `422 { "error": { "code": "ActivationRejected", "message": "..." } }` when the new definitions do not activate (for example a source with no adapter). Nothing changes.
@@ -113,18 +113,18 @@ Canvas `evaluate(definition)` = `POST /check` for the diagnostics and diff, then
 ## Edits to data graphs (bidirectional)
 `POST /graphs/{g}/edits`
 ```json
-{ "baseRevisions": { "capabilities": "4", "master": "9" },
+{ "baseRevisions": { "categories": "4", "master": "9" },
   "edits": [
     { "kind": "entity", "id": "e:aa", "before": { "...EntityState..." }, "after": { "...EntityState..." } },
-    { "kind": "entity", "id": null, "before": null, "after": { "id": { "value": "e:bb" }, "type": { "value": "BizCapability" }, "properties": [] },
-      "key": { "domain": "capability", "components": { "id": "payments" } } },
+    { "kind": "entity", "id": null, "before": null, "after": { "id": { "value": "e:bb" }, "type": { "value": "Category" }, "properties": [] },
+      "key": { "domain": "category", "components": { "id": "c1" } } },
     { "kind": "relationship", "id": "r:cc", "before": null, "after": { "...RelationshipState..." } } ] }
 ```
 - Edits target the internal graph only. A chain ends at the master graph's authored partition (the rows of an authored source); no edit reaches a system that a collector observes. Elements and properties owned by `readonly` rules and all event properties reject.
 - `baseRevisions` names the base revision of every graph on the edit path (the edited graph, each intermediate graph, the master). Any stale base rejects.
 - A created entity names its key (`key`); the server derives its id the way ingestion does and rejects a different id.
 - The server computes the backward proposal, applies it to a staged copy, evaluates forward, and accepts only if the staged view equals the edited view (PutGet). Accepted edits become recorded input rows; normal forward ingestion commits them and the patches arrive on the feed like any other.
-- `200 { "accepted": true, "revisions": { "master": "10", "capabilities": "5" } }`.
+- `200 { "accepted": true, "revisions": { "master": "10", "categories": "5" } }`.
 - Rejection: `422 { "error": { "code": <code>, "message", "graph", "element", "rule" } }` with `code` one of
   - `NotEditable`: the graph is produced by a `forward` projection;
   - `ReadOnlyByRule`: the element or property is owned by a `readonly` rule (`rule` names it);
@@ -135,14 +135,14 @@ Canvas `evaluate(definition)` = `POST /check` for the diagnostics and diff, then
   - `AmbiguousKey`: an update or delete of an element whose identity has more than one key in the domain of the emit that makes it (after an alias or a merge two rows give the element, and the put cannot say which to change); `element` and `rule` name it, the message lists the keys;
   - `ConstraintViolation` (key, cardinality, acyclic, enum), `KeyMismatch`, `BadEdit`.
   Nothing is accepted or committed on rejection.
-- `GET /graphs/{g}/editability` returns `{ "graph", "rules": [ { "name", "class", "accept": ["create","delete","update(name)"], "reason": null, "owns": ["BizCapability", "BizCapability.name"] } ] }` so the canvas can disable controls before the user tries.
+- `GET /graphs/{g}/editability` returns `{ "graph", "rules": [ { "name", "class", "accept": ["create","delete","update(name)"], "reason": null, "owns": ["Category", "Category.name"] } ] }` so the canvas can disable controls before the user tries.
 
 ## WebSocket `/ws`
 One connection, many subscriptions. Client messages:
 ```json
 { "op": "subscribe", "graph": "master", "after": "120" }
-{ "op": "subscribe", "graph": "serviceTree" }
-{ "op": "subscribe", "graph": "serviceTree", "windows": false }
+{ "op": "subscribe", "graph": "tree" }
+{ "op": "subscribe", "graph": "tree", "windows": false }
 { "op": "unsubscribe", "graph": "master" }
 { "op": "ping" }
 ```
@@ -162,14 +162,14 @@ One connection, many subscriptions. Client messages:
 
 ## Input modes
 - `replay CAPTURE`: the recorded capture is fed at `--speed`. `GET /space` shows `input.mode = "replay"`.
-- `serve --live`: Event Hubs input (`--live`, see README). `input.mode = "live"`, `input.hubs`, `input.checkpoint`. Logical time advances from the recorded `capturedAt` of the events, exactly as replay does, so replaying the recorded stream gives the same state digest. `GET /health` returns `{ "mode", "done", "digest", "graphs": [ { "name", "head" } ], "lag": { "events", "seconds" } }`.
+- `serve --live`: a live source (`--live --follow FILE`, or a source a host adds; see README). `input.mode = "live"`, and `input` has `source` (the source's id, such as `file:/path`), `position` (the saved read position, or null), `record` (the file the events read are recorded to), `events` (events recorded so far), `retrying` (the error of the last failed read while the source is read again, else null) and `lag` (`{ "events", "seconds" }`, or null). Logical time advances from the recorded `capturedAt` of the events, exactly as replay does, so replaying the recorded stream gives the same state digest. `GET /health` returns `{ "mode", "done", "digest", "graphs": [ { "name", "head" } ], "lag": { "events", "seconds" } }`.
 
 ## Not in the protocol yet
-Cosmos-backed history beyond process memory (history older than the retained patches answers `Gap`), authentication (the server binds to 127.0.0.1), multi-tenant.
+A history store beyond process memory (history older than the retained patches answers `Gap`), authentication (the server binds to 127.0.0.1), multi-tenant.
 
 ---
 
-# Version 3: editor, drafts, refactoring, push and caching
+# Version 3: editor, drafts, push and caching
 
 Design stance: a **redux style** client. The server owns the committed state and emits one ordered stream of events with a sequence number. A client reducer folds events into local state (`state[graph] = apply(patch)`), keeps its own 99-step undo stack of inverse patches, and caches by content: a resource addressed by a content digest (`/releases/{digest}`) is immutable, the others are revalidated with their content tag (Version 3.9). The server has no per-client undo state beyond the draft overlay.
 
@@ -205,7 +205,6 @@ Design stance: a **redux style** client. The server owns the committed state and
   "idScheme": "d:<module>/<slot>:<name>/..., relationship id <source>|<edge>|<target>, unnamed ordered child slot:#n" }
 ```
 `supported: false` entries are kernel kinds the engine cannot evaluate yet; the editor shows them disabled with the reason in `unsupportedReason`.
-`POST /palette/skeleton { "kind": "Window", "container": "d:acme.ops/projection:ingest", "name": "w1", "params": { "width": "60000000000" } }` (removed in 3.46) returned a `GraphPatch` on the catalog that creates the node with its kernel-fixed ports (K9) and defaults, ready to apply to a draft.
 
 ## v3: drafts
 A draft is an overlay on the catalog at a base revision. State lives on the server; the browser may keep a copy.
@@ -213,24 +212,24 @@ A draft is an overlay on the catalog at a base revision. State lives on the serv
 - `GET /drafts/{id}/snapshot` and `GET /drafts/{id}/patches?after=r` serve the draft's catalog graph like `catalog` (same shapes; the draft's own revision counter, starting at `"0"` = the base).
 - `POST /drafts/{id}/patches { "patch": <GraphPatch on catalog>, "expectedRevision": "3" }` refuses every edit (since 3.57): a definition is a gkql document and changes by its text. A patch that touches a projection is `ProjectionText` with `file`, any other edit `ModuleText` (422). An empty patch is a draft revision.
 - `POST /drafts/{id}/check` re-checks without changing anything and returns the same `{ ok, diagnostics, modules }`. Diagnostics are by **definition element id** (`element`), with `module`, `code`, `severity`, `message`, and `line`/`column` in the document of that module (`modules[m].text`).
-- `POST /drafts/{id}/commit { "expectedCatalogRevision": "12" }` takes every document the draft changed, checks them together, and activates exactly like `POST /definitions/{module}` (replay of retained inputs, one final-diff patch per graph). Response as there, plus `"modules": ["acme.svc"]`. Errors as there (`StaleRevision`, `Invalid` with diagnostics, `ActivationRejected`).
+- `POST /drafts/{id}/commit { "expectedCatalogRevision": "12" }` takes every document the draft changed, checks them together, and activates exactly like `POST /definitions/{module}` (replay of retained inputs, one final-diff patch per graph). Response as there, plus `"modules": ["m.items"]`. Errors as there (`StaleRevision`, `Invalid` with diagnostics, `ActivationRejected`).
 - The draft's graph holds the facts its documents lower to. `POST /check` and `POST /definitions/{module}` take a document and are equivalent to a patch from the current graph to the facts it lowers to.
 - Drafts survive until discarded or the server restarts. A draft whose base is not the head is still committable if its guards hold against the head (a rebased commit): the server computes the patch from the head to the draft's final graph for the modules the draft touched and answers `409 StaleRevision` when a touched module changed in between.
 
 ## v3: releases and versions
 Every committed catalog revision that changes a module creates a release identified by the module's digest.
-- `GET /releases[?module=acme.svc]` returns `[ { "module", "version", "digest", "catalogRevision", "supersedes": "<digest|null>" } ]`, oldest first.
+- `GET /releases[?module=m.items]` returns `[ { "module", "version", "digest", "catalogRevision", "supersedes": "<digest|null>" } ]`, oldest first.
 - `GET /releases/{digest}` returns the module's definition facts at that release as `{ descriptor, extent }` (content-addressed, immutable). `GET /releases/{digest}/text` returns the canonical text.
 - `GET /releases/diff?from={digestA}&to={digestB}` returns the graph diff as a `GraphPatch` on the catalog (before states from A, after states from B; ids are definition ids so renames show as property changes).
 - `POST /drafts/{id}/restore { "digest": "sha256:..." }` applies the patch from the draft's current facts of that module to the release's facts, so the draft equals the release for that module (an ordinary draft patch, undoable by its inverse).
 
 ## v3: preview
-`POST /drafts/{id}/preview { "scope": { "maxRows": "500000" }, "graphs": ["serviceTree"], "include": ["counts","diff","snapshots","windows"], "limit": "5000" }`
+`POST /drafts/{id}/preview { "scope": { "maxRows": "500000" }, "graphs": ["tree"], "include": ["counts","diff","snapshots","windows"], "limit": "5000" }`
 Evaluates the draft without committing or activating. A fresh engine with its own in-memory stores replays the retained inputs (the first `maxRows` input rows in order, default 500,000, hard cap 5,000,000; **the scope is stated in the response**); the live engine, its stores and its history are untouched.
 ```json
 { "scope": { "rows": "243457", "totalRows": "243457", "complete": true, "logicalTime": "2026-11-10T10:41:00Z" },
   "diagnostics": [ ],
-  "graphs": [ { "id": "serviceTree", "counts": { "entities": "19", "relationships": "29", "windows": "182" }, "digest": "sha256:...",
+  "graphs": [ { "id": "tree", "counts": { "entities": "19", "relationships": "29", "windows": "182" }, "digest": "sha256:...",
                 "diff": { "...GraphPatch from the current output to the preview output..." },
                 "snapshot": { "...": "present only with include snapshots; truncated flag when over limit" },
                 "windows": [ "...WindowBatch (as in the feed)..." ],
@@ -242,14 +241,6 @@ Evaluates the draft without committing or activating. A fresh engine with its ow
 ```
 `identity` is the identity effect of the preview: identities are resolved once per space, so the counters are the previewed space's (`preview`), next to the live space's (`live`). `minted` are new identities, `aliased` keys bound to an existing identity by a `Link`, `merged` two identities joined by a `Link` or by late evidence, `conflicts` links refused (different entity types). `difference` is preview minus live and is present only when `comparable` (the preview saw every retained input, as for `diff`); a draft that adds a `Link` shows up as more `aliased` or `merged`. Integers are strings.
 `diff` is present only when `scope.complete` is true (the preview saw all retained inputs, so it is comparable with the live outputs); otherwise `null`. New graphs diff against empty; removed graphs are listed with `removed: true`. Invalid drafts answer `422 Invalid` with diagnostics and nothing evaluated. A space whose inputs are not to be had answers `422 InputsNotRetained` (see the reactivation budget under `POST /definitions/{module}`).
-
-## v3: refactoring (removed in 3.46)
-Pure functions on the definition text of a draft, returned as draft patches (nothing is applied until the client applies the returned patch to the draft). All three are limited to projections of one module.
-- `POST /drafts/{id}/refactor { "kind": "extract", "module": "acme.biz", "projection": "capabilityView", "select": ["tree"], "name": "capabilityTree" }`: moves the selected statements (let chains by name, sinks by name, whole rules by name) into a new projection `capabilityTree` with its own output graph `<graph>_capabilityTree` in the graph space, copies the ports it uses, and binds the new graph with the parent's arguments. The parent keeps everything else. Selection names in the canonical text: top-level lets by name, top-level sinks as `emit.N` (N counts the `emit` statements in canonical order), whole rules by name. Lets used only by the selection move with it. An update sink moves only together with the create sink of its type, and an ingestion projection cannot be split (a second graph must derive from the master).
-- `{ "kind": "inline", "module", "projection": "capabilityTree", "into": "capabilityView" }`: the reverse; the graph is removed from the space.
-- `{ "kind": "moveRule", "module", "from": "p1", "to": "p2", "rule": "observedPods" }`: moves a rule (and the lets only it uses) between two existing projections.
-- Response `{ "patch": <GraphPatch>, "modules": { "<m>": { "text": "..." } }, "preserves": { "outputs": "union" } }` or `422 { "error": { "code": "<reason>", "element": "<op or rule>", "message" } }` with codes `SharedOperator` (a kept statement consumes a moved one), `DependsOnUnmoved`, `UpdateWithoutCreate`, `SplitRule`, `IngestionProjection`, `CrossModule`, `UnknownSelection`, `NotAProjection`.
-- **Preservation** (tested on the fixtures): the union of the output graphs (elements with ids and states, and windows) after the refactoring equals the output graph before it. Relationship ids are derived from the output ontology and key rule, not from the projection id, so moving a rule between projections of one output ontology keeps ids.
 
 ## v3: errors and misc
 - `POST /check`, `POST /definitions/{module}` unchanged (text based). `GET /health` also returns `"seq"`.
@@ -667,6 +658,12 @@ The text editor of a projection reads and checks its `.kql` text through these c
 - **Digest per graph.** Each entry of `GET /health` `graphs` has `digest`: the graph's digest at its head (Def. 3.5, the `digest` of a preview's graphs), from the pass that makes the state digest. The catalog's too.
 - **Telemetry port (no wire change).** `ITelemetryStore.ScanGraph` hands every window of a graph in a range to a visitor, also the windows of an element that left; without a visitor it counts them and allocates nothing. `SeriesCount`, `PartialWindows` and `MergeConflicts` are on the port. `InMemoryTelemetryStore.Dump` and `WindowCount` are gone.
 
+## Version 3.71: the live status names its source; neutral examples (#183)
+- **Live status.** `GET /space` `input` of `serve --live` names its source by `source`, the source's id (`file:/path`, or `eventhub:NAME` from the lab's adapter), in place of `hubs`, `namespace` and `file`. Beside it are `position`, `record`, `events`, `retrying` and `lag`.
+- **Hosts.** The Azure store and the Event Hubs live input left the engine for the lab's `sattle-lab` host: `--store cosmos=...` and `serve --live --eh-namespace` are options of that host. The engine's own live input follows a file (`--follow FILE`).
+- **This file.** The normative sections use neutral example names, and routes the server does not have (`POST /palette/skeleton`, `POST /drafts/{id}/refactor`) are no longer documented there. The version entries keep their history.
+- **Wire.** No other HTTP or WebSocket field changes.
+
 ## Version 3.70: the scalars `round` and `toint` (#177)
 - **Kernel.** The functions `Round` `(n, Integer) -> Decimal?` and `ParseInteger` `Text -> Integer?`. The kernel digest is `sha256:6cd2cffe57a1fe8bd0308b179b469e7b1e9c7eb73cecd730eef77846dcddad2d` (`GET /palette`, `kernelDigest`), so a state seal of an earlier build is refused and the journal is replayed.
 - **gkql.** `{"fn": "round", "args": [x, digits]}` and `{"fn": "toint", "args": [t]}`, as the scalars row of the conformance note defines them. Both give no value for an argument without one, so they take optional arguments.
@@ -753,7 +750,7 @@ The text editor of a projection reads and checks its `.kql` text through these c
 - **Row contract `sattle.source.prometheus.MetricRow`.** New column `series` (the label set of the series), `instance` is optional. The digests of the modules that import it changed.
 - **Digests of graphs and of the state (#115).** A graph's digest (`digest` of `GET /space` graphs, of a draft's graphs, of a store's seal) is the set digest of its written pairs (key text and canonical JSON of the state, Def. 3.5 of the paper): `sha256:` of a zero byte and the sum of their SHA-256 values mod 2^256. The state digest (`GET /health`, `replay`, a state seal) sums the graphs' digests the same way, each graph with its pairs and telemetry windows under its name. Equal graphs still give equal digests and the form is unchanged; every value differs from before. The kernel digest is `sha256:540bd981699c732893659296dedd811d5491fc67932f9c625fbf5596106cbd50` (`GET /palette`, `kernelDigest`), so a state seal of an earlier build is refused and the journal is replayed.
 
-## Health policy evidence windows (#151)
+## Policy evidence windows (#151)
 
 A transition row of a `fold` carries its window (`windowStart`, `windowEnd`), the observation and the policy it was made with (3.67). The kiln projection writes the window of the newest transition (`arg_max(windowStart, windowStart)`) to the instrument's `changedIn`: a crossing cites the window that completed the entry or recovery streak, a move after silent windows the window that reached the gap. [Kiln rating policy](examples/kiln/workshop.rating.gkql.json)
 
