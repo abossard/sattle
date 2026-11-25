@@ -327,10 +327,19 @@ sealed class VId : VExpr
         for (var k = 0; k < comps.Length; k++) cols[k] = comps[k].Eval(b);
         return cols;
     }
-    /// <summary>The code of the canonical text of component `k` at a present row, -1 when it has none. A number, an instant or a boolean is its normal-form text (`Norm.Text`), interned old as every key text is.</summary>
+    /// <summary>The code of the canonical text of component `k` at a present row, -1 when it has none. A number, an instant or a boolean is its normal-form text (`Norm.Text`),
+    /// interned old as every key text is; its code is cached by the number, so a value seen again makes no text.</summary>
     int Canonical(Column c, int k, int row)
     {
-        if (scalars[k] is { } ty) return it.Intern(Norm.Text(Codec.ToValue(c, row, ty, it))!);
+        if (scalars[k] is { } ty)
+        {
+            if (c.IsDec) return it.Intern(Norm.Decimal(c.D[row]));
+            var raw = c.L[row];
+            if (caches[k].TryGet(raw, out var hit)) return hit;
+            var made = it.Intern(Norm.Text(Codec.ToValue(raw, ty, it))!);
+            caches[k].Set(raw, made);
+            return made;
+        }
         var code = (int)c.L[row];
         if (keepsText[k] && !it.IsYoung(code)) return code;          // an old code is the one code of its text, so the text's exact canonical form is the code itself
         if (caches[k].TryGet(code, out var cc)) return cc;

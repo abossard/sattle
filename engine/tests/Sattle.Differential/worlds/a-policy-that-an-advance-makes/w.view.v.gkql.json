@@ -1,0 +1,24 @@
+{
+  "graph": "v",
+  "ontology": "w.view",
+  "history": 0,
+  "inputs": [{"name": "master", "ontology": "w.base"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "items", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "i", "label": "Item"}], "edges": []}},
+    {"id": "keyed", "verb": "project", "columns": {"i": {"ref": "i"}, "c": {"ref": "i.k"}}},
+    {"id": "hits", "verb": "series", "graph": "master", "series": {"element": "i", "property": "hits", "lookback": "30m", "lateness": "3m"}},
+    {"id": "busy", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "b", "label": "Busy"}], "edges": []}},
+    {"id": "policy", "verb": "project", "columns": {"c": {"ref": "b.k"}, "above": {"lit": 2}}},
+    {"id": "fold", "verb": "fold", "fold": {"by": ["c"], "observe": {"v": {"fn": "max", "args": [{"ref": "hits"}]}}, "policy": ["above"], "state": {"state": {"start": {"lit": "off"}, "next": {"fn": "iff", "args": [{"fn": ">=", "args": [{"fn": "coalesce", "args": [{"ref": "v"}, {"lit": 0}]}, {"ref": "above"}]}, {"lit": "on"}, {"lit": "off"}]}}}, "show": "state"}},
+    {"id": "transitions", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Transition", "id": {"identity": "transition", "args": [{"ref": "c"}, {"ref": "windowStart"}]}, "props": {"k": {"ref": "c"}, "windowStart": {"ref": "windowStart"}, "from": {"ref": "from"}, "to": {"ref": "to"}, "since": {"ref": "since"}}}]}}
+  ],
+  "wires": [
+    {"from": "items", "to": "keyed"},
+    {"from": "keyed", "to": "hits"},
+    {"from": "hits", "to": "fold"},
+    {"from": "busy", "to": "policy"},
+    {"from": "policy", "to": "fold", "port": "policy"},
+    {"from": "fold", "to": "transitions"}
+  ]
+}

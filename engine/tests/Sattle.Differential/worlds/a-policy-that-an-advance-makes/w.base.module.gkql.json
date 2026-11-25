@@ -1,0 +1,18 @@
+{
+  "module": "w.base",
+  "version": "1.0.0",
+  "imports": [],
+  "entities": [
+    {"name": "Item", "properties": [{"name": "k", "type": "Text"}, {"name": "g", "type": "Text"}, {"name": "n", "type": "Integer"}, {"name": "hits", "type": "Integer", "optional": true, "events": {"temporality": "delta", "combine": "sum", "period": "1m"}}]},
+    {"name": "Busy", "properties": [{"name": "k", "type": "Text"}, {"name": "windowStart", "type": "Instant"}]}
+  ],
+  "relationships": [{"name": "Edge", "from": "Item", "to": "Item"}],
+  "identities": [
+    {"name": "item", "type": "Item", "components": [{"name": "k", "type": "Text"}]},
+    {"name": "busy", "type": "Busy", "components": [{"name": "k", "type": "Text"}, {"name": "windowStart", "type": "Instant"}]}
+  ],
+  "rows": [
+    {"name": "R", "fields": [{"name": "k", "type": "Text"}, {"name": "g", "type": "Text"}, {"name": "n", "type": "Integer"}, {"name": "d", "type": "Decimal", "optional": true}, {"name": "t", "type": "Instant"}]},
+    {"name": "EdgeRow", "fields": [{"name": "src", "type": "Text"}, {"name": "dst", "type": "Text"}]}
+  ]
+}

@@ -220,14 +220,16 @@ public sealed class Values
     public long Footprint() => pages.Sum(p => (long)p.Length) + start.Footprint + length.Footprint + uses.Footprint + freeCodes.Footprint + index.Length * 4L;
 }
 
-/// <summary>A cache from one interned code to another, of fixed size: 4,096 entries, direct mapped by the low bits of the code. A lookup makes nothing, a miss overwrites the entry, and memory does not grow with the input. Only for a value that is a function of the code.</summary>
+/// <summary>A cache from an interned code, or a number, to a code, of fixed size: 4,096 entries, direct mapped by a mix of the key's bits, so numbers on a grid (instants)
+/// spread. A lookup makes nothing, a miss overwrites the entry, and memory does not grow with the input. Only for a value that is a function of the key.</summary>
 public sealed class CodeCache
 {
-    const int Size = 4096, Mask = Size - 1;
-    readonly int[] keys = new int[Size], values = new int[Size];
-    public CodeCache() => Array.Fill(keys, -1);
-    public bool TryGet(int code, out int value) { var i = code & Mask; value = values[i]; return keys[i] == code; }
-    public void Set(int code, int value) { var i = code & Mask; keys[i] = code; values[i] = value; }
+    const int Size = 4096;
+    readonly long[] keys = new long[Size]; readonly int[] values = new int[Size];
+    public CodeCache() => Array.Fill(keys, long.MinValue);
+    static int Slot(long key) => (int)((ulong)key * 0x9E3779B97F4A7C15UL >> 52);
+    public bool TryGet(long key, out int value) { var i = Slot(key); value = values[i]; return keys[i] == key && key != long.MinValue; }
+    public void Set(long key, int value) { var i = Slot(key); keys[i] = key; values[i] = value; }
 }
 
 /// <summary>A Z-set of rows: fixed-width columns (4 or 8 bytes) in segments, one `i64` weight per row (a column of 8 bytes and the weight take 4 bytes per entry until a value needs 8, and are then copied to 8 once), and one open-addressing index on the key columns, which come first. Adding a weight to a key finds or creates its row; a row whose weight reaches zero is removed and its number is reused. Iteration order is not part of the contract. A row is found through the index on its whole key; a table with no key columns has no index, and its caller keeps the row numbers (`Insert`, `AddAt`). An `Arrangement` is a second way in, by some of the key columns, for the callers that want every row with one value.</summary>

@@ -299,6 +299,23 @@ public class DifferentialTests
         }
     }
 
+    /// <summary>Def. 6.6, world `a policy that an advance makes`: the hits of item k0 at 10 s make the node `Busy` of the window from 0 s when the clock reaches its end
+    /// (60 s), at the advance to `advance`; it gives the key's policy row. The advance moves the clock and adds the row, so the row is stamped with the new clock, not
+    /// with 30 s before it, and the transitions from that window on (it closes at 240 s) carry the stamp, in the reference and in the engine under every cut.</summary>
+    [Theory]
+    [InlineData(60)] [InlineData(90)]
+    public void A_policy_row_that_an_advance_adds_is_stamped_with_the_new_clock(long advance)
+    {
+        var w = Worlds.AdvancePolicy;
+        static Sattle.Reference.Input At(long seconds) => new Sattle.Reference.AdvanceInput(Logs.Origin + seconds * Logs.Second);
+        Sattle.Reference.Input[] log = [PlainRow("a", 1, "k0", "g0", 0, 0), PlainRow("b", 1, "k0", "g0", 3, 10), At(30), At(advance), At(300)];
+        static string Since(Sattle.Reference.SpaceFacts f) => string.Join(" ", f.Graphs["view"].Entities.Values.SelectMany(e => e.Props).Where(kv => kv.Key.EndsWith("prop:since", StringComparison.Ordinal)).Select(kv => kv.Value is InstantValue i ? Norm.Instant(i.Ns) : "-").Distinct().Order(StringComparer.Ordinal));
+        var expected = Norm.Instant(Logs.Origin + advance * Logs.Second);
+        Assert.Equal(expected, Since(Sattle.Reference.ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), log)));
+        foreach (var chunking in new[] { Chunking.OneByOne, Chunking.Largest, Chunking.Reversed })
+            Assert.True(Since(EngineRun.Final(w.Catalog, log, chunking)) == expected, $"{chunking.Name}: engine {Since(EngineRun.Final(w.Catalog, log, chunking))}, expected {expected}");
+    }
+
     static void Agrees(string world, int seeds, int length, bool reordered)
     {
         var report = Differential.Check(Worlds.All.Single(w => w.Name == world), seeds, length, reordered);

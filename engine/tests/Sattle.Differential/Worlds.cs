@@ -151,12 +151,15 @@ public static class Worlds
     // ---- worlds outside `All`: their inputs are written out, not generated ----
 
     public static readonly World FilteredEmit = Rows("filtered emit", "Filter, EmitEntity");
+    /// <summary>Def. 6.6: the master makes a node `Busy` per item and window of hits; a windowed summarize gives a window's row when the clock reaches its end, so a
+    /// step that moves the clock adds the node. A view folds the hits of each item with its `Busy` nodes as policy rows.</summary>
+    public static readonly World AdvancePolicy = View("a policy that an advance makes", "Window, Group, EmitEntity, Series, Fold", 0, Dense);
     public static readonly World OptionalProperty = Rows("optional property", "EmitEntity") with { Witnesses = ["prop:d="] };
     /// <summary>A fold whose look-back (10 minutes) is shorter than the logs: a window leaves the series six windows after it closes (a window and its late horizon of three take four), and the fold forgets it (#151 D6): the key starts again at its first window still inside the look-back.</summary>
     /// <summary>#159 G2 and #151 D1: a fold by the group `g` of the items, straight over their series, so two items of one group give two rows for one key and window.</summary>
     public static readonly World SharedKeyThreshold = View("threshold by a key two items share", "Series, Fold", 0.3, Dense) with { Witnesses = ["state=t:off"] };
-    /// <summary>#170: the transitions of a fold go straight to a nodes sink whose identity has the fold key and the window start (an Instant component).</summary>
-    public static readonly World FoldTransitionNodes = View("fold transitions as nodes by key and window", "Series, Fold, EmitEntity", 0.3, Dense) with { Witnesses = ["to=t:on", "windowStart=i:"] };
+    /// <summary>#170: the transitions of a fold go straight to a nodes sink whose identity has the fold key and the window start (an Instant component). A policy row there before the clock first moves is stamped 0 (Def. 6.6).</summary>
+    public static readonly World FoldTransitionNodes = View("fold transitions as nodes by key and window", "Series, Fold, EmitEntity", 0.3, Dense) with { Witnesses = ["to=t:on", "windowStart=i:", "since=i:0"] };
     public static readonly World Hysteresis = View("threshold over a short look-back", "Series, Rollup, Fold", 0.45, Dense) with { Witnesses = ["state=t:on", "state=t:off"] };
     /// <summary>T-B4 (premise B4 of Theorem 6.2): a fold over a roll-up by group, whose members change group (a keyed item row is replaced with another group, so the item leaves one key and joins another), with windows that leave the retained range of five minutes (the look-back; a window and its late horizon of three take four). Every advance is its own step in the engine and in the reference, so an advance and a structure change never share one; the harness cuts the rows between them every way.</summary>
     public static readonly World MembersLeave = View("threshold over a roll-up whose members leave", "Series, Rollup, Fold, structure change", 0.3, [

@@ -394,14 +394,14 @@ public static class Denotation
 
     // ---- the keyed fold over ordered windows ----
 
-    /// <summary>What a fold keeps from one input to the next: the present policy rows by their canonical text, with their key, their policy `ζ` and the clock they
-    /// entered at (#151 D4; null: before the first advance, below every tick), and the rows that left since the last advance with theirs. Nothing else: the fold
-    /// is a function of its present rows (D6).</summary>
-    public sealed record Carried(ImmutableSortedDictionary<string, (string? Key, ImmutableArray<Value> Policy, long? Since)> Policies,
-        ImmutableSortedDictionary<string, (string? Key, ImmutableArray<Value> Policy, long? Since)> Left)
+    /// <summary>What a fold keeps from one input to the next: the present policy rows by their canonical text, with their key, their policy `ζ` and their stamp
+    /// (Def. 6.6: 0 before the clock first moves, else the clock they entered at), and the rows that left during the present clock with theirs. Nothing else: the
+    /// fold is a function of its present rows (D6).</summary>
+    public sealed record Carried(ImmutableSortedDictionary<string, (string? Key, ImmutableArray<Value> Policy, long Since)> Policies,
+        ImmutableSortedDictionary<string, (string? Key, ImmutableArray<Value> Policy, long Since)> Left)
     {
-        public static readonly Carried None = new(ImmutableSortedDictionary.Create<string, (string?, ImmutableArray<Value>, long?)>(StringComparer.Ordinal),
-            ImmutableSortedDictionary.Create<string, (string?, ImmutableArray<Value>, long?)>(StringComparer.Ordinal));
+        public static readonly Carried None = new(ImmutableSortedDictionary.Create<string, (string?, ImmutableArray<Value>, long)>(StringComparer.Ordinal),
+            ImmutableSortedDictionary.Create<string, (string?, ImmutableArray<Value>, long)>(StringComparer.Ordinal));
     }
 
     /// <summary>
@@ -419,21 +419,22 @@ public static class Denotation
         Int128 Floor(Int128 x) => x - ((x % hop) + hop) % hop;
         static string? KeyOf(IEnumerable<Value> vs) => vs.ToImmutableArray() is var k && k.All(v => v is not NullValue) ? Canon.Of(k) : null;
 
-        // D4: a policy row keeps the clock it entered at while it has a row at the end of each clock (as an element of a series, Def. 7.16); one that is gone
-        // at the end of a clock and comes back enters again
-        var policies = policy.Rows.Where(r => r.Weight > 0).ToImmutableSortedDictionary(r => Canon.Of(r.Row),
-            (string? Key, ImmutableArray<Value> Policy, long? Since) (r) => carried.Policies.TryGetValue(Canon.Of(r.Row), out var had) || carried.Left.TryGetValue(Canon.Of(r.Row), out had) ? had
-                : (KeyOf(t.Keys.Select(k => policy.Reader(r.Row)(k.Name))), t.Policy.Select(c => policy.Reader(r.Row)(c.Name)).ToImmutableArray(), before), StringComparer.Ordinal);
+        // Def. 6.6: a policy row keeps its stamp while it has a row at every clock end; one that is gone at a clock end and comes back is stamped anew. This
+        // input's changes are at the clock after its advance: a row it adds is stamped with that clock (0 before the clock first moves), a row that left during
+        // the clock before is gone at that clock's end
         var advanced = frontier is { } f && (before is not { } b0 || f > b0);
-        var left = advanced ? carried.Left.Clear()
-            : carried.Left.SetItems(carried.Policies.Where(x => !policies.ContainsKey(x.Key))).RemoveRange(policies.Keys);
+        var gone = advanced ? carried.Left.Clear() : carried.Left;
+        var policies = policy.Rows.Where(r => r.Weight > 0).ToImmutableSortedDictionary(r => Canon.Of(r.Row),
+            (string? Key, ImmutableArray<Value> Policy, long Since) (r) => carried.Policies.TryGetValue(Canon.Of(r.Row), out var had) || gone.TryGetValue(Canon.Of(r.Row), out had) ? had
+                : (KeyOf(t.Keys.Select(k => policy.Reader(r.Row)(k.Name))), t.Policy.Select(c => policy.Reader(r.Row)(c.Name)).ToImmutableArray(), frontier ?? 0), StringComparer.Ordinal);
+        var left = gone.SetItems(carried.Policies.Where(x => !policies.ContainsKey(x.Key))).RemoveRange(policies.Keys);
         var next = new Carried(policies, left);
         if (frontier is not { } now) return (new Relation(Names(t), ZSet.Empty), next);
-        (ImmutableArray<Value> Policy, long? Since)? InForce(string key, long a)
+        (ImmutableArray<Value> Policy, long Since)? InForce(string key, long a)
         {
-            var held = policies.Values.Where(x => x.Key == key && (x.Since is not { } s || s < Close(a))).ToList();
+            var held = policies.Values.Where(x => x.Key == key && x.Since < Close(a)).ToList();
             if (held.Count == 0) return null;
-            var since = held.Max(x => x.Since);       // null only when every row entered before the first advance
+            var since = held.Max(x => x.Since);
             var values = held.Where(x => x.Since == since).GroupBy(x => Canon.Of(x.Policy), StringComparer.Ordinal).ToList();
             return values.Count == 1 ? (values[0].First().Policy, since) : null;      // two policies at one greatest `since`: none
         }
@@ -459,11 +460,11 @@ public static class Denotation
             var named = Named(zeta, state.Concat(obs.Select(o => KeyValuePair.Create(o.Name, o.Value))));
             return t.States.ToImmutableSortedDictionary(s => s.Name, s => Expressions.Eval(s.Next, n => named[n]), StringComparer.Ordinal);
         }
-        ImmutableArray<Value> Transition(ImmutableArray<Value> key, long a, Value from, Value to, ImmutableArray<(string Name, Value Value)> obs, (ImmutableArray<Value> Policy, long? Since) zeta) =>
+        ImmutableArray<Value> Transition(ImmutableArray<Value> key, long a, Value from, Value to, ImmutableArray<(string Name, Value Value)> obs, (ImmutableArray<Value> Policy, long Since) zeta) =>
             Shape(t, t.Keys.Select((k, i) => (k.Name, key[i]))
                 .Concat([("windowStart", Value.Instant(a)), ("windowEnd", Value.Instant(a + width)), ("from", from), ("to", to)])
                 .Concat(obs).Concat(t.Policy.Select((c, i) => (c.Name, zeta.Policy[i])))
-                .Append((TFold.Since, zeta.Since is { } s ? Value.Instant(s) : Value.Null)).ToDictionary(x => x.Item1, x => x.Item2, StringComparer.Ordinal));
+                .Append((TFold.Since, Value.Instant(zeta.Since))).ToDictionary(x => x.Item1, x => x.Item2, StringComparer.Ordinal));
 
         var selected = ZSet.Empty;
         var last = Floor((Int128)now - width - lateness);       // the newest window closed: close(a) ≤ now
@@ -492,7 +493,7 @@ public static class Denotation
                 if (!still) continue;
                 // a silent window that keeps the state keeps it until a window is not silent or the policy in force can change (rest(ζ) of Def. 6.5)
                 var change = windows.Keys.Where(x => x.Key == key && x.Start > w).Select(x => (Int128)x.Start)
-                    .Concat(policies.Values.Where(x => x.Key == key && x.Since is { } s && s >= Close(w)).Select(x => Floor((Int128)x.Since!.Value - width - lateness) + hop))
+                    .Concat(policies.Values.Where(x => x.Key == key && x.Since >= Close(w)).Select(x => Floor((Int128)x.Since - width - lateness) + hop))
                     .Append(last + hop).Min();
                 a = change - hop;
             }

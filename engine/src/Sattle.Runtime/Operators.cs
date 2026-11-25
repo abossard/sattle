@@ -1085,8 +1085,8 @@ sealed class RollupOp : AggregatingOp
 /// Windows follow Def. 6.4 on the grid of the hop of the nearest Window upstream, or the period of a Series: window `ws` is [ws, ws + width) and closes at
 /// `close = ws + width + λ`, λ the lateness its program declares for these windows (#169 D1). The output at a clock is the transitions of the present rows whose window has
 /// closed: a key's first window that is not silent and has a policy, and every window whose shown state differs from the one before. The policy of a window
-/// is the present policy row (told apart as a whole row) of greatest `since` below its close, `since` being the clock the row entered at (#151 D4), kept
-/// while the row is present at the end of each clock.
+/// is the present policy row (told apart as a whole row) of greatest `since` below its close, `since` being its stamp (Def. 6.6): the clock it entered at, 0 before
+/// the clock first moves, kept while the row is present at every clock end. A step that moves the clock has its changes at the new clock.
 /// The fold is a function of its present rows (D6): a row added or withdrawn at a closed window, or a policy row withdrawn, changes the key's transitions from
 /// that window on (Prop. 6.7 (2)), and the operator retracts and writes only the rows that differ. Per key it keeps its policy rows, the observations of its
 /// present windows, its states where they change and the transitions it wrote. A key whose state a silent window leaves as it is has reached its `rest`
@@ -1173,7 +1173,6 @@ sealed class FoldOp : PhysOp
     /// <summary>The first window on the grid that closes after `since`: where a policy row of that `since` starts to count.</summary>
     long Enters(long since)
     {
-        if (since == long.MinValue) return long.MinValue;
         var bound = (Int128)since - width - lambda;
         var q = bound / hop; if (bound % hop < 0) q--;
         return OpContext.Clamp((q + 1) * hop);
@@ -1193,7 +1192,7 @@ sealed class FoldOp : PhysOp
         Policy? best = null; var tie = false;
         foreach (var p in st.Policies)
         {
-            if (p.Count <= 0 || p.Since >= close && p.Since != long.MinValue) continue;
+            if (p.Count <= 0 || p.Since >= close) continue;
             if (best is null || p.Since > best.Since) { best = p; tie = false; }
             else if (p.Since == best.Since && !p.Zeta.AsSpan().SequenceEqual(best.Zeta)) tie = true;
         }
@@ -1226,6 +1225,13 @@ sealed class FoldOp : PhysOp
 
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
     {
+        if (ep.HasAdvance && ep.Lambda > frontier)
+        {
+            // Def. 6.6: a policy row keeps its stamp while it has a row at every clock end; one that left during the clock that ends here is gone
+            foreach (var st in left) st.Policies.RemoveAll(x => x.Count <= 0);
+            left.Clear();
+            frontier = ep.Lambda;
+        }
         if (In(inputs, "policy") is { Rows: > 0 } pb)
             for (var k = 0; k < pb.Rows; k++)
             {
@@ -1238,7 +1244,7 @@ sealed class FoldOp : PhysOp
                 if (p is null)
                 {
                     if (w <= 0) continue;
-                    st.Policies.Add(p = new Policy(whole, [.. polZeta.Select(i => whole[i])], frontier));        // the row enters at the clock before this step's advance (D4)
+                    st.Policies.Add(p = new Policy(whole, [.. polZeta.Select(i => whole[i])], frontier == long.MinValue ? 0 : frontier));        // stamped with the clock after this step's advance, 0 before the clock first moves
                 }
                 var was = p.Count > 0;
                 p.Count += w;
@@ -1270,14 +1276,7 @@ sealed class FoldOp : PhysOp
                 Touch(st, ws);
             }
         }
-        if (ep.HasAdvance && ep.Lambda > frontier)
-        {
-            // a policy row keeps the clock it entered at while it has a row at the end of each clock, as an element of a series does (Def. 7.16)
-            foreach (var st in left) st.Policies.RemoveAll(x => x.Count <= 0);
-            left.Clear();
-            frontier = ep.Lambda;
-            while (due.Count > 0 && due.Min.Close <= frontier) { var (close, id) = due.Min; due.Remove((close, id)); byId[id].Due = long.MaxValue; pending.Add(byId[id]); }
-        }
+        while (due.Count > 0 && due.Min.Close <= frontier) { var (close, id) = due.Min; due.Remove((close, id)); byId[id].Due = long.MaxValue; pending.Add(byId[id]); }
         var bb = EmptyOutput();
         if (pending.Count > 0 && LastClosed() is { } closed) Step(bb, cx, closed);
         pending.Clear();
@@ -1405,7 +1404,7 @@ sealed class FoldOp : PhysOp
     /// <summary>A transition row in the order of the output columns: key, window start and end, from, to, observation, policy, since.</summary>
     Cell[] Row(KeyState st, long ws, Cell from, Cell to, Win? obs, (Cell[] Zeta, long Since) zeta) =>
         [.. st.Key, new(ws, 0, true), new(OpContext.Clamp((Int128)ws + width), 0, true), from, to,
-         .. t.Observe.Select((o, i) => Observe(o.Fn, obs?.Values[i])), .. zeta.Zeta, zeta.Since == long.MinValue ? default : new(zeta.Since, 0, true)];
+         .. t.Observe.Select((o, i) => Observe(o.Fn, obs?.Values[i])), .. zeta.Zeta, new(zeta.Since, 0, true)];
 
     void Write(BatchBuilder bb, Cell[] cells, long weight)
     {

@@ -61,7 +61,7 @@ Windows are keyed by **graph, element id, property id, window start instant**. T
 ```
   `completeness` is `Complete` or `Partial(<reason>)` (`sourceLoss` after a Hubble `LostEvent`). Per window partial marks are in `partialWindows: [{windowStart, reason, count}]`.
   - `format=batches` returns NDJSON of the canvas `WindowBatch` shape, sparse (`ids` present), one line per (window, property): `{ "graph", "tick", "t", "windowStart", "target", "property", "ids", "values" }`. `tick` is the ordinal of the window among retained windows. **Ticks are not revisions.**
-- Live push: see WebSocket `windows` messages. A message carries one window of one property and the changed elements only. A revised (late) window is pushed again with the new values. A window that was retracted (its last supporting row went: a late retraction inside the horizon, a rule change, an identity move) is pushed with the element under `removed: [ids]` of the batch, next to `ids` and `values` (which may then be empty); a client drops the value of that element, property and window.
+- Live push: see WebSocket `windows` messages. A message carries one window of one property and the changed elements only. A revised (late) window is pushed again with the new values. A window that was retracted (its last supporting row went: a late retraction inside the lateness of its input, a rule change, an identity move) is pushed with the element under `removed: [ids]` of the batch, next to `ids` and `values` (which may then be empty); a client drops the value of that element, property and window.
 
 ## Lineage
 `GET /graphs/{g}/lineage?element=<id>` for a derived or master element:
@@ -666,6 +666,11 @@ The text editor of a projection reads and checks its `.kql` text through these c
 - **Counters.** `GET /health` has `counters`: `identity` (`minted`, `aliased`, `merged`, `conflicts`, the shape of a preview's `identity.live`), `lateRows` (rows dropped as late, 3.3) and `faults` (`divisionByZero`, `overflow`, `invalidParameter`). `replay` prints the same numbers from the same calculation.
 - **Digest per graph.** Each entry of `GET /health` `graphs` has `digest`: the graph's digest at its head (Def. 3.5, the `digest` of a preview's graphs), from the pass that makes the state digest. The catalog's too.
 - **Telemetry port (no wire change).** `ITelemetryStore.ScanGraph` hands every window of a graph in a range to a visitor, also the windows of an element that left; without a visitor it counts them and allocates nothing. `SeriesCount`, `PartialWindows` and `MergeConflicts` are on the port. `InMemoryTelemetryStore.Dump` and `WindowCount` are gone.
+
+## Version 3.69: a fold stamps its policy rows at clock ends; identity components of any scalar kind (#151, #170)
+- **Semantics (paper Ch. 6, Def. 6.6).** A policy row of a `fold` is stamped with the clock from which it has been present at every clock end. A row there before the clock first moves is stamped 0 (before: no `since`); a row that a step moving the clock adds (a node made when a window closes) is stamped with the new clock (before: the clock before the step), and a row that leaves during the clock that ends there loses its stamp. The `since` column of a transition is then always an instant.
+- **Identity.** A component of an identity domain that is an Integer, Decimal, Instant or Boolean is keyed by its normal-form text (`identity(transition, key, windowStart)`). Before, the engine read it as a text code and failed; ids of Text components are unchanged.
+- **Wire.** No HTTP or WebSocket field changes.
 
 ## Version 3.68: lateness declared where a program reads events, no host late horizon (#169)
 - **Semantics (paper Ch. 6, Def. 6.4, Cor. 6.5).** A windowed `summarize` keeps a window revisable until its end plus the largest lateness of the rows inputs upstream of its `window`. A `fold` closes window `ws` at `ws + width + λ`, λ that of its `window`, or the `lateness` of the `series` it reads. No state is dropped at a horizon of the host (#169 D1).
