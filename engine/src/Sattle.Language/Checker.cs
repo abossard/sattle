@@ -436,7 +436,7 @@ public sealed class ProjectionChecker(Graph defs)
     TOp? TypeJoin(string op, string name, Dictionary<string, Src> inputs, Schema? l, Schema? r)
     {
         if (l is null || r is null) return null;
-        if (l.Window != 0 || r.Window != 0 || l.Cols.Concat(r.Cols).Any(c => !c.T.Role.IsData)) { Err("Join", op, "join takes data rows: no windowed or event input (roll it up and cross it with a threshold first)"); return null; }
+        if (l.Window != 0 || r.Window != 0 || l.Cols.Concat(r.Cols).Any(c => !c.T.Role.IsData)) { Err("Join", op, "join takes data rows: no windowed or event input (roll it up and fold it first)"); return null; }
         var clash = l.Cols.Select(c => c.Name).Intersect(r.Cols.Select(c => c.Name)).FirstOrDefault();
         if (clash is not null) { Err("Join", op, $"both inputs have a column named '{clash}'; rename one with project"); return null; }
         var both = new Schema([.. l.Cols, .. r.Cols]);

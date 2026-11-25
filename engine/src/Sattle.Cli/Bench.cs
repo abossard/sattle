@@ -252,7 +252,7 @@ static partial class Bench
         Console.WriteLine($"ingest: {ingested:N0} rows in {seconds:F2} s of Ingest calls = {ingested / seconds / 1e6:F2} M rows/s; allocated {alloc / (double)ingested:F3} bytes/row; gen0 collections {GC.CollectionCount(0) - gcBefore}");
         var storedWindows = e.Windows.ScanGraph(e.Master.Key, null);
         Console.WriteLine($"after the run: master revision {e.Master.Head}, {e.Master.State.RelCount} Calls/Backs relationships, {storedWindows:N0} master windows, serviceTree revision {e.Graph("serviceTree").Head}, {e.Graph("serviceTree").State.RelCount} relationships");
-        Console.WriteLine($"window close (Advance: group emit, identity lookups, window append, Series, Rollup, Threshold, derived commit): n={closeMs.Count}, p50 {Pct(closeMs, .5):F2} ms, p99 {Pct(closeMs, .99):F2} ms, max {closeMs.Max():F2} ms; allocated per close p50 {Pct(closeAlloc.Select(x => (double)x).ToList(), .5) / 1e6:F2} MB");
+        Console.WriteLine($"window close (Advance: group emit, identity lookups, window append, Series, Rollup, Fold, derived commit): n={closeMs.Count}, p50 {Pct(closeMs, .5):F2} ms, p99 {Pct(closeMs, .99):F2} ms, max {closeMs.Max():F2} ms; allocated per close p50 {Pct(closeAlloc.Select(x => (double)x).ToList(), .5) / 1e6:F2} MB");
 
         if (e.TrackAllocations)
             foreach (var (op, bytes) in ingestOps.OrderByDescending(x => x.Value).Take(6)) Console.WriteLine($"  ingest alloc {op}: {bytes / 1e6:F2} MB ({bytes / (double)ingested:F3} bytes/row)");
