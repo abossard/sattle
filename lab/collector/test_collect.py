@@ -320,10 +320,11 @@ class MeanTests(unittest.TestCase):
         counted = {"fn": "iff", "args": [{"fn": "isnotnull", "args": [{"ref": "total"}]},
                                          {"fn": "coalesce", "args": [{"ref": "count"}, {"lit": 0.0}]}, {"lit": 0.0}]}
         cases = [("name", "showMetric", {"ref": "metric"}),
+                 ("name", "showAverage", {"ref": "metric"}),
                  ("average", "showAverage", {"fn": "/", "args": [
                      {"fn": "coalesce", "args": [total({"ref": "total"}), {"lit": 0.0}]}, total(counted)]})]
         for name, verb, expected in cases:
-            with self.subTest(name):
+            with self.subTest(name, rule=verb):
                 [prop] = [n["props"] for n in self.VERBS[verb]["target"]["nodes"]]
                 self.assertEqual(self.source(verb, prop[name]), expected)
 

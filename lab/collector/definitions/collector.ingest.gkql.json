@@ -254,6 +254,9 @@
               ]
             },
             "props": {
+              "name": {
+                "ref": "metric"
+              },
               "average": {
                 "ref": "mean"
               }
