@@ -1,0 +1,161 @@
+{
+  "graph": "ingest",
+  "ontology": "collector",
+  "description": "Which inventoried resource reports which Azure Monitor metric, and its mean per minute.",
+  "history": 100,
+  "inputs": [
+    {
+      "name": "inventory",
+      "rows": "collector.ArmInventoryRow"
+    },
+    {
+      "name": "metrics",
+      "rows": "collector.MetricRow"
+    }
+  ],
+  "parameters": [],
+  "verbs": [
+    {
+      "id": "resources",
+      "verb": "rows",
+      "source": "inventory"
+    },
+    {
+      "id": "showResource",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "r",
+            "label": "Resource",
+            "id": {
+              "identity": "resource",
+              "args": [
+                {
+                  "ref": "armKey"
+                }
+              ]
+            },
+            "props": {
+              "name": {
+                "ref": "name"
+              },
+              "resourceType": {
+                "ref": "resourceType"
+              }
+            }
+          }
+        ]
+      },
+      "rule": "showResource"
+    },
+    {
+      "id": "readings",
+      "verb": "rows",
+      "source": "metrics"
+    },
+    {
+      "id": "minutes",
+      "verb": "window",
+      "window": {
+        "time": "at",
+        "period": "60s"
+      }
+    },
+    {
+      "id": "perMetric",
+      "verb": "summarize",
+      "by": {
+        "resourceId": {
+          "ref": "resourceId"
+        },
+        "metric": {
+          "ref": "metric"
+        },
+        "windowStart": {
+          "ref": "windowStart"
+        }
+      },
+      "aggregates": {
+        "mean": {
+          "fn": "avg",
+          "args": [
+            {
+              "ref": "average"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "reports",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "r",
+            "label": "Resource",
+            "id": {
+              "identity": "resource",
+              "args": [
+                {
+                  "ref": "resourceId"
+                }
+              ]
+            }
+          },
+          {
+            "var": "m",
+            "label": "Metric",
+            "id": {
+              "identity": "metric",
+              "args": [
+                {
+                  "ref": "resourceId"
+                },
+                {
+                  "ref": "metric"
+                }
+              ]
+            },
+            "props": {
+              "name": {
+                "ref": "metric"
+              },
+              "average": {
+                "ref": "mean"
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "var": "e",
+            "label": "Reports",
+            "from": "r",
+            "to": "m"
+          }
+        ]
+      },
+      "rule": "reports"
+    }
+  ],
+  "wires": [
+    {
+      "from": "resources",
+      "to": "showResource"
+    },
+    {
+      "from": "readings",
+      "to": "minutes"
+    },
+    {
+      "from": "minutes",
+      "to": "perMetric"
+    },
+    {
+      "from": "perMetric",
+      "to": "reports"
+    }
+  ]
+}

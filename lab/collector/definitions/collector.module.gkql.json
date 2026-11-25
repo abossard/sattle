@@ -1,0 +1,209 @@
+{
+  "module": "collector",
+  "version": "1.0.0",
+  "imports": [],
+  "space": {
+    "name": "resourceMetrics",
+    "sources": [
+      {
+        "name": "inventory",
+        "adapter": "record",
+        "rows": "ArmInventoryRow"
+      },
+      {
+        "name": "metrics",
+        "adapter": "record",
+        "rows": "MetricRow"
+      }
+    ],
+    "graphs": [
+      {
+        "name": "master",
+        "projection": "ingest",
+        "master": true,
+        "inputs": {
+          "inventory": "inventory",
+          "metrics": "metrics"
+        }
+      }
+    ]
+  },
+  "identities": [
+    {
+      "name": "resource",
+      "type": "Resource",
+      "components": [
+        {
+          "name": "armKey",
+          "type": "Text"
+        }
+      ]
+    },
+    {
+      "name": "metric",
+      "type": "Metric",
+      "components": [
+        {
+          "name": "armKey",
+          "type": "Text"
+        },
+        {
+          "name": "name",
+          "type": "Text"
+        }
+      ]
+    }
+  ],
+  "entities": [
+    {
+      "name": "Resource",
+      "properties": [
+        {
+          "name": "name",
+          "type": "Text",
+          "label": true
+        },
+        {
+          "name": "resourceType",
+          "type": "Text"
+        }
+      ]
+    },
+    {
+      "name": "Metric",
+      "properties": [
+        {
+          "name": "name",
+          "type": "Text",
+          "label": true
+        },
+        {
+          "name": "average",
+          "type": "Decimal",
+          "optional": true,
+          "events": {
+            "temporality": "gauge",
+            "combine": "mean",
+            "period": "60s"
+          }
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "name": "Reports",
+      "from": "Resource",
+      "to": "Metric"
+    }
+  ],
+  "rows": [
+    {
+      "name": "ArmInventoryRow",
+      "fields": [
+        {
+          "name": "armId",
+          "type": "Text"
+        },
+        {
+          "name": "armKey",
+          "type": "Text"
+        },
+        {
+          "name": "name",
+          "type": "Text"
+        },
+        {
+          "name": "resourceType",
+          "type": "Text"
+        },
+        {
+          "name": "location",
+          "type": "Text"
+        },
+        {
+          "name": "subscriptionId",
+          "type": "Text"
+        },
+        {
+          "name": "resourceGroup",
+          "type": "Text"
+        },
+        {
+          "name": "groupId",
+          "type": "Text"
+        },
+        {
+          "name": "environmentId",
+          "type": "Text"
+        },
+        {
+          "name": "provisioningState",
+          "type": "Text"
+        },
+        {
+          "name": "runningStatus",
+          "type": "Text"
+        },
+        {
+          "name": "ingressHost",
+          "type": "Text"
+        },
+        {
+          "name": "tags",
+          "type": "Text"
+        },
+        {
+          "name": "observedAt",
+          "type": "Text"
+        }
+      ]
+    },
+    {
+      "name": "MetricRow",
+      "fields": [
+        {
+          "name": "resourceId",
+          "type": "Text"
+        },
+        {
+          "name": "metric",
+          "type": "Text"
+        },
+        {
+          "name": "at",
+          "type": "Instant"
+        },
+        {
+          "name": "grain",
+          "type": "Decimal"
+        },
+        {
+          "name": "total",
+          "type": "Decimal",
+          "optional": true
+        },
+        {
+          "name": "average",
+          "type": "Decimal",
+          "optional": true
+        },
+        {
+          "name": "minimum",
+          "type": "Decimal",
+          "optional": true
+        },
+        {
+          "name": "maximum",
+          "type": "Decimal",
+          "optional": true
+        },
+        {
+          "name": "count",
+          "type": "Decimal",
+          "optional": true
+        }
+      ]
+    }
+  ]
+}
