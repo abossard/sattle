@@ -1506,7 +1506,15 @@
        ]
       },
       {
-       "ref": "samples"
+       "fn": "coalesce",
+       "args": [
+        {
+         "ref": "samples"
+        },
+        {
+         "lit": 0.0
+        }
+       ]
       }
      ]
     }
