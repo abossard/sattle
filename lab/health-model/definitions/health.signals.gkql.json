@@ -1498,29 +1498,6 @@
    }
   },
   {
-   "id": "metricsSampled",
-   "verb": "where",
-   "condition": {
-    "fn": ">",
-    "args": [
-     {
-      "fn": "coalesce",
-      "args": [
-       {
-        "ref": "samples"
-       },
-       {
-        "lit": 0.0
-       }
-      ]
-     },
-     {
-      "lit": 0.0
-     }
-    ]
-   }
-  },
-  {
    "id": "metricTotal",
    "verb": "project",
    "columns": {
@@ -3095,10 +3072,6 @@
   },
   {
    "from": "metricSamples",
-   "to": "metricsSampled"
-  },
-  {
-   "from": "metricsSampled",
    "to": "metricTotal"
   },
   {
