@@ -14,7 +14,7 @@ public sealed class RuntimeFaults
     public long Overflow;
 }
 
-/// <summary>A compiled expression: evaluates a whole batch column-at-a-time (vectorized interpreter, section 11.1 step 4). The returned column is valid until the next Eval of this node.</summary>
+/// <summary>A compiled expression: evaluates a whole batch column-at-a-time (vectorized interpreter, section 11.1 step 4), on its selected rows only, so a row a `where` dropped is not evaluated and counts no fault (#178). The returned column is valid until the next Eval of this node, at the selected rows.</summary>
 public abstract class VExpr
 {
     public bool IsDec { get; protected init; }
@@ -114,8 +114,9 @@ sealed class VCmp(string fn, VExpr a, VExpr b, bool dec) : VExpr
         var x = a.Eval(batch); var y = b.Eval(batch);
         var n = batch.N;
         var o = Scratch(n);
-        for (var i = 0; i < n; i++)
+        for (var row = 0; row < batch.Rows; row++)
         {
+            var i = batch.RowAt(row);
             if ((x.P is not null && !x.P[i]) || (y.P is not null && !y.P[i])) { Absent(o, i, n); continue; }
             int c;
             if (decCompare)
@@ -138,8 +139,9 @@ sealed class VLogic(string fn, VExpr[] args) : VExpr
         var n = batch.N;
         var o = Scratch(n);
         for (var a = 0; a < args.Length; a++) cols[a] = args[a].Eval(batch);
-        for (var i = 0; i < n; i++)
+        for (var row = 0; row < batch.Rows; row++)
         {
+            var i = batch.RowAt(row);
             var absent = false; var all = fn != "Or"; var any = false;
             foreach (var c in cols)
             {
@@ -163,8 +165,9 @@ sealed class VArith : VExpr
         var x = a.Eval(batch); var y = fn == "Negate" ? x : b.Eval(batch);
         var n = batch.N;
         var o = Scratch(n);
-        for (var i = 0; i < n; i++)
+        for (var row = 0; row < batch.Rows; row++)
         {
+            var i = batch.RowAt(row);
             if ((x.P is not null && !x.P[i]) || (y.P is not null && !y.P[i])) { Absent(o, i, n); continue; }
             if (IsDec)
             {
@@ -204,7 +207,7 @@ sealed class VToDecimal : VExpr
     public override Column Eval(Batch batch)
     {
         var x = a.Eval(batch); var o = Scratch(batch.N);
-        for (var i = 0; i < batch.N; i++) { if (x.P is not null && !x.P[i]) { Absent(o, i, batch.N); continue; } o.D[i] = x.L[i]; }
+        for (var row = 0; row < batch.Rows; row++) { var i = batch.RowAt(row); if (x.P is not null && !x.P[i]) { Absent(o, i, batch.N); continue; } o.D[i] = x.L[i]; }
         return o;
     }
 }
@@ -217,8 +220,9 @@ sealed class VIf : VExpr
     {
         var cc = c.Eval(batch); var tt = t.Eval(batch); var ee = e.Eval(batch); var n = batch.N;
         var o = Scratch(n);
-        for (var i = 0; i < n; i++)
+        for (var row = 0; row < batch.Rows; row++)
         {
+            var i = batch.RowAt(row);
             if (cc.P is not null && !cc.P[i]) { Absent(o, i, n); continue; }
             var src = cc.L[i] != 0 ? tt : ee;
             if (src.P is not null && !src.P[i]) { Absent(o, i, n); continue; }
@@ -236,8 +240,9 @@ sealed class VCoalesce : VExpr
     {
         for (var a = 0; a < args.Length; a++) cols[a] = args[a].Eval(batch);
         var n = batch.N; var o = Scratch(n);
-        for (var i = 0; i < n; i++)
+        for (var row = 0; row < batch.Rows; row++)
         {
+            var i = batch.RowAt(row);
             Column? hit = null;
             foreach (var c in cols) if (c.P is null || c.P[i]) { hit = c; break; }
             if (hit is null) { Absent(o, i, n); continue; }
@@ -252,7 +257,7 @@ sealed class VIsPresent(VExpr a) : VExpr
     public override Column Eval(Batch batch)
     {
         var x = a.Eval(batch); var o = Scratch(batch.N);
-        for (var i = 0; i < batch.N; i++) o.L[i] = x.P is null || x.P[i] ? 1 : 0;
+        for (var row = 0; row < batch.Rows; row++) { var i = batch.RowAt(row); o.L[i] = x.P is null || x.P[i] ? 1 : 0; }
         return o;
     }
 }
@@ -265,7 +270,7 @@ sealed class VRate : VExpr
     public override Column Eval(Batch batch)
     {
         var x = a.Eval(batch); var o = Scratch(batch.N);
-        for (var i = 0; i < batch.N; i++) { if (x.P is not null && !x.P[i]) { Absent(o, i, batch.N); continue; } o.D[i] = (x.IsDec ? x.D[i] : x.L[i]) / seconds; }
+        for (var row = 0; row < batch.Rows; row++) { var i = batch.RowAt(row); if (x.P is not null && !x.P[i]) { Absent(o, i, batch.N); continue; } o.D[i] = (x.IsDec ? x.D[i] : x.L[i]) / seconds; }
         return o;
     }
 }
@@ -277,8 +282,9 @@ sealed class VTextPredicate(VExpr text, VExpr term, Interner interner, Func<stri
         var values = text.Eval(batch);
         var terms = term.Eval(batch);
         var result = Scratch(batch.N);
-        for (var i = 0; i < batch.N; i++)
+        for (var row = 0; row < batch.Rows; row++)
         {
+            var i = batch.RowAt(row);
             if ((values.P is not null && !values.P[i]) || (terms.P is not null && !terms.P[i]))
             {
                 Absent(result, i, batch.N);
@@ -299,8 +305,9 @@ sealed class VText : VExpr
     {
         for (var a = 0; a < args.Length; a++) cols[a] = args[a].Eval(batch);
         var n = batch.N; var o = Scratch(n);
-        for (var i = 0; i < n; i++)
+        for (var row = 0; row < batch.Rows; row++)
         {
+            var i = batch.RowAt(row);
             var absent = false;
             foreach (var c in cols) if (c.P is not null && !c.P[i]) { absent = true; break; }
             if (absent) { Absent(o, i, n); continue; }

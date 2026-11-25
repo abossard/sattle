@@ -183,4 +183,30 @@ public class TypeSoundnessTests
         Assert.Equal(["k0", "k1", "k2"], c.Keys.Order());
         Assert.Equal(new IntegerValue(4611686018427387904), c["k0"]); Assert.Null(c["k1"]); Assert.Equal(new IntegerValue(0), c["k2"]);
     }
+
+    /// <summary>#178 A1: an expression is evaluated, and its faults counted, only for rows that reach its verb. A `where` keeps the rows whose `g` is not `skip`,
+    /// a `project` after it divides 12 by `n`; `k:g:n` is a row of `a`. In one batch and one by one, the divisions by zero counted are those of the kept rows.</summary>
+    [Theory]
+    [InlineData("a dropped row with n 0 beside a kept row", "k0:skip:0 k1:keep:3", 0)]
+    [InlineData("a kept row with n 0", "k0:keep:0 k1:keep:3", 1)]
+    [InlineData("a kept row and two dropped rows with n 0", "k0:skip:0 k1:keep:0 k2:skip:0", 1)]
+    [InlineData("every row dropped", "k0:skip:0 k1:skip:0", 0)]
+    public void A_row_a_where_drops_counts_no_fault_downstream(string name, string rows, long divisions)
+    {
+        Assert.NotEmpty(name);
+        var catalog = EngineRun.Load(Module([Verb("a", "rows", "\"source\": \"a\""), Verb("x0", "where", $"\"condition\": {Fn("!=", Ref("g"), Lit("\"skip\""))}"),
+            Verb("x1", "project", $"\"columns\": {Object([("k", Ref("k")), ("g", Ref("g")), ("d", Fn("/", Lit("12"), Ref("n")))])}")],
+            [Wire("a", "x0"), Wire("x0", "x1")], new Rel("x1", new() { ["k"] = ("Text", true), ["g"] = ("Text", true), ["d"] = ("Decimal", false) })));
+        Sattle.Reference.RowInput[] log = [.. rows.Split(' ').Select(r => r.Split(':') is [var k, var g, var n]
+            ? new Sattle.Reference.RowInput("a", Row(("k", Value.Text(k)), ("g", Value.Text(g)), ("n", Value.Integer(long.Parse(n, System.Globalization.CultureInfo.InvariantCulture))), ("d", Value.Null), ("t", Value.Instant(Origin))), 1)
+            : throw new ArgumentException(r))];
+        Sattle.Reference.RowInput[][][] cuts = [[log], [.. log.Select(r => new[] { r })]];
+        foreach (var batches in cuts)
+        {
+            using var e = new Engine(catalog, catalog.Spaces.Keys.Single());
+            var seq = 0L;
+            foreach (var batch in batches) EngineRun.Ingest(e, [.. batch], ++seq);
+            Assert.True(e.Counters().DivisionByZero == divisions, $"{batches.Length} batch(es): {e.Counters().DivisionByZero} divisions by zero, expected {divisions}");
+        }
+    }
 }
