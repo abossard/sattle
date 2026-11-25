@@ -27,25 +27,25 @@ describe("the document view shows the document at the revision of the timeline, 
   it("shows the document at the revision of the timeline and follows it when a patch arrives", async () => {
     const cursor = { at: 1 }, asked: string[] = [];
     fake(cursor, asked);
-    dispatch({ type: "data/summary", graphs: [summary(0)], telemetry: {} });
+    dispatch({ type: "data/summary", graphs: [summary(0)], windows: {} });
     show();
     await screen.findByText("Items: 1");
     expect(screen.getByRole("heading", { level: 1, name: "Report" })).toBeTruthy();
     cursor.at = 2;
-    act(() => dispatch({ type: "data/summary", graphs: [summary(1)], telemetry: {} }));
+    act(() => dispatch({ type: "data/summary", graphs: [summary(1)], windows: {} }));
     await screen.findByText("Items: 2");
     expect(screen.getByRole("cell", { name: "b | c" })).toBeTruthy();
     expect(asked).toEqual(["1", "2"]);
   });
   it("an empty revision says so", async () => {
     fake({ at: 0 }, []);
-    dispatch({ type: "data/summary", graphs: [summary(0)], telemetry: {} });
+    dispatch({ type: "data/summary", graphs: [summary(0)], windows: {} });
     show();
     await screen.findByText(/The document is empty at revision 0/);
   });
   it("an engine that fails gives a message, not a blank page", async () => {
     fake({ at: 1 }, [], true);
-    dispatch({ type: "data/summary", graphs: [summary(0)], telemetry: {} });
+    dispatch({ type: "data/summary", graphs: [summary(0)], windows: {} });
     show();
     await waitFor(() => expect(screen.getByText("engine down")).toBeTruthy());
   });

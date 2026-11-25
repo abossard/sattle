@@ -116,7 +116,7 @@
           "type": "string",
           "enum": [
             "graphData",
-            "telemetry"
+            "events"
           ]
         }
       },

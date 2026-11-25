@@ -9,7 +9,7 @@ import type { GraphDescriptorWire, OntologyDefinition, OntologyRef, Operator, Pr
 import type { Rejection } from "../../src/core/validate";
 import { ESTATE_DEFAULTS, ESTATE_METERS, allocTick, fillTick, type TelemetrySpec, type TelemetryTick } from "./synth-telemetry";
 import { RejectionBus } from "../../src/source/base";
-import type { Correspondence, GraphInfo, GraphSource, SpaceInfo, StreamEvent, TelemetryBatch, TelemetryFeed } from "../../src/source/types";
+import type { Correspondence, GraphInfo, GraphSource, SpaceInfo, StreamEvent, WindowBatch, WindowFeed } from "../../src/source/types";
 import type { Snapshot as Snap } from "../../src/core/model";
 
 const id = (value: string) => ({ value });
@@ -152,7 +152,7 @@ export class SyntheticSource implements GraphSource {
   private built: { info: SpaceInfo; snaps: Map<string, Snapshot>; patches: Map<string, Patch[]>; corr: Map<string, Correspondence[]> } | null = null;
   /** generation time in ms, filled by open() */
   generateMs = 0;
-  telemetry: TelemetryFeed | undefined;
+  windows: WindowFeed | undefined;
   private generators = new Map<string, TelemetryGenerator>();
 
   constructor(private readonly sizeName: string, private readonly patchCount = 200, private readonly opts: EstateOptions = ESTATE_SIZES[sizeName]) {
@@ -186,13 +186,13 @@ export class SyntheticSource implements GraphSource {
       this.generateMs = performance.now() - t0;
       for (const [id, snap] of this.built.snaps) this.generators.set(id, new TelemetryGenerator(telemetrySpec(snap, this.opts.seed)));
       const dt = 1;
-      this.telemetry = {
+      this.windows = {
         meters: ESTATE_METERS, defaults: ESTATE_DEFAULTS, dt, ticks: this.patchCount, maxTicks: 100000,
         fetch: async (graph, tick) => {
           const gen = this.generators.get(graph);
           if (!gen) return { batches: [] };
           const d = await gen.generate(tick);
-          const mk = (target: "node" | "edge", property: keyof TelemetryTick): TelemetryBatch => ({ graph, tick, t: tick * dt, target, property, values: d[property] });
+          const mk = (target: "node" | "edge", property: keyof TelemetryTick): WindowBatch => ({ graph, tick, t: tick * dt, target, property, values: d[property] });
           return { batches: [mk("edge", "requests"), mk("edge", "errorRate"), mk("edge", "latencyMs"), mk("node", "cpu"), mk("node", "memory")], release: () => gen.recycle(d) };
         },
       };

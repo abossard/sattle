@@ -1,12 +1,12 @@
 // Effects: the only code that touches the runtime. Each action is applied to the workspace in the order it is dispatched,
-// then the pure reducer folds it into the serializable state. Frequent actions (patches, telemetry) only schedule a throttled summary.
+// then the pure reducer folds it into the serializable state. Frequent actions (patches, windows) only schedule a throttled summary.
 import { shownTime } from "../app/timeline";
 import { Workspace } from "../app/workspace";
-import type { TelemetryHub } from "../app/telemetry-hub";
+import type { WindowHub } from "../app/window-hub";
 import { lightTheme, darkTheme } from "../render/theme";
 import { runtime } from "./runtime";
 import { SOURCES } from "./sources";
-import type { Action, GraphSummary, State, TelemetryState, ThemeName } from "./types";
+import type { Action, GraphSummary, State, WindowState, ThemeName } from "./types";
 import { endSession, run as runEditor } from "./editor-effects";
 
 export type Dispatch = (a: Action) => void;
@@ -25,13 +25,13 @@ export function summaries(ws: Workspace): GraphSummary[] {
   });
 }
 
-const telemetryOf = (hub: TelemetryHub): TelemetryState => ({
+const windowsOf = (hub: WindowHub): WindowState => ({
   hasData: hub.hasData, enabled: hub.enabled, flow: hub.flow,
   edge: { width: hub.edge.width ?? "", flow: hub.edge.flow ?? "", state: hub.edge.state ?? "" },
   node: { ring: hub.node.ring ?? "", size: hub.node.size ?? "", state: hub.node.state ?? "" },
   meters: [...hub.store.metersOf("node"), ...hub.store.metersOf("edge")].map((m) => ({ id: m.id, target: m.target, label: m.label, unit: m.unit, warn: m.warn, min: m.min, max: m.max })),
 });
-export const telemetrySummary = (ws: Workspace): Record<string, TelemetryState> => Object.fromEntries(ws.info.graphs.flatMap((g) => { const hub = ws.hub(g.id); return hub ? [[g.id, telemetryOf(hub)]] : []; }));
+export const windowsSummary = (ws: Workspace): Record<string, WindowState> => Object.fromEntries(ws.info.graphs.flatMap((g) => { const hub = ws.hub(g.id); return hub ? [[g.id, windowsOf(hub)]] : []; }));
 
 function bump(graph: string): void { const v = runtime.versions.get(graph); if (v) v.version++; }
 
@@ -47,7 +47,7 @@ function reportTime(ws: Workspace, dispatch: Dispatch): void {
   const last = points[points.length - 1];
   dispatch({ type: "time/changed", now: shownTime(ws.timeline, last), following: ws.timeline.k === "live", first: points[0], last });
 }
-const reportData = (ws: Workspace, dispatch: Dispatch): void => dispatch({ type: "data/summary", graphs: summaries(ws), telemetry: telemetrySummary(ws) });
+const reportData = (ws: Workspace, dispatch: Dispatch): void => dispatch({ type: "data/summary", graphs: summaries(ws), windows: windowsSummary(ws) });
 
 async function openSource(id: string, s: State, dispatch: Dispatch): Promise<void> {
   runtime.ws?.dispose();
@@ -62,7 +62,7 @@ async function openSource(id: string, s: State, dispatch: Dispatch): Promise<voi
   const conn = ws.source.connection;
   if (conn) conn.onChange(() => dispatch({ type: "feed/connection", status: { ...conn.status } }));
   const graphs = summaries(ws);
-  dispatch({ type: "source/opened", graphs, catalog: ws.source.catalogGraph ?? "", ms: ws.loadMs, telemetry: telemetrySummary(ws), active: (graphs.find((g) => g.role !== "catalog") ?? graphs[0]).id });
+  dispatch({ type: "source/opened", graphs, catalog: ws.source.catalogGraph ?? "", ms: ws.loadMs, windows: windowsSummary(ws), active: (graphs.find((g) => g.role !== "catalog") ?? graphs[0]).id });
   if (conn) dispatch({ type: "feed/connection", status: { ...conn.status } });
   reportTime(ws, dispatch);
 }
@@ -77,13 +77,13 @@ export function runEffects(a: Action, s: State, dispatch: Dispatch): void {
       if (ws) ws.highlight(a.graph, s.filters[a.graph]); // the highlight mode the user chose, not always the last step
       throttle("data", 100, () => { if (runtime.ws === ws && ws) { reportData(ws, dispatch); reportTime(ws, dispatch); } });
       break;
-    case "feed/telemetry":
+    case "feed/windows":
       ws?.hubFor(a.graph).ingest(a.batch);
       throttle("time", 250, () => { if (runtime.ws === ws && ws) { reportTime(ws, dispatch); reportData(ws, dispatch); } });
       break;
     case "feed/meta": ws?.applyMeta(a.graph, a.meta); bump(a.graph); break;
-    case "feed/telemetryReset": ws?.hub(a.graph)?.reset(); bump(a.graph); break;
-    // panes report changes (layout, telemetry applied, lineage loaded) far more often than panels need to look: at most 4 per second
+    case "feed/windowsReset": ws?.hub(a.graph)?.reset(); bump(a.graph); break;
+    // panes report changes (layout, windows applied, lineage loaded) far more often than panels need to look: at most 4 per second
     case "data/touched": throttle(`touched:${a.graph}`, 250, () => { if (runtime.ws === ws && ws) { bump(a.graph); reportData(ws, dispatch); } }); break;
     case "feed/resync": if (s.sourceId) setTimeout(() => dispatch({ type: "source/opening", id: s.sourceId, resync: true }), 0); break;
     case "ui/dialog":
@@ -116,7 +116,7 @@ export function runEffects(a: Action, s: State, dispatch: Dispatch): void {
       }
       break;
     }
-    case "telemetry/set": {
+    case "windows/set": {
       const hub = ws?.hub(a.graph);
       if (!hub) break;
       const c = a.change;

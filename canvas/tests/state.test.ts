@@ -28,7 +28,7 @@ describe("the reducer turns an action into a new state and never changes the old
     ["clearing the selection", { type: "select/element", selection: null }, (s) => s.announcement, "Selection cleared"],
     ["a seek moves the shared time", { type: "time/seek", t: 5 }, (s) => s.time.now, 5],
     ["a rejection is kept with its time", { type: "feed/rejected", at: 7, rejection: { source: "x", where: "y", errors: ["z"] } }, (s) => s.rejections.map((r) => r.at), [7]],
-    ["a patch and a telemetry batch do not change the state (the runtime holds the data)", { type: "feed/patch", graph: "master", patch: patch("0", "1", [addN(ent("a"))]) }, (s) => s === base(), false],
+    ["a patch and a windows batch do not change the state (the runtime holds the data)", { type: "feed/patch", graph: "master", patch: patch("0", "1", [addN(ent("a"))]) }, (s) => s === base(), false],
     ["a connection that is not live means stale data", { type: "feed/connection", status: { state: "reconnecting", detail: "x", gapsFilled: 0, reconnects: 1 } }, (s) => s.freshness, "stale"],
     ["a live connection means live data", { type: "feed/connection", status: { state: "live", detail: "x", gapsFilled: 0, reconnects: 0 } }, (s) => s.freshness, "live"],
     ["a resync is announced", { type: "feed/resync", reason: "event gap" }, (s) => s.freshness, "resyncing"],
@@ -82,12 +82,12 @@ describe("effects: server pushes are applied to the runtime in the order they ar
     expect(useStore.getState().graphs.find((g) => g.id === graph)!.patches).toBe(before + 2);
   });
 
-  it("telemetry frames never reach the state", () => {
+  it("window frames never reach the state", () => {
     const ws = runtime.ws!;
     const graph = useStore.getState().activeGraph;
     const hub = ws.hub(graph);
     const s0 = useStore.getState();
-    dispatch({ type: "feed/telemetry", graph, batch: { graph, tick: 1, t: 1, target: "node", property: hub?.store.metersOf("node")[0]?.id ?? "cpu", values: new Float32Array(0), ids: [] } });
+    dispatch({ type: "feed/windows", graph, batch: { graph, tick: 1, t: 1, target: "node", property: hub?.store.metersOf("node")[0]?.id ?? "cpu", values: new Float32Array(0), ids: [] } });
     expect(useStore.getState().graphs).toBe(s0.graphs);
     expect(useStore.getState().time).toBe(s0.time);
   });

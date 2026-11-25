@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { countAtOrBefore, resolvePatchTimes, formatTime, frameIndexAt, mergeTimes, ordinalTimes, revisionCursorAt } from "../src/core/time-axis";
 import { History } from "../src/app/history";
-import { TelemetryHub } from "../src/app/telemetry-hub";
+import { WindowHub } from "../src/app/window-hub";
 import { Workspace } from "../src/app/workspace";
 import { darkTheme } from "../src/render/theme";
 import { addN, ent, patch, ver } from "./helpers";
 
-describe("a revision gets its commit time, or a place by order among the telemetry windows", () => {
+describe("a revision gets its commit time, or a place by order among the windows", () => {
   const W = [100, 160, 220, 280];
   it.each([
     [[NaN, NaN, NaN], [160, 220, 280], "ordinal"],
@@ -15,14 +15,14 @@ describe("a revision gets its commit time, or a place by order among the telemet
     [[NaN, NaN, 200], [160, 200, 200], "mixed"],      // ordinal must not pass a time the source gave
     [[], [], "ordinal"],
   ])("%j -> %j (%s)", (src, times, source) => expect(resolvePatchTimes(src as number[], W)).toEqual({ times, source }));
-  it("revisions of a graph without commit times are not placed at seconds 1..n against telemetry windows in epoch seconds", () => {
+  it("revisions of a graph without commit times are not placed at seconds 1..n against windows in epoch seconds", () => {
     const windows = [1_800_000_000, 1_800_000_060];
     const { times } = resolvePatchTimes([NaN, NaN, NaN, NaN, NaN], windows);
-    expect(Math.min(...times), "the first revision lies before every telemetry window").toBeGreaterThanOrEqual(windows[0]);
+    expect(Math.min(...times), "the first revision lies before every window").toBeGreaterThanOrEqual(windows[0]);
   });
 });
 
-describe("one position on the time axis picks the revision and the telemetry frame of every graph", () => {
+describe("one position on the time axis picks the revision and the window frame of every graph", () => {
   it.each([[[], 5, 0], [[1, 2, 3], 0, 0], [[1, 2, 3], 2, 2], [[1, 2, 3], 2.5, 2], [[1, 2, 3], 99, 3], [[1, 1, 2], 1, 2]])("countAtOrBefore(%j, %f) = %i", (a, t, n) => expect(countAtOrBefore(a, t)).toBe(n));
   it("merges and sorts unique times from several graphs", () => expect(mergeTimes([[3, 1], [2, 3], []])).toEqual([1, 2, 3]));
   it.each([
@@ -31,7 +31,7 @@ describe("one position on the time axis picks the revision and the telemetry fra
     [4, [0, 60], [1, 2, 3, 4]],  // fewer windows than revisions: by order, not stacked on the last window
     [3, [], [1, 2, 3]],
   ])("ordinalTimes(%i, %j) places revisions at windows or by order", (n, windows, expected) => expect(ordinalTimes(n, windows)).toEqual(expected));
-  it("a position on the axis selects revision and telemetry frame together", () => {
+  it("a position on the axis selects revision and window frame together", () => {
     const revisions = [10, 70, 130];       // commit times
     const windows = [0, 60, 120, 180];     // window starts
     for (const [t, rev, frame] of [[0, 0, 0], [9, 0, 0], [10, 1, 0], [65, 1, 1], [70, 2, 1], [125, 2, 2], [130, 3, 2], [500, 3, 3]]) {
@@ -42,7 +42,7 @@ describe("one position on the time axis picks the revision and the telemetry fra
   it.each([[5, "5 s"], [0.5, "0.5 s"], [90, "90 s"], [185, "3 min 5 s"], [7300, "2.03 h"]])("formatTime(%f) = %s", (t, s) => expect(formatTime(t)).toBe(s));
 });
 
-// Whether the space follows now or shows a time is one value of the workspace: graphs, catalog and telemetry read it.
+// Whether the space follows now or shows a time is one value of the workspace: graphs, catalog and windows read it.
 describe("while the shared timeline shows an earlier time, live patches and values wait for it and the catalog does not", () => {
   /** the workspace's own maps, filled by hand where a test builds a space without a source */
   const histories = (ws: unknown) => (ws as { histories: Map<string, unknown> }).histories;
@@ -75,9 +75,9 @@ describe("while the shared timeline shows an earlier time, live patches and valu
     ws.seek(30, {});
     expect(b.graph.entity("z"), "at the newest time it shows").toBeTruthy();
   });
-  it("telemetry that arrives while the space shows a time does not move the time of the values", () => {
+  it("windows that arrives while the space shows a time does not move the time of the values", () => {
     const { ws, a } = space();
-    const hub = new TelemetryHub(a.graph, { meters: [{ id: "cpu", target: "node", label: "CPU", unit: "", min: 0, max: 1 }], dt: 1, ticks: 1, maxTicks: 1, fetch: async () => ({ batches: [] }), defaults: { edge: { width: "", flow: "", state: "" }, node: { ring: "cpu", size: "cpu", state: "cpu" } } } as never);
+    const hub = new WindowHub(a.graph, { meters: [{ id: "cpu", target: "node", label: "CPU", unit: "", min: 0, max: 1 }], dt: 1, ticks: 1, maxTicks: 1, fetch: async () => ({ batches: [] }), defaults: { edge: { width: "", flow: "", state: "" }, node: { ring: "cpu", size: "cpu", state: "cpu" } } } as never);
     hubs(ws).set("a", hub);
     hub.ingest({ graph: "a", tick: 5, t: 5, target: "node", property: "cpu", values: Float32Array.of(0.5) });
     ws.seek(10, {});                       // the graphs show second 10 of 20; the values' newest window is second 5

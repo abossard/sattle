@@ -1,9 +1,9 @@
 // Plain serializable state of the application and the named actions that change it.
-// Large mutable data (graphs, histories, telemetry frames, GL scenes) lives in `runtime`, never in this state; components
+// Large mutable data (graphs, histories, window frames, GL scenes) lives in `runtime`, never in this state; components
 // read a graph through `useRevision` (ui/common.tsx), one frozen object per version counter of the state, so a change re-renders them once.
 import type { Patch } from "../core/model";
 import type { Rejection } from "../core/validate";
-import type { ConnectionStatus, EngineDiagnostic, TelemetryBatch } from "../source/types";
+import type { ConnectionStatus, EngineDiagnostic, WindowBatch } from "../source/types";
 import type { IdentityEffect, Release } from "../editor/service";
 import type { ProjectionSpec } from "../editor/structures";
 import type { EditorEvent, EditorPhase } from "./editor-phase";
@@ -23,7 +23,7 @@ export interface GraphSummary {
 export interface FilterState { search: string; hiddenTypes: string[]; propKey: string; propOp: "equals" | "contains" | "not equals"; propValue: string; focusDepth: number; grouping: string; focusDim: boolean; /** "auto": the layout the graph reads best in, decided again as it changes; a kind: the person chose it */ layout: "auto" | "force" | "layered"; hlMode: "step" | "since" | "off"; hlSince: number; /** what colors nodes and edges: "@default" (the ontology's presentation hint when it has one), "" (type colors) or a property id */ colorNodes: string; colorEdges: string; /** edge kinds left out (engine 3.17); null: the default of the place the graph is shown (a tile leaves out communication and support) */ hiddenKinds: import("../source/presentation").EdgeKind[] | null; /** draw the relationship types that restate others (a roll-up edge beside what it rolls up); left out by default */ showRestated: boolean }
 export const emptyFilter = (): FilterState => ({ search: "", hiddenTypes: [], propKey: "", propOp: "equals", propValue: "", focusDepth: 0, grouping: "@support", focusDim: true, layout: "auto", hlMode: "step", hlSince: 0, colorNodes: "@default", colorEdges: "@default", hiddenKinds: null, showRestated: false });
 
-export interface TelemetryState {
+export interface WindowState {
   hasData: boolean; enabled: boolean; flow: boolean;
   edge: { width: string; flow: string; state: string }; node: { ring: string; size: string; state: string };
   meters: { id: string; target: "node" | "edge"; label: string; unit: string; warn?: number; min: number; max: number }[];
@@ -93,7 +93,7 @@ export interface State {
   rejections: (Rejection & { at: number })[];
   rejectedTotal: number;
   filters: Record<string, FilterState>;
-  telemetry: Record<string, TelemetryState>;
+  windows: Record<string, WindowState>;
   announcement: string;
   editor: EditorState;
 }
@@ -102,14 +102,14 @@ export type Action =
   // lifecycle
   /** `resync`: the same source is read again after a gap; the author's editor session and draft stay */
   | { type: "source/opening"; id: string; resync?: boolean }
-  | { type: "source/opened"; graphs: GraphSummary[]; catalog: string; ms: number; telemetry: Record<string, TelemetryState>; active: string }
+  | { type: "source/opened"; graphs: GraphSummary[]; catalog: string; ms: number; windows: Record<string, WindowState>; active: string }
   | { type: "source/failed"; message: string }
   // server push, dispatched in the order the source delivers it
   | { type: "feed/patch"; graph: string; patch: Patch; time?: number }
-  | { type: "data/summary"; graphs: GraphSummary[]; telemetry: Record<string, TelemetryState> }
+  | { type: "data/summary"; graphs: GraphSummary[]; windows: Record<string, WindowState> }
   | { type: "data/touched"; graph: string }
-  | { type: "feed/telemetry"; graph: string; batch: TelemetryBatch }
-  | { type: "feed/telemetryReset"; graph: string }
+  | { type: "feed/windows"; graph: string; batch: WindowBatch }
+  | { type: "feed/windowsReset"; graph: string }
   | { type: "feed/meta"; graph: string; meta: import("../source/types").GraphMeta }
   | { type: "feed/resync"; reason: string }
   | { type: "feed/rejected"; rejection: Rejection; at: number }
@@ -143,4 +143,4 @@ export type Action =
   | { type: "time/seek"; t: number }
   | { type: "time/changed"; now: number; following: boolean; first: number; last: number }
   | { type: "filter/set"; graph: string; filter: Partial<FilterState> }
-  | { type: "telemetry/set"; graph: string; change: Partial<Pick<TelemetryState, "enabled" | "flow">> & { edge?: Partial<TelemetryState["edge"]>; node?: Partial<TelemetryState["node"]>; warn?: { id: string; target: "node" | "edge"; value: number | undefined } } }
+  | { type: "windows/set"; graph: string; change: Partial<Pick<WindowState, "enabled" | "flow">> & { edge?: Partial<WindowState["edge"]>; node?: Partial<WindowState["node"]>; warn?: { id: string; target: "node" | "edge"; value: number | undefined } } }

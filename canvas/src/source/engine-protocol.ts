@@ -18,7 +18,7 @@ export const ENGINE_ENDPOINTS = {
   revisions: (g: string, after: string, to?: string) => `/graphs/${encodeURIComponent(g)}/revisions?after=${encodeURIComponent(after)}${to ? `&to=${encodeURIComponent(to)}` : ""}`,
   meters: (g: string) => `/graphs/${encodeURIComponent(g)}/meters`,
   /** window starts are RFC 3339 instants; `from` is inclusive */
-  telemetry: (g: string, from?: string) => `/graphs/${encodeURIComponent(g)}/telemetry?format=batches${from ? `&from=${encodeURIComponent(from)}` : ""}`,
+  windows: (g: string, from?: string) => `/graphs/${encodeURIComponent(g)}/windows?format=batches${from ? `&from=${encodeURIComponent(from)}` : ""}`,
   /** Markdown of a document graph; with a revision the answer is immutable */
   document: (g: string, revision?: string) => `/graphs/${encodeURIComponent(g)}/document${revision === undefined ? "" : `?revision=${encodeURIComponent(revision)}`}`,
   lineage: (g: string, element: string, after?: string) => `/graphs/${encodeURIComponent(g)}/lineage?element=${encodeURIComponent(element)}&limit=500${after ? `&after=${encodeURIComponent(after)}` : ""}`,
@@ -65,8 +65,8 @@ export const commitTime = (raw: unknown): number | undefined => { const t = type
 export const revisionTimes = (records: unknown[]): Record<string, number> =>
   Object.fromEntries(records.flatMap((r) => { const o = r as Record<string, unknown> | null; const t = commitTime(o?.time); return o && t !== undefined ? [[String(o.revision), t]] : []; }));
 
-/** The telemetry batch of the wire (windowStart present) as the seam batch: `t` is the window start in epoch seconds. */
-export function batchFromWire(raw: unknown): { ok: true; batch: import("./types").TelemetryBatch } | { ok: false; errors: string[] } {
+/** The windows batch of the wire (windowStart present) as the seam batch: `t` is the window start in epoch seconds. */
+export function batchFromWire(raw: unknown): { ok: true; batch: import("./types").WindowBatch } | { ok: false; errors: string[] } {
   const o = raw as Record<string, unknown> | null;
   const e: string[] = [];
   if (!o || typeof o !== "object") return { ok: false, errors: ["not an object"] };
@@ -99,7 +99,7 @@ export type WsMessage =
   | { type: "hello"; space: unknown }
   | { type: "snapshot"; graph: string; seq?: string }
   | { type: "patch"; graph: string; patch: unknown; seq?: string; time?: number }
-  | { type: "telemetry"; graph: string; batch: unknown; seq?: string }
+  | { type: "windows"; graph: string; batch: unknown; seq?: string }
   | { type: "gap"; firstSeq: string }
   | { type: "activation"; catalogRevision: string; graphs: { id: string; from: string; to: string }[]; seq?: string }
   | { type: "draft"; draft: string; revision: string; ok: boolean; diagnostics: unknown; seq?: string }
@@ -115,7 +115,7 @@ export function parseWsMessage(raw: unknown): WsMessage {
     case "hello": return { type: "hello", space: m.space };
     case "snapshot": return { type: "snapshot", graph: String(m.graph), seq };
     case "patch": return { type: "patch", graph: String(m.graph), patch: m.patch, seq, time: commitTime(m.time) };
-    case "telemetry": return { type: "telemetry", graph: String(m.graph), batch: m.batch, seq };
+    case "windows": return { type: "windows", graph: String(m.graph), batch: m.batch, seq };
     case "gap": return { type: "gap", firstSeq: String(m.firstSeq) };
     case "activation": return { type: "activation", catalogRevision: String(m.catalogRevision), graphs: Array.isArray(m.graphs) ? (m.graphs as { id: string; from: string; to: string }[]) : [], seq };
     case "draft": return { type: "draft", draft: String(m.draft), revision: String(m.revision), ok: m.ok === true, diagnostics: m.diagnostics, seq };

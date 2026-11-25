@@ -131,7 +131,7 @@ export function generateEstate(o: EstateOptions): Estate {
 }
 
 export const estateOntology: OntologyDefinition = (() => {
-  const prop = (id: string, valueKind: "text" | "integer" | "decimal", role: "graphData" | "telemetry" = "graphData", unit: string | null = null) =>
+  const prop = (id: string, valueKind: "text" | "integer" | "decimal", role: "graphData" | "events" = "graphData", unit: string | null = null) =>
     ({ id: { value: id }, valueKind, nullable: false, itemKind: null, unit, role });
   const ids = (...a: string[]) => a.map((value) => ({ value }));
   return {
@@ -141,8 +141,8 @@ export const estateOntology: OntologyDefinition = (() => {
     noRelationshipType: { value: "NoType" },
     properties: [
       prop("name", "text"), prop("health", "text"), prop("region", "text"),
-      prop("requests", "decimal", "telemetry", "1/s"), prop("errorRate", "decimal", "telemetry"), prop("latencyMs", "decimal", "telemetry", "ms"),
-      prop("cpu", "decimal", "telemetry"), prop("memory", "decimal", "telemetry"),
+      prop("requests", "decimal", "events", "1/s"), prop("errorRate", "decimal", "events"), prop("latencyMs", "decimal", "events", "ms"),
+      prop("cpu", "decimal", "events"), prop("memory", "decimal", "events"),
     ],
     entityTypes: [
       { id: { value: "NoType" }, properties: [] },

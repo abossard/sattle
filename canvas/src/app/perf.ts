@@ -128,10 +128,10 @@ export function installPerf(getWs: () => Workspace | null, graph: () => string):
       return { patches: hist.length, edits, applyAvgMs: +(times.reduce((a, b) => a + b, 0) / times.length).toFixed(3), applyMaxMs: +Math.max(...times).toFixed(3), relayouts: p.layoutBusy ? 1 : 0, positionsChanged: moved };
     },
     /**
-     * Telemetry at `hz` ticks per second on every node and edge, with the camera idle, panning, or zoomed in with flow pulses on.
+     * Windows at `hz` ticks per second on every node and edge, with the camera idle, panning, or zoomed in with flow pulses on.
      * Needs the synth-100k-stream source (simulated stream). Reports frame statistics and the per-tick costs.
      */
-    async telemetry(hz = 10, ms = 6000, mode: "idle" | "pan" | "zoomed" = "pan"): Promise<Record<string, unknown>> {
+    async windows(hz = 10, ms = 6000, mode: "idle" | "pan" | "zoomed" = "pan"): Promise<Record<string, unknown>> {
       const ws = getWs()!; const p = pane(); const v = p.view; const hub = ws.hub(graph())!;
       const ctl = ws.source.controls!;
       v.fit(false);
@@ -149,11 +149,11 @@ export function installPerf(getWs: () => Workspace | null, graph: () => string):
       return {
         mode, requestedHz: hz, achievedHz: +(ticks / (ms / 1000)).toFixed(1), ticks, ingestedBatches: hub.store.stats.ticks - c0,
         ...summarize(d), cpuMs: avg(cpu), labelMs: avg(lab), maxCpuMs: +Math.max(...cpu).toFixed(1),
-        ingestAvgMs: +hub.store.stats.avgMs.toFixed(2), applyAvgMs: +p.telemetryApplyMs.toFixed(2), flowActive: v.flowActive,
+        ingestAvgMs: +hub.store.stats.avgMs.toFixed(2), applyAvgMs: +p.windowsApplyMs.toFixed(2), flowActive: v.flowActive,
         edges: p.graph.edgeCount, nodes: p.graph.nodeCount, valuesPerTick: p.graph.edgeCount * 3 + p.graph.nodeCount * 2,
       };
     },
-    /** scrub through the stored telemetry window while panning; measures frame time with a tick change every frame */
+    /** scrub through the stored windows while panning; measures frame time with a tick change every frame */
     async scrub(ms = 4000): Promise<FrameStats> {
       const ws = getWs()!; const g = graph(); const hub = ws.hub(g)!; const v = pane().view;
       v.fit(false);

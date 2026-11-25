@@ -1,5 +1,5 @@
 // The renderer's half of the Drawing Sheet (DESIGN.md): paper and ink, drafting blue for the selection and what follows from it
-// (the same element in other graphs, the live telemetry flow), ink for a revision's changes (the ring pattern says which),
+// (the same element in other graphs, the live windows flow), ink for a revision's changes (the ring pattern says which),
 // Fluent's status colors for errors and warnings, and muted tints for the categories (types, roles, edge kinds), none of them blue.
 // Color never carries meaning alone: shapes, ring patterns, glyphs and labels repeat every distinction.
 import { webDarkTheme, webLightTheme } from "@fluentui/react-components";

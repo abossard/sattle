@@ -1,4 +1,4 @@
-// The mutable side of the application: the open workspace (graphs, histories, GL panes, telemetry stores).
+// The mutable side of the application: the open workspace (graphs, histories, GL panes, windows stores).
 // State holds summaries of it; only effects write it, in the order actions arrive.
 import type { Workspace } from "../app/workspace";
 import type { EditorSession } from "../editor/session";

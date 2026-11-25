@@ -21,7 +21,7 @@ export interface RenderParams {
   minNodePx: number;
   /** draw every n-th edge (hash sampled); adaptive level of detail while the camera moves */
   edgeSkip: number;
-  telemetry: { on: boolean; warnNode: number; warnEdge: number; flow: boolean; time: number };
+  windows: { on: boolean; warnNode: number; warnEdge: number; flow: boolean; time: number };
 }
 
 const COMMON = `#version 300 es
@@ -38,9 +38,9 @@ layout(location=0) in int aSlot;
 layout(location=1) in vec2 aSize;
 layout(location=2) in vec4 aColor;
 layout(location=3) in uint aMeta;
-layout(location=4) in float aN0;   // telemetry: ring gauge
-layout(location=5) in float aN1;   // telemetry: size
-layout(location=6) in float aN2;   // telemetry: state
+layout(location=4) in float aN0;   // windows: ring gauge
+layout(location=5) in float aN1;   // windows: size
+layout(location=6) in float aN2;   // windows: state
 uniform float uMinPx; uniform int uTel; uniform float uWarnN;
 out vec2 vP; out vec4 vColor; out vec2 vHalf; flat out uint vMeta; out vec3 vTel;
 void main(){
@@ -143,9 +143,9 @@ const EDGE_VS = COMMON + `
 layout(location=0) in ivec2 aEnds;
 layout(location=1) in vec4 aColor;
 layout(location=2) in uint aMeta;
-layout(location=3) in float aT0;   // telemetry: width
-layout(location=4) in float aT1;   // telemetry: flow speed
-layout(location=5) in float aT2;   // telemetry: state
+layout(location=3) in float aT0;   // windows: width
+layout(location=4) in float aT1;   // windows: flow speed
+layout(location=5) in float aT2;   // windows: state
 uniform float uWidth; uniform float uEdgeAlpha; uniform int uWire; uniform int uSegments; uniform int uSkip; uniform int uTel; uniform float uWarnE;
 out vec4 vColor; out float vDist; out float vSide; flat out uint vMeta; out vec2 vTel;
 void main(){
@@ -354,13 +354,13 @@ export class GraphRenderer {
     gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, stride, 4); gl.vertexAttribDivisor(1, 1);
     gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 4, gl.UNSIGNED_BYTE, true, stride, 12); gl.vertexAttribDivisor(2, 1);
     gl.enableVertexAttribArray(3); gl.vertexAttribIPointer(3, 1, gl.UNSIGNED_INT, stride, 16); gl.vertexAttribDivisor(3, 1);
-    const tel = this.telemetryBuffers(4);
+    const tel = this.windowsBuffers(4);
     gl.bindVertexArray(null);
     return { vao, buf, bytes: 0, tel, telBytes: 0 };
   }
 
-  /** Three byte-per-instance telemetry attributes (normalized to 0..1 in the shader) starting at `first`. */
-  private telemetryBuffers(first: number, shared?: WebGLBuffer[]): WebGLBuffer[] {
+  /** Three byte-per-instance windows attributes (normalized to 0..1 in the shader) starting at `first`. */
+  private windowsBuffers(first: number, shared?: WebGLBuffer[]): WebGLBuffer[] {
     const { gl } = this;
     const tel = shared ?? [0, 1, 2].map(() => gl.createBuffer()!);
     for (let c = 0; c < 3; c++) {
@@ -379,7 +379,7 @@ export class GraphRenderer {
     gl.enableVertexAttribArray(0); gl.vertexAttribIPointer(0, 2, gl.INT, stride, 0); gl.vertexAttribDivisor(0, 1);
     gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.UNSIGNED_BYTE, true, stride, 8); gl.vertexAttribDivisor(1, 1);
     gl.enableVertexAttribArray(2); gl.vertexAttribIPointer(2, 1, gl.UNSIGNED_INT, stride, 12); gl.vertexAttribDivisor(2, 1);
-    const tel = this.telemetryBuffers(3, shared?.tel);
+    const tel = this.windowsBuffers(3, shared?.tel);
     gl.bindVertexArray(null);
     return { vao, buf, bytes: 0, tel, telBytes: 0 };
   }
@@ -391,7 +391,7 @@ export class GraphRenderer {
     scene.positionsDirty = true;
     this.nodes.bytes = 0; this.edges.bytes = 0;
     this.nodes.telBytes = 0; this.edges.telBytes = 0;
-    scene.telemetryDirty = true;
+    scene.windowsDirty = true;
     this.hotDirty = true;
   }
 
@@ -420,7 +420,7 @@ export class GraphRenderer {
       s.edgeDirty = null;
       this.hotDirty = true;
     }
-    if (s.telemetryDirty) {
+    if (s.windowsDirty) {
       const up = (ib: InstanceBuffer, chans: Uint8Array[]) => {
         for (let c = 0; c < 3; c++) {
           gl.bindBuffer(gl.ARRAY_BUFFER, ib.tel[c]);
@@ -430,7 +430,7 @@ export class GraphRenderer {
         ib.telBytes = chans[0].byteLength;
       };
       up(this.nodes, s.nodeT); up(this.edges, s.edgeT);
-      s.telemetryDirty = false;
+      s.windowsDirty = false;
       this.hotDirty = true;
     }
     if (s.positionsDirty && s.nodeCap) {
@@ -508,10 +508,10 @@ export class GraphRenderer {
       gl.uniform1i(this.edgeProg.u.uWire, p.wires ? 1 : 0);
       gl.uniform1i(this.edgeProg.u.uSegments, BEZIER_SEGMENTS);
       gl.uniform1i(this.edgeProg.u.uSkip, ib === this.edges ? p.edgeSkip : 1);
-      gl.uniform1i(this.edgeProg.u.uTel, p.telemetry.on ? 1 : 0);
-      gl.uniform1f(this.edgeProg.u.uWarnE, p.telemetry.warnEdge / 255 - 0.001);
-      gl.uniform1f(this.edgeProg.u.uTime, p.telemetry.time);
-      gl.uniform1i(this.edgeProg.u.uFlowOn, p.telemetry.flow ? 1 : 0);
+      gl.uniform1i(this.edgeProg.u.uTel, p.windows.on ? 1 : 0);
+      gl.uniform1f(this.edgeProg.u.uWarnE, p.windows.warnEdge / 255 - 0.001);
+      gl.uniform1f(this.edgeProg.u.uTime, p.windows.time);
+      gl.uniform1i(this.edgeProg.u.uFlowOn, p.windows.flow ? 1 : 0);
       gl.bindVertexArray(ib.vao);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, edgeVerts, count);
     };
@@ -527,8 +527,8 @@ export class GraphRenderer {
       if (count <= 0) return;
       setCommon(this.nodeProg, dim);
       gl.uniform1f(this.nodeProg.u.uMinPx, p.minNodePx);
-      gl.uniform1i(this.nodeProg.u.uTel, p.telemetry.on ? 1 : 0);
-      gl.uniform1f(this.nodeProg.u.uWarnN, p.telemetry.warnNode / 255 - 0.001);
+      gl.uniform1i(this.nodeProg.u.uTel, p.windows.on ? 1 : 0);
+      gl.uniform1f(this.nodeProg.u.uWarnN, p.windows.warnNode / 255 - 0.001);
       gl.bindVertexArray(ib.vao);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
     };

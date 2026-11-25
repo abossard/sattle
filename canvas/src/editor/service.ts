@@ -15,7 +15,7 @@ export interface Draft { draft: string; baseRevision: string; revision: string }
 /** engine 3.50: a projection in a file of its own, and the language the engine reads that file in; the language picks the editor (ui/editor/languages.tsx) */
 export interface ProjectionFile { projection: string; file: string; language: string }
 /** engine 3.21: a column of the rows after an operator. `kind` is `Entity`, `Relationship` or the value kind; `unit` a unit other than 1; `item` the item kind of a list. */
-export interface Column { name: string; kind: string; type: string | null; unit: string | null; item: string | null; required: boolean; role: "data" | "telemetry"; temporality: string | null; period: string | null }
+export interface Column { name: string; kind: string; type: string | null; unit: string | null; item: string | null; required: boolean; role: "data" | "events"; temporality: string | null; period: string | null }
 /** engine 3.21: the columns after each typed operator of a projection, in order, from a draft check or a draft patch */
 export interface OperatorSchema { op: string; name: string; kind: string; window: string | null; columns: Column[] }
 /** engine 3.21: the rows a physical operator holds after the replay of a preview (`include: ["rows"]`), with the first `rowLimit` of them */
@@ -27,7 +27,7 @@ export function parseColumns(list: unknown): Column[] {
   return (Array.isArray(list) ? list : []).map((x): Column => {
     if (typeof x === "string") return { name: x, kind: "", type: null, unit: null, item: null, required: true, role: "data", temporality: null, period: null };
     const c = (x ?? {}) as Record<string, unknown>;
-    return { name: String(c.name ?? ""), kind: String(c.kind ?? ""), type: str(c.type), unit: str(c.unit), item: str(c.item), required: c.required === true, role: c.role === "telemetry" ? "telemetry" : "data", temporality: str(c.temporality), period: str(c.period) };
+    return { name: String(c.name ?? ""), kind: String(c.kind ?? ""), type: str(c.type), unit: str(c.unit), item: str(c.item), required: c.required === true, role: c.role === "events" ? "events" : "data", temporality: str(c.temporality), period: str(c.period) };
   });
 }
 /** The `schemas` of a check or patch answer, by projection id; absent from an older engine. */
@@ -51,7 +51,7 @@ export interface Applied {
   /** engine 3.21: the columns after each operator, by projection id */
   schemas?: Record<string, OperatorSchema[]> }
 export interface Release { module: string; version: string; digest: string; catalogRevision: string; supersedes: string | null }
-export interface PreviewGraph { id: string; removed?: boolean; counts: { entities: string; relationships: string; telemetryWindows: string }; digest?: string; diff: Patch | null; snapshot?: Snapshot; truncated?: boolean;
+export interface PreviewGraph { id: string; removed?: boolean; counts: { entities: string; relationships: string; windows: string }; digest?: string; diff: Patch | null; snapshot?: Snapshot; truncated?: boolean;
   /** engine 3.21, with `include: ["rows"]`: the rows after each operator of the graph's plan */
   operators?: OperatorRows[] }
 /** Engine 3.7: what identity resolution did in the previewed space (counters are integers as strings). `difference` is preview minus live, present when `comparable`. */

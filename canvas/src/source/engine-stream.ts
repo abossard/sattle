@@ -5,7 +5,7 @@
 // The generation rule: every read an effect asks for carries the generation of its graph; a graph's generation is bumped when its state is replaced
 // (a gap, an activation) and by dispose. The result of a read of an older generation yields no effects, so a step that was overtaken delivers nothing.
 import type { Patch } from "../core/model";
-import type { ConnectionStatus, GraphMeta, StreamEvent, TelemetryBatch } from "./types";
+import type { ConnectionStatus, GraphMeta, StreamEvent, WindowBatch } from "./types";
 
 const num = (r: string): number => Number(r);
 /** Sequence numbers are decimal strings that can outgrow a double. */
@@ -15,21 +15,21 @@ export interface GraphStream {
   /** bumped when the state of the graph is replaced; results of reads of an older one are ignored */
   gen: number;
   lastRevision: string | undefined;
-  /** start of the newest telemetry window delivered (a read starts there, inclusive: a window may have been revised) */
+  /** start of the newest window delivered (a read starts there, inclusive: a window may have been revised) */
   lastWindow: number | undefined;
-  /** the catalog has no telemetry and the engine answers 404 for it */
-  telemetry: boolean;
+  /** the catalog has no windows and the engine answers 404 for it */
+  windows: boolean;
   /** a sink follows the graph: only those are read again after a reconnect, an activation or a gap */
   subscribed: boolean;
-  /** a read of patches or telemetry is in flight: one at a time per graph */
+  /** a read of patches or windows is in flight: one at a time per graph */
   reading: boolean;
   /** a patch of the stream that skipped a revision, with its commit time, held until the read that fills the hole is back */
   parked: { patch: Patch; time: number | undefined } | null;
   /** failed catch-ups in a row; the graph is behind while this is not 0 */
   failures: number;
   /**
-   * The sequence number the newest telemetry read was asked at: the highest the client knew when it issued the read. The read reflects at least
-   * every event up to it, so a telemetry event with `seq <= historySeq` is already in what the read delivered. An event without `seq` is delivered
+   * The sequence number the newest windows read was asked at: the highest the client knew when it issued the read. The read reflects at least
+   * every event up to it, so a windows event with `seq <= historySeq` is already in what the read delivered. An event without `seq` is delivered
    * (nothing proves it was included); later events follow in order, so the last value of a window is still the engine's.
    */
   historySeq: string | undefined;
@@ -60,7 +60,7 @@ export type Event =
   | { t: "subscribed"; graph: string }
   /** `times`: the commit time of each revision the read knows one for (engine 3.54) */
   | { t: "patches"; graph: string; gen: number; why: Why; patches: Patch[]; times?: Record<string, number> }
-  | { t: "windows"; graph: string; gen: number; why: Why; batches: TelemetryBatch[] }
+  | { t: "windows"; graph: string; gen: number; why: Why; batches: WindowBatch[] }
   | { t: "readFailed"; graph: string; gen: number; why: Why; error: string }
   | { t: "meta"; graph: string; gen: number; meta: GraphMeta }
   | { t: "retry"; graph: string; gen: number }
@@ -72,7 +72,7 @@ export type Event =
   /** this environment has no WebSocket */
   | { t: "socketUnavailable" }
   | { t: "wsPatch"; graph: string; patch: Patch; seq?: string; time?: number }
-  | { t: "wsTelemetry"; graph: string; batch: TelemetryBatch; seq?: string }
+  | { t: "wsWindows"; graph: string; batch: WindowBatch; seq?: string }
   | { t: "wsTime"; logicalTime: number }
   | { t: "wsActivation"; catalogRevision: string; graphs: string[]; seq?: string }
   | { t: "wsGap"; firstSeq: string }
@@ -84,7 +84,7 @@ export type Event =
 export type Effect =
   | { k: "emit"; graph: string; event: StreamEvent }
   | { k: "readPatches"; graph: string; gen: number; why: Why; after: string }
-  | { k: "readTelemetry"; graph: string; gen: number; why: Why; from: number | undefined }
+  | { k: "readWindows"; graph: string; gen: number; why: Why; from: number | undefined }
   | { k: "readMeta"; graph: string; gen: number }
   /** `state` absent: keep the state the connection is in; `gapFilled`: one more gap was filled */
   | { k: "status"; state?: ConnectionStatus["state"]; detail: string; gapFilled?: boolean }
@@ -96,8 +96,8 @@ export type Effect =
   /** open the socket again after the `attempt`-th backoff delay (the same delays as a read's retry) */
   | { k: "reconnect"; attempt: number };
 
-export const initialStream = (graphs: { id: string; revision: string | undefined; telemetry: boolean }[], seq: string | undefined): StreamState => ({
-  graphs: Object.fromEntries(graphs.map((g) => [g.id, { gen: 0, lastRevision: g.revision, lastWindow: undefined, telemetry: g.telemetry, subscribed: false, reading: false, parked: null, failures: 0, historySeq: undefined }])),
+export const initialStream = (graphs: { id: string; revision: string | undefined; windows: boolean }[], seq: string | undefined): StreamState => ({
+  graphs: Object.fromEntries(graphs.map((g) => [g.id, { gen: 0, lastRevision: g.revision, lastWindow: undefined, windows: g.windows, subscribed: false, reading: false, parked: null, failures: 0, historySeq: undefined }])),
   space: graphs.map((g) => g.id), seq, logicalTime: NaN, link: { k: "none" },
 });
 
@@ -112,7 +112,7 @@ function deliver(graph: string, g: GraphStream, patch: Patch, time: number | und
 /** The commit time of a live patch: its own, else (an engine before 3.54) the newest logical time. */
 const liveTime = (s: StreamState, time: number | undefined): number | undefined => time ?? (Number.isFinite(s.logicalTime) ? s.logicalTime : undefined);
 
-/** The reads of a graph start: the patches after the last revision, then the telemetry (the continuation is in the patches' result). */
+/** The reads of a graph start: the patches after the last revision, then the windows (the continuation is in the patches' result). */
 function startRead(s: StreamState, graph: string, why: Why): Out {
   const g = s.graphs[graph];
   if (!g || g.reading || s.link.k === "closed") return out(s);
@@ -182,12 +182,12 @@ function step(s: StreamState, e: Event): Out {
     case "wsActivation": {
       // a graph the space did not have before (a committed projection brought it): the view reloads to show it
       if (e.graphs.some((id) => !s.space.includes(id))) return out(s, ...all.map((graph): Effect => ({ k: "emit", graph, event: { type: "resync", reason: "the space has a new graph" } })));
-      // a definition edit re-activated the space: stored telemetry may differ, the ontology and the roles of the values may too, and all are read again
+      // a definition edit re-activated the space: stored windows may differ, the ontology and the roles of the values may too, and all are read again
       let next = s;
       const effects: Effect[] = [];
       for (const id of all) {
         next = withGraph(next, id, { ...replaced(next.graphs[id]), lastWindow: undefined });
-        effects.push({ k: "emit", graph: id, event: { type: "telemetry-reset" } }, { k: "readMeta", graph: id, gen: next.graphs[id].gen });
+        effects.push({ k: "emit", graph: id, event: { type: "windows-reset" } }, { k: "readMeta", graph: id, gen: next.graphs[id].gen });
         const r = startRead(next, id, "activation");
         next = r.state; effects.push(...r.effects);
       }
@@ -206,12 +206,12 @@ function step(s: StreamState, e: Event): Out {
       const d = deliver(e.graph, g, e.patch, liveTime(s, e.time));
       return out(withGraph(s, e.graph, d.g), d.effect);
     }
-    case "wsTelemetry": {
+    case "wsWindows": {
       const g = s.graphs[e.graph];
       if (!g) return out(s);
-      // what the telemetry read already holds is not delivered again (an older value of a window must not replace a newer one); a revised window is not "older"
+      // what the windows read already holds is not delivered again (an older value of a window must not replace a newer one); a revised window is not "older"
       if (e.seq !== undefined && g.historySeq !== undefined && seqLeq(e.seq, g.historySeq)) return out(s);
-      return out(withGraph(s, e.graph, { ...g, lastWindow: Math.max(g.lastWindow ?? -Infinity, e.batch.t) }), { k: "emit", graph: e.graph, event: { type: "telemetry", batch: e.batch } });
+      return out(withGraph(s, e.graph, { ...g, lastWindow: Math.max(g.lastWindow ?? -Infinity, e.batch.t) }), { k: "emit", graph: e.graph, event: { type: "windows", batch: e.batch } });
     }
     case "meta": {
       const g = s.graphs[e.graph];
@@ -235,9 +235,9 @@ function step(s: StreamState, e: Event): Out {
         if (cur.lastRevision === undefined || num(p.to.revision) > num(cur.lastRevision)) { const d = deliver(e.graph, cur, p, time); cur = d.g; effects.push(d.effect); }
       }
       if (delivered && e.why !== "history") effects.push({ k: "status", detail: `${e.why}: filled ${delivered} revision(s)`, gapFilled: true });
-      if (cur.telemetry) {
+      if (cur.windows) {
         const asked = { ...cur, historySeq: s.seq };
-        effects.push({ k: "readTelemetry", graph: e.graph, gen: cur.gen, why: e.why, from: cur.lastWindow });
+        effects.push({ k: "readWindows", graph: e.graph, gen: cur.gen, why: e.why, from: cur.lastWindow });
         return { state: withGraph(s, e.graph, asked), effects };
       }
       return finishRead(withGraph(s, e.graph, cur), e.graph, e.why, effects);
@@ -245,7 +245,7 @@ function step(s: StreamState, e: Event): Out {
     case "windows": {
       const g = s.graphs[e.graph];
       if (!g || g.gen !== e.gen) return out(s);
-      const effects: Effect[] = e.batches.map((batch): Effect => ({ k: "emit", graph: e.graph, event: { type: "telemetry", batch } }));
+      const effects: Effect[] = e.batches.map((batch): Effect => ({ k: "emit", graph: e.graph, event: { type: "windows", batch } }));
       const lastWindow = e.batches.reduce((m, b) => Math.max(m, b.t), g.lastWindow ?? -Infinity);
       return finishRead(withGraph(s, e.graph, { ...g, lastWindow: Number.isFinite(lastWindow) ? lastWindow : undefined }), e.graph, e.why, effects);
     }
@@ -268,7 +268,7 @@ function step(s: StreamState, e: Event): Out {
   }
 }
 
-/** The patches and the telemetry of a read are in: the history is done (sinks are caught up, the socket follows), or a catch-up worked (the graph is not behind any more). */
+/** The patches and the windows of a read are in: the history is done (sinks are caught up, the socket follows), or a catch-up worked (the graph is not behind any more). */
 function finishRead(s: StreamState, graph: string, why: Why, effects: Effect[]): Out {
   const g = s.graphs[graph];
   const done = withGraph(s, graph, { ...g, reading: false, failures: 0 });

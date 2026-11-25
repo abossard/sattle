@@ -204,12 +204,12 @@ for (const theme of ["light", "dark", "contrast"]) {
   const grouped = JSON.parse(await evaluate(`(() => { const p = window.__sattle.ws.pane("workload"); return JSON.stringify({ hiddenKinds: p ? [...p.hiddenKinds()] : [], counted: p ? p.labelsShown().filter((l) => /\\(\\+\\d+\\)/.test(l)).length : 0 }); })()`));
   if (!grouped.hiddenKinds.includes("support") || !(grouped.counted > 0)) fail.push(`${name}: the supporting elements of workload are not left out and counted (${JSON.stringify(grouped)})`);
   await runAxe(`${name} workload collapsed`);
-  // telemetry of the default source (static meters and windows): the lifted edges carry callDropRatio, the panel offers it
+  // windows of the default source (static meters and windows): the lifted edges carry callDropRatio, the panel offers it
   await dispatch({ type: "ui/activeGraph", graph: "capabilities" }); await sleep(1500);
-  await clickText("button", "Telemetry"); await sleep(600);
+  await clickText("button", "Windows"); await sleep(600);
   const meters = JSON.parse(await evaluate(`JSON.stringify([...document.querySelectorAll("select")].flatMap((x) => [...x.options].map((o) => o.textContent)).filter((t) => /^call/.test(t)))`));
-  if (!meters.includes("callDropRatio")) fail.push(`${name}: the telemetry panel does not offer callDropRatio on capabilities (${JSON.stringify(meters)})`);
-  await runAxe(`${name} telemetry`);
+  if (!meters.includes("callDropRatio")) fail.push(`${name}: the windows panel does not offer callDropRatio on capabilities (${JSON.stringify(meters)})`);
+  await runAxe(`${name} windows`);
   // a selection whose lineage is partial says so in the Inspector, and a complete one does not
   await dispatch({ type: "ui/view", view: "space" });
   const partialSel = { graph: "treeStructure", kind: "entity", id: await evaluate(`(async () => { const ws = window.__sattle.ws; for (const e of ws.history("treeStructure").graph.entities()) { const l = await ws.source.lineage("treeStructure", e.id); if (l && l.complete === false) return e.id; } return ""; })()`) };

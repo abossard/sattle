@@ -105,7 +105,7 @@ describe("a screen shown on its own has no axe violations", () => {
         ...fakeWorkspace({ r: { cursor: 2, revisionAt: (i: number) => String(i) } }),
         source: { document: async (_g: string, rev?: string) => ({ revision: String(rev), digest: `sha256:${rev}`.padEnd(30, "0"), markdown: MD }) },
       } as never;
-      dispatch({ type: "data/summary", graphs: [{ id: "r", role: "projection", head: "2", patches: 2, nodes: 0, edges: 0, version: 0 }], telemetry: {} });
+      dispatch({ type: "data/summary", graphs: [{ id: "r", role: "projection", head: "2", patches: 2, nodes: 0, edges: 0, version: 0 }], windows: {} });
       wrap(<DocumentView graph="r" />);
       return screen.findByText("Items: 2");
     }],
@@ -120,7 +120,7 @@ describe("a screen shown on its own has no axe violations", () => {
     }],
     ["the edge kinds section of the filters", async () => {
       runtime.ws = kindsWorkspace();
-      dispatch({ type: "data/summary", graphs: [], telemetry: {} });
+      dispatch({ type: "data/summary", graphs: [], windows: {} });
       wrap(<FiltersPanel graph="g" />);
       await userEvent.setup().click(await screen.findByRole("button", { name: "Edge kinds" }));
     }],

@@ -9,11 +9,11 @@ import type {
   EntityState, GraphDescriptorWire, GraphExtentWire, GraphPatchWire, GraphSpaceDefinition, OntologyDefinition, ProjectionDefinition, RelationshipState,
 } from "../core/wire-types";
 import { RejectionBus } from "./base";
-import { parseTelemetryNdjson } from "./telemetry-file";
+import { parseWindowsNdjson } from "./window-file";
 import { parseLineage, parseMeters, parseReferences, parseReverseLineage } from "./engine-protocol";
 import { readPresentation, type EdgeKind, type PresentationHint, type TreeSpec } from "./presentation";
 import { parsePatch, parseRecords, parseSnapshot } from "./snapshot-file";
-import type { ChannelDefaults, Correspondence, DocumentText, GraphInfo, GraphSource, Lineage, Meter, Reference, ReverseLineage, SpaceInfo, StreamEvent, TelemetryBatch, TelemetryFeed } from "./types";
+import type { ChannelDefaults, Correspondence, DocumentText, GraphInfo, GraphSource, Lineage, Meter, Reference, ReverseLineage, SpaceInfo, StreamEvent, WindowBatch, WindowFeed } from "./types";
 
 export interface Manifest {
   /** GraphSpaceDefinition file, relative to the manifest */
@@ -24,11 +24,11 @@ export interface Manifest {
     lineage?: string; lineageReverse?: string; document?: string; documentJson?: string;
     /** one line on what the graph is (the projection's purpose), when the engine wrote it */
     description?: string;
-    /** engine 3.12 `replay --out`: the references (NDJSON), and the telemetry declarations (the body of `GET /graphs/{g}/meters`); the telemetry file is `NAME.telemetry.ndjson` next to them */
-    references?: string; meters?: string; telemetry?: string;
+    /** engine 3.12 `replay --out`: the references (NDJSON), and the window declarations (the body of `GET /graphs/{g}/meters`); the windows file is `NAME.windows.ndjson` next to them */
+    references?: string; meters?: string; windows?: string;
   }>;
-  /** optional telemetry: meters and a sparse NDJSON file, see telemetry-file.ts */
-  telemetry?: { meters: Meter[]; defaults: ChannelDefaults; dt: number; file: string };
+  /** optional windows: meters and a sparse NDJSON file, see window-file.ts */
+  windows?: { meters: Meter[]; defaults: ChannelDefaults; dt: number; file: string };
 }
 
 interface SnapshotFile { descriptor: GraphDescriptorWire; extent: GraphExtentWire }
@@ -39,7 +39,7 @@ export class StaticSource implements GraphSource {
   private info: SpaceInfo | null = null;
   private snapshots = new Map<string, Snapshot>();
   private patches = new Map<string, Patch[]>();
-  telemetry: TelemetryFeed | undefined;
+  windows: WindowFeed | undefined;
 
   constructor(readonly name: string, private readonly manifestUrl: string, private readonly fetcher: (url: string) => Promise<string> = defaultFetch) {}
 
@@ -76,13 +76,13 @@ export class StaticSource implements GraphSource {
       graphs.push({ id: e.id, role: e.role, descriptor: snap.descriptor, ontology, presentation: loaded!.hints.length ? loaded!.hints : undefined, tree: loaded!.tree ?? undefined, edgeKinds: Object.keys(loaded!.kinds).length ? loaded!.kinds : undefined, labels: Object.keys(loaded!.labels).length ? loaded!.labels : undefined, restating: loaded!.restating.length ? loaded!.restating : undefined, definition: e.definition, inputs: e.inputs, inputPorts: e.ports, description: files.description || undefined, document: files.document && files.documentJson ? true : undefined });
       if (files.patches) this.patches.set(e.id, await this.loadPatches(files.patches));
     }
-    if (manifest.telemetry) {
-      const t = manifest.telemetry;
-      const batches = parseTelemetryNdjson(await this.fetcher(this.url(t.file)), t.file, (r) => this.bus.emit(r));
-      const byTick = new Map<string, TelemetryBatch[]>();
+    if (manifest.windows) {
+      const t = manifest.windows;
+      const batches = parseWindowsNdjson(await this.fetcher(this.url(t.file)), t.file, (r) => this.bus.emit(r));
+      const byTick = new Map<string, WindowBatch[]>();
       let last = 0;
       for (const b of batches) { const k = `${b.graph}|${b.tick}`; byTick.set(k, [...(byTick.get(k) ?? []), b]); last = Math.max(last, b.tick); }
-      this.telemetry = { meters: t.meters, defaults: t.defaults, dt: t.dt, ticks: last, maxTicks: last, fetch: async (graph, tick) => ({ batches: byTick.get(`${graph}|${tick}`) ?? [] }) };
+      this.windows = { meters: t.meters, defaults: t.defaults, dt: t.dt, ticks: last, maxTicks: last, fetch: async (graph, tick) => ({ batches: byTick.get(`${graph}|${tick}`) ?? [] }) };
     }
     this.info = { id: def.id, graphs };
     return this.info;
@@ -119,9 +119,9 @@ export class StaticSource implements GraphSource {
     queueMicrotask(async () => {
       await this.open();
       for (const patch of this.patches.get(graph) ?? []) { if (!live) return; sink({ type: "patch", patch }); }
-      // the telemetry windows of the graph, as the engine source delivers them: after the history, as stream events
-      const file = this.telemetryFile(graph);
-      if (file && live) for (const batch of parseTelemetryNdjson(await this.fetcher(this.url(file)), file, (r) => this.bus.emit(r))) { if (!live) return; sink({ type: "telemetry", batch }); }
+      // the windows of the graph, as the engine source delivers them: after the history, as stream events
+      const file = this.windowsFile(graph);
+      if (file && live) for (const batch of parseWindowsNdjson(await this.fetcher(this.url(file)), file, (r) => this.bus.emit(r))) { if (!live) return; sink({ type: "windows", batch }); }
       if (live) sink({ type: "end" });
     });
     return () => { live = false; };
@@ -142,11 +142,11 @@ export class StaticSource implements GraphSource {
     return ok;
   }
 
-  private telemetryFile(graph: string): string | undefined {
+  private windowsFile(graph: string): string | undefined {
     const f = this.manifest?.graphs[graph];
-    return f?.telemetry ?? f?.meters?.replace(/\.meters\.json$/, ".telemetry.ndjson");
+    return f?.windows ?? f?.meters?.replace(/\.meters\.json$/, ".windows.ndjson");
   }
-  /** The telemetry declarations of a graph (ranges, units, thresholds) when the output has them. */
+  /** The window declarations of a graph (ranges, units, thresholds) when the output has them. */
   async meters(graph: string): Promise<{ meters: Meter[]; defaults: Partial<ChannelDefaults> } | null> {
     await this.open();
     const rel = this.manifest?.graphs[graph]?.meters;

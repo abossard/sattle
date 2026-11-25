@@ -1,4 +1,4 @@
-// Inspector of the selected element: change in this revision, properties, connections, shared identity and lineage, telemetry series.
+// Inspector of the selected element: change in this revision, properties, connections, shared identity and lineage, windows series.
 import { useMemo } from "react";
 import { CoverageReview } from "./CoverageReview";
 import { coverageModule, isFinding } from "../editor/coverage-review";
@@ -7,9 +7,9 @@ import { EngineSource } from "../source/engine";
 import { Badge, Link, MessageBar, MessageBarBody, Subtitle2, Table, TableBody, TableCell, TableRow, Text, Tree, TreeItem, TreeItemLayout, makeStyles, tokens } from "@fluentui/react-components";
 import { propDiff } from "../core/diff";
 import { valueText, type Entity, type Rel } from "../core/model";
-import { sparkPoints } from "../core/telemetry";
+import { sparkPoints } from "../core/windows";
 import { countAtOrBefore, formatTime } from "../core/time-axis";
-import { formatValue } from "../app/telemetry-hub";
+import { formatValue } from "../app/window-hub";
 import type { Workspace } from "../app/workspace";
 import { dispatch, useStore } from "../state/store";
 import type { Selection } from "../state/types";
@@ -153,12 +153,12 @@ function Series({ ws, sel }: { ws: Workspace; sel: Selection }) {
   const target = sel.kind === "entity" ? "node" : "edge";
   const slot = target === "node" ? g.nodeSlot.get(sel.id) : g.edgeSlot.get(sel.id);
   const meters = hub.store.metersOf(target);
-  if (slot === undefined || meters.length === 0) return <><Subtitle2 as="h3">Telemetry</Subtitle2><Text>No telemetry for this {target}.</Text></>;
+  if (slot === undefined || meters.length === 0) return <><Subtitle2 as="h3">Windows</Subtitle2><Text>No windows for this {target}.</Text></>;
   const readings = new Map(hub.readings(target, slot).map((r) => [r.meter.id, r]));
   const W = 190, H = 30;
   return (
     <>
-      <Subtitle2 as="h3">Telemetry</Subtitle2>
+      <Subtitle2 as="h3">Windows</Subtitle2>
       {meters.map((m) => {
         const rd = readings.get(m.id);
         const series = hub.store.series(target, m.id, slot);

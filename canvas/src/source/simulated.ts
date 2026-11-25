@@ -2,7 +2,7 @@
 // Each tick delivers the next patch of every graph that still has one.
 import type { Patch, Snapshot } from "../core/model";
 import type { Rejection } from "../core/validate";
-import type { Correspondence, GraphSource, DocumentText, Lineage, Reference, ReverseLineage, SpaceInfo, StreamControls, StreamEvent, TelemetryFeed } from "./types";
+import type { Correspondence, GraphSource, DocumentText, Lineage, Reference, ReverseLineage, SpaceInfo, StreamControls, StreamEvent, WindowFeed } from "./types";
 
 export class SimulatedStream implements GraphSource, StreamControls {
   readonly name: string;
@@ -20,9 +20,9 @@ export class SimulatedStream implements GraphSource, StreamControls {
 
   constructor(private readonly inner: GraphSource) { this.name = `${inner.name} (simulated stream)`; }
 
-  /** Telemetry of the inner source; only tick 0 is loaded up front, later ticks arrive as stream events. */
-  get telemetry(): TelemetryFeed | undefined {
-    const t = this.inner.telemetry;
+  /** Windows of the inner source; only tick 0 is loaded up front, later ticks arrive as stream events. */
+  get windows(): WindowFeed | undefined {
+    const t = this.inner.windows;
     return t ? { ...t, ticks: 0 } : undefined;
   }
 
@@ -45,8 +45,8 @@ export class SimulatedStream implements GraphSource, StreamControls {
       // load the recorded patches from the inner source; delivery is ours
       this.inner.subscribe(graph, (e) => {
         if (e.type === "patch") { queue.patches.push(e.patch); this.total++; this.changed(); }
-        // telemetry the inner source has by windows (not by tick) is all there from the start
-        else if (e.type === "telemetry") for (const s of queue.sinks) s(e);
+        // the windows the inner source has by window (not by tick) are all there from the start
+        else if (e.type === "windows") for (const s of queue.sinks) s(e);
       });
     }
     q.sinks.add(sink);
@@ -55,7 +55,7 @@ export class SimulatedStream implements GraphSource, StreamControls {
 
   private advance(): void {
     let any = false;
-    const feed = this.inner.telemetry;
+    const feed = this.inner.windows;
     const nextTick = this.tick_ + 1;
     if (feed && nextTick <= feed.maxTicks) {
       any = true;
@@ -64,7 +64,7 @@ export class SimulatedStream implements GraphSource, StreamControls {
       for (const [graph, q] of this.queues) {
         if (q.sinks.size === 0) continue;
         void feed.fetch(graph, nextTick).then(({ batches, release }) => {
-          for (const batch of batches) for (const sink of q.sinks) sink({ type: "telemetry", batch });
+          for (const batch of batches) for (const sink of q.sinks) sink({ type: "windows", batch });
           release?.();
         });
       }

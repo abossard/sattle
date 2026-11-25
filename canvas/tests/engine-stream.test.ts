@@ -1,11 +1,11 @@
 // The stream of the engine as a calculation: events in, effects out, no socket, no fetch, no clock.
 import { describe, expect, it } from "vitest";
 import { initialStream, transition, type Effect, type Event, type StreamState } from "../src/source/engine-stream";
-import type { TelemetryBatch } from "../src/source/types";
+import type { WindowBatch } from "../src/source/types";
 import { patch } from "./helpers";
 
-const win = (t: number, v = 1): TelemetryBatch => ({ graph: "g", tick: t, t, target: "node", property: "cpu", values: Float32Array.of(v) });
-const fresh = (seq = "10"): StreamState => initialStream([{ id: "g", revision: "1", telemetry: true }, { id: "h", revision: "5", telemetry: false }], seq);
+const win = (t: number, v = 1): WindowBatch => ({ graph: "g", tick: t, t, target: "node", property: "cpu", values: Float32Array.of(v) });
+const fresh = (seq = "10"): StreamState => initialStream([{ id: "g", revision: "1", windows: true }, { id: "h", revision: "5", windows: false }], seq);
 /** Fold events; the effects of every step, in order. */
 function run(events: Event[], from: StreamState = fresh()) {
   let state = from;
@@ -16,14 +16,14 @@ function run(events: Event[], from: StreamState = fresh()) {
 const kinds = (fx: Effect[]) => fx.map((f) => f.k === "emit" ? `emit ${f.event.type}` : f.k === "status" ? `status ${f.state ?? "same"}` : f.k);
 const live = (extra: Event[] = []) => run([{ t: "subscribed", graph: "g" }, { t: "patches", graph: "g", gen: 0, why: "history", patches: [] }, { t: "windows", graph: "g", gen: 0, why: "history", batches: [] }, { t: "socketOpened" }, ...extra]);
 
-describe("a graph's history is read as patches, then telemetry, then the stream says it is caught up", () => {
-  it("reads the patches after the revision it holds, then the telemetry, then says it is caught up and asks for the socket", () => {
+describe("a graph's history is read as patches, then windows, then the stream says it is caught up", () => {
+  it("reads the patches after the revision it holds, then the windows, then says it is caught up and asks for the socket", () => {
     const r = run([{ t: "subscribed", graph: "g" }, { t: "patches", graph: "g", gen: 0, why: "history", patches: [patch("1", "2", [])] }, { t: "windows", graph: "g", gen: 0, why: "history", batches: [win(100)] }]);
-    expect(kinds(r.effects)).toEqual(["readPatches", "emit patch", "readTelemetry", "emit telemetry", "emit caught-up", "status connecting", "openSocket"]);
+    expect(kinds(r.effects)).toEqual(["readPatches", "emit patch", "readWindows", "emit windows", "emit caught-up", "status connecting", "openSocket"]);
     expect(r.effects[0]).toMatchObject({ after: "1" });
     expect(r.state.graphs.g).toMatchObject({ lastRevision: "2", lastWindow: 100, reading: false });
   });
-  it("a graph without telemetry is caught up after its patches", () => {
+  it("a graph without windows is caught up after its patches", () => {
     const r = run([{ t: "subscribed", graph: "h" }, { t: "patches", graph: "h", gen: 0, why: "history", patches: [] }]);
     expect(kinds(r.effects)).toEqual(["readPatches", "emit caught-up", "status connecting", "openSocket"]);
   });
@@ -55,7 +55,7 @@ describe("a read overtaken by a gap, an activation or dispose delivers nothing; 
     const r = run([{ t: "subscribed", graph: "g" }, { t: "wsActivation", catalogRevision: "11", graphs: ["g"] }]);
     const again = r.effects.find((f) => f.k === "readPatches" && f.why === "activation");
     expect(again).toMatchObject({ gen: 1 });
-    expect(kinds(r.effects)).toEqual(["readPatches", "emit telemetry-reset", "readMeta", "readPatches"]);
+    expect(kinds(r.effects)).toEqual(["readPatches", "emit windows-reset", "readMeta", "readPatches"]);
   });
   it("an activation that brings a graph the space did not have asks every graph to resync", () => {
     const r = run([{ t: "subscribed", graph: "g" }, { t: "wsActivation", catalogRevision: "11", graphs: ["g", "new"] }]);
@@ -103,7 +103,7 @@ describe("a stream patch is delivered once, in revision order, with its commit t
   });
 });
 
-describe("a stream telemetry event is delivered unless the history read at its sequence number already held it", () => {
+describe("a stream windows event is delivered unless the history read at its sequence number already held it", () => {
   // the read was asked at seq 10 (the highest the client knew): it reflects at least every event up to 10
   const asked = () => live();
   it.each<[string, string | undefined, number, boolean]>([
@@ -113,7 +113,7 @@ describe("a stream telemetry event is delivered unless the history read at its s
     ["a revised window (older than the newest, newer than the read) is delivered", "12", 40, true],
     ["an event without a sequence number cannot be proven included: it is delivered", undefined, 100, true],
   ])("%s", (_, seq, t, delivered) => {
-    const r = run([{ t: "wsTelemetry", graph: "g", batch: win(t, 9), seq }], run([{ t: "windows", graph: "g", gen: 0, why: "history", batches: [win(100)] }], asked().state).state);
+    const r = run([{ t: "wsWindows", graph: "g", batch: win(t, 9), seq }], run([{ t: "windows", graph: "g", gen: 0, why: "history", batches: [win(100)] }], asked().state).state);
     expect(r.effects.filter((f) => f.k === "emit").length).toBe(delivered ? 1 : 0);
   });
   it("the read is asked at the highest sequence number known when it is issued", () => {
@@ -122,7 +122,7 @@ describe("a stream telemetry event is delivered unless the history read at its s
   });
   it("sequence numbers are compared as numbers of any size", () => {
     const big = "9007199254740993", bigger = "9007199254740994";
-    const r = run([{ t: "seq", seq: big }, { t: "subscribed", graph: "g" }, { t: "patches", graph: "g", gen: 0, why: "history", patches: [] }, { t: "wsTelemetry", graph: "g", batch: win(5), seq: bigger }]);
+    const r = run([{ t: "seq", seq: big }, { t: "subscribed", graph: "g" }, { t: "patches", graph: "g", gen: 0, why: "history", patches: [] }, { t: "wsWindows", graph: "g", batch: win(5), seq: bigger }]);
     expect(r.effects.at(-1)).toMatchObject({ k: "emit" });
   });
 });
@@ -133,7 +133,7 @@ describe("a catch-up that fails says the connection is not live and retries with
     expect(kinds(failed.effects).slice(-3)).toEqual(["reject", "status reconnecting", "retry"]);
     expect(failed.state.graphs.g.failures).toBe(1);
     const again = run([{ t: "retry", graph: "g", gen: 0 }, { t: "patches", graph: "g", gen: 0, why: "retry", patches: [patch("1", "2", [])] }, { t: "windows", graph: "g", gen: 0, why: "retry", batches: [] }], failed.state);
-    expect(kinds(again.effects)).toEqual(["readPatches", "emit patch", "emit patch", "status same", "readTelemetry", "status live"]);
+    expect(kinds(again.effects)).toEqual(["readPatches", "emit patch", "emit patch", "status same", "readWindows", "status live"]);
     expect(again.state.graphs.g.failures).toBe(0);
   });
   it("the backoff attempt grows with the failures", () => {
@@ -168,7 +168,7 @@ describe("after the end of the stream late reads deliver but nothing retries or 
   const behindThenEnded = () => live([{ t: "readFailed", graph: "g", gen: 0, why: "retry", error: "x" }, { t: "wsEnd" }]);
   it("a catch-up that answers after the end still delivers what it read, and says nothing about the connection", () => {
     const r = run([{ t: "retry", graph: "g", gen: 0 }, { t: "patches", graph: "g", gen: 0, why: "retry", patches: [patch("1", "2", [])] }, { t: "windows", graph: "g", gen: 0, why: "retry", batches: [] }], behindThenEnded().state);
-    expect(kinds(r.effects), "a late 'caught up' overwrote 'ended'").toEqual(["readPatches", "emit patch", "readTelemetry"]);
+    expect(kinds(r.effects), "a late 'caught up' overwrote 'ended'").toEqual(["readPatches", "emit patch", "readWindows"]);
   });
   it("a read that fails after the end is not tried again", () => {
     const r = run([{ t: "retry", graph: "g", gen: 0 }, { t: "readFailed", graph: "g", gen: 0, why: "retry", error: "x" }], behindThenEnded().state);

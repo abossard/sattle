@@ -4,8 +4,8 @@ import { SimulatedStream } from "../src/source/simulated";
 import { Graph } from "../src/core/graph";
 import type { Patch } from "../src/core/model";
 import type { Rejection } from "../src/core/validate";
-import { checkTelemetryLine, parseTelemetryNdjson } from "../src/source/telemetry-file";
-import { TelemetryStore } from "../src/core/telemetry";
+import { checkWindowsLine, parseWindowsNdjson } from "../src/source/window-file";
+import { WindowStore } from "../src/core/windows";
 
 const files = import.meta.glob("/public/**/*.{json,ndjson,md}", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 const fetcher = (overrides: Record<string, string> = {}) => async (url: string) => {
@@ -79,7 +79,7 @@ describe("the estate space: inputs, lineage in both directions, documents", () =
   });
 });
 
-describe("the estate output: telemetry and references", () => {
+describe("the estate output: windows and references", () => {
   it("serves the declared meters of a graph, with their ranges and the warning threshold", async () => {
     const src = new StaticSource("t", url, fetcher());
     const m = (await src.meters("serviceTree"))!;
@@ -87,18 +87,18 @@ describe("the estate output: telemetry and references", () => {
     expect([drop.target, drop.warn, drop.scale]).toEqual(["edge", 0.05, "sqrt"]);
     expect((await src.meters("capabilities"))!.meters.map((x) => x.id).sort()).toEqual(["callDropRatio", "callDrops", "callFlows"]);
   });
-  it("delivers the telemetry windows after the patches and before the end, for elements that exist in the graph", async () => {
+  it("delivers the windows after the patches and before the end, for elements that exist in the graph", async () => {
     const src = new StaticSource("t", url, fetcher());
     await src.open();
     const events: string[] = [];
     const ids = new Set<string>();
     await new Promise<void>((resolve) => src.subscribe("serviceTree", (e) => {
       events.push(e.type);
-      if (e.type === "telemetry") for (const id of e.batch.ids ?? []) ids.add(id);
+      if (e.type === "windows") for (const id of e.batch.ids ?? []) ids.add(id);
       if (e.type === "end") resolve();
     }));
-    const firstTelemetry = events.indexOf("telemetry");
-    expect([firstTelemetry > events.lastIndexOf("patch"), events[events.length - 1]]).toEqual([true, "end"]);
+    const firstWindows = events.indexOf("windows");
+    expect([firstWindows > events.lastIndexOf("patch"), events[events.length - 1]]).toEqual([true, "end"]);
     const graph = Graph.fromSnapshot(await src.snapshot("serviceTree"));
     for (const p of await patchesOf(src, "serviceTree")) graph.apply(p);
     expect([...ids].every((id) => graph.nodeSlot.has(id) || graph.edgeSlot.has(id))).toBe(true);
@@ -171,7 +171,7 @@ describe("SimulatedStream", () => {
   });
 });
 
-describe("telemetry through the seam", () => {
+describe("windows through the seam", () => {
   it.each([
     [{ graph: "g", tick: 1, t: 1, target: "edge", property: "p", ids: ["a"], values: [1] }, true],
     [{ graph: "g", tick: -1, t: 1, target: "edge", property: "p", ids: ["a"], values: [1] }, false],
@@ -179,10 +179,10 @@ describe("telemetry through the seam", () => {
     [{ graph: "g", tick: 1, t: 1, target: "node", property: "p", ids: ["a", "b"], values: [1] }, false],
     [{ graph: "g", tick: 1, t: 1, target: "node", property: "p", ids: ["a"], values: ["x"] }, false],
     [null, false],
-  ])("checkTelemetryLine %j", (line, ok) => expect(checkTelemetryLine(line).ok).toBe(ok));
-  it("rejected telemetry lines are reported with their line number", () => {
+  ])("checkWindowsLine %j", (line, ok) => expect(checkWindowsLine(line).ok).toBe(ok));
+  it("rejected windows lines are reported with their line number", () => {
     const rejected: Rejection[] = [];
-    const batches = parseTelemetryNdjson('{"graph":"g","tick":0,"t":0,"target":"node","property":"cpu","ids":["a"],"values":[1]}\nnot json\n{"graph":"g"}\n', "f.ndjson", (r) => rejected.push(r));
+    const batches = parseWindowsNdjson('{"graph":"g","tick":0,"t":0,"target":"node","property":"cpu","ids":["a"],"values":[1]}\nnot json\n{"graph":"g"}\n', "f.ndjson", (r) => rejected.push(r));
     expect(batches.length).toBe(1);
     expect(rejected.map((r) => r.where)).toEqual(["line 2", "line 3"]);
   });

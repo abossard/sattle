@@ -32,8 +32,8 @@ export const withAlpha = (c: number, a: number): number => ((c & 0x00ffffff) | (
 
 export interface Range { lo: number; hi: number }
 
-/** Telemetry visual state: three 8-bit channels per target, indexed by slot, uploaded as normalized GPU attributes. */
-export interface TelemetryParams {
+/** Windows visual state: three 8-bit channels per target, indexed by slot, uploaded as normalized GPU attributes. */
+export interface WindowParams {
   on: boolean;
   /** state threshold in byte units, 256 = never */
   warnNode: number;
@@ -62,9 +62,9 @@ export class Scene {
   /** node channels: ring gauge, size, state. edge channels: width, flow speed, state. */
   nodeT: Uint8Array[] = [new Uint8Array(0), new Uint8Array(0), new Uint8Array(0)];
   edgeT: Uint8Array[] = [new Uint8Array(0), new Uint8Array(0), new Uint8Array(0)];
-  telemetry: TelemetryParams = { on: false, warnNode: 256, warnEdge: 256, flow: true };
-  telemetryDirty = false;
-  telemetryVersion = 0;
+  windows: WindowParams = { on: false, warnNode: 256, warnEdge: 256, flow: true };
+  windowsDirty = false;
+  windowsVersion = 0;
   nodeDirty: Range | null = null;
   edgeDirty: Range | null = null;
   positionsDirty = true;
@@ -83,7 +83,7 @@ export class Scene {
     const pr = new Float32Array(cap); pr.set(this.priority); this.priority = pr;
     this.nodeT = this.nodeT.map((a) => { const n = new Uint8Array(cap); n.set(a); return n; });
     this.nodeCap = cap;
-    this.telemetryDirty = true;
+    this.windowsDirty = true;
     this.positionsDirty = true;
     this.nodeDirty = { lo: 0, hi: this.nodeCount };
   }
@@ -95,7 +95,7 @@ export class Scene {
     this.edgeU32 = u; this.edgeI32 = new Int32Array(u.buffer);
     this.edgeT = this.edgeT.map((a) => { const n = new Uint8Array(cap); n.set(a); return n; });
     this.edgeCap = cap;
-    this.telemetryDirty = true;
+    this.windowsDirty = true;
     this.edgeDirty = { lo: 0, hi: this.edgeCount };
   }
 
@@ -167,7 +167,7 @@ export class Scene {
     if (!dst) return;
     if (!frame) dst.fill(0);
     else { const n = Math.min(frame.length, dst.length); dst.set(frame.length === n ? frame : frame.subarray(0, n)); if (n < dst.length) dst.fill(0, n); }
-    this.telemetryDirty = true; this.telemetryVersion++;
+    this.windowsDirty = true; this.windowsVersion++;
   }
 
   setPosition(slot: number, x: number, y: number): void {

@@ -237,7 +237,7 @@ export function moduleOntologyGraph(c: Catalog, moduleId: string): Graph {
   const typeNode = (id: string): string => {
     if (!entities.has(id)) {
       const e = c.entity(id);
-      const props = c.targets(id, "hasProperty").map((p) => `${c.name(p)}${text(c.entity(p), "role") === "telemetry" ? " (telemetry)" : ""}`);
+      const props = c.targets(id, "hasProperty").map((p) => `${c.name(p)}${text(c.entity(p), "role") === "events" ? " (events)" : ""}`);
       entities.set(id, { id, type: "EntityType", props: { name: txt(c.typeLabel(id, mod)), module: txt(moduleOfId(id)), properties: txt(props.join(", ")), abstract: txt(text(e, "abstract")) } });
     }
     return id;

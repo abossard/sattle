@@ -1,4 +1,4 @@
-// Whether the space follows the newest data or shows a time: one value, decided here. The graphs, the telemetry values and the timeline read it.
+// Whether the space follows the newest data or shows a time: one value, decided here. The graphs, the windows values and the timeline read it.
 
 export type Timeline = { k: "live" } | { k: "at"; t: number };
 

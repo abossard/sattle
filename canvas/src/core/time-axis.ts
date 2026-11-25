@@ -1,5 +1,5 @@
-// One time axis for a graph space. Revisions sit at their commit time, telemetry frames at their window start,
-// so a position on the axis selects the structure and the telemetry valid at that instant. Times are seconds.
+// One time axis for a graph space. Revisions sit at their commit time, window frames at their window start,
+// so a position on the axis selects the structure and the windows valid at that instant. Times are seconds.
 
 /** Number of entries in an ascending array that are at or before t. */
 export function countAtOrBefore(sorted: readonly number[], t: number): number {
@@ -16,7 +16,7 @@ export function mergeTimes(lists: readonly (readonly number[])[]): number[] {
 }
 
 /**
- * Times for patches whose source gave none: revision k is placed at the k-th telemetry window (or at k when there is no telemetry).
+ * Times for patches whose source gave none: revision k is placed at the k-th window (or at k when there are no windows).
  * This aligns by order only; callers should mark such a graph as ordinal.
  */
 export function ordinalTimes(patchCount: number, windowTimes: readonly number[]): number[] {
@@ -28,7 +28,7 @@ export function ordinalTimes(patchCount: number, windowTimes: readonly number[])
 
 /**
  * Commit time of every patch. Times the source gave are kept; the others (history read over HTTP carries none) are placed by
- * order on the telemetry windows and then pulled back so the sequence never decreases and never passes a time the source gave.
+ * order on the windows and then pulled back so the sequence never decreases and never passes a time the source gave.
  */
 export function resolvePatchTimes(sourceTimes: readonly number[], windowTimes: readonly number[]): { times: number[]; source: "source" | "ordinal" | "mixed" } {
   const known = sourceTimes.filter((t) => Number.isFinite(t)).length;
@@ -44,7 +44,7 @@ export function resolvePatchTimes(sourceTimes: readonly number[], windowTimes: r
 /** Revision cursor (patches applied) at time t. */
 export const revisionCursorAt = (patchTimes: readonly number[], t: number): number => countAtOrBefore(patchTimes, t);
 
-/** Index of the telemetry frame valid at time t: the last frame starting at or before t, or 0 before the first frame. */
+/** Index of the window frame valid at time t: the last frame starting at or before t, or 0 before the first frame. */
 export function frameIndexAt(frameTimes: readonly number[], t: number): number {
   return Math.max(0, countAtOrBefore(frameTimes, t) - 1);
 }

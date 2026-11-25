@@ -336,7 +336,7 @@ describe("the filters leave out exactly the kind the person unticks", () => {
   // every kind's box is made by the same code; one kind proves the round trip through the store
   it("unticking composition leaves exactly it out, ticking it again brings it back", async () => {
     runtime.ws = fakeWs(hubGraph(), declared);
-    dispatch({ type: "data/summary", graphs: [], telemetry: {} });
+    dispatch({ type: "data/summary", graphs: [], windows: {} });
     wrap(<FiltersPanel graph="g" />);
     await userEvent.setup().click(await screen.findByRole("button", { name: "Edge kinds" }));
     const box = await screen.findByRole("checkbox", { name: new RegExp(`^${KIND_WORD.composition.word}`) });
@@ -369,7 +369,7 @@ describe("the tree lets the person choose which kind is the hierarchy", () => {
   const rows = () => screen.getAllByRole("treeitem").map((r) => r.textContent ?? "");
   it("opens on composition and offers the other kinds; choosing dependency nests by it", async () => {
     runtime.ws = ws();
-    dispatch({ type: "data/summary", graphs: [{ id: "g", role: "projection", head: "1", patches: 0, nodes: 3, edges: 2, version: 0 }], telemetry: {} });
+    dispatch({ type: "data/summary", graphs: [{ id: "g", role: "projection", head: "1", patches: 0, nodes: 3, edges: 2, version: 0 }], windows: {} });
     wrap(<TreeView graph="g" />);
     const choose = await screen.findByRole("combobox", { name: "Hierarchy by" });
     expect((choose as HTMLSelectElement).value).toBe("composition");
@@ -382,7 +382,7 @@ describe("the tree lets the person choose which kind is the hierarchy", () => {
   });
   it("offers no choice when the graph has one kind", async () => {
     runtime.ws = { ...(ws() as object), graphInfo: () => ({ ...(ws() as { graphInfo(): object }).graphInfo(), edgeKinds: { Contains: "composition" } }) } as never;
-    dispatch({ type: "data/summary", graphs: [{ id: "g", role: "projection", head: "1", patches: 0, nodes: 3, edges: 2, version: 0 }], telemetry: {} });
+    dispatch({ type: "data/summary", graphs: [{ id: "g", role: "projection", head: "1", patches: 0, nodes: 3, edges: 2, version: 0 }], windows: {} });
     wrap(<TreeView graph="g" />);
     await screen.findByRole("tree");
     expect(screen.queryByRole("combobox", { name: "Hierarchy by" })).toBeNull();

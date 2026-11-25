@@ -66,7 +66,7 @@ function Status() {
       {st.conn && <Text size={200} title={st.conn.detail}>engine <b>{st.conn.state}</b>{st.conn.reconnects > 0 && <> · reconnects <b>{st.conn.reconnects}</b></>}{st.conn.gapsFilled > 0 && <> · gaps filled <b>{st.conn.gapsFilled}</b></>}</Text>}
       {ws && <Text size={200}>source: {ws.source.name}</Text>}
       {timings && pane && <Text size={200}>{pane.lastLayoutMs ? <>layout <b>{Math.round(pane.lastLayoutMs)}</b> ms · </> : null}frame <b>{avg.toFixed(1)}</b> ms CPU · labels <b>{pane.view.stats.visibleLabels}</b></Text>}
-      {timings && hub?.hasData && <Text size={200}>telemetry ingest <b>{hub.store.stats.avgMs.toFixed(1)}</b> ms</Text>}
+      {timings && hub?.hasData && <Text size={200}>windows ingest <b>{hub.store.stats.avgMs.toFixed(1)}</b> ms</Text>}
       {timings && ws && <Text size={200}>loaded in <b>{Math.round(st.load.ms)}</b> ms</Text>}
       {ws && <ToggleButton className={s.timings} size="small" appearance="transparent" checked={timings} onClick={() => setTimings((t) => !t)}>Timings</ToggleButton>}
     </div>

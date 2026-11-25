@@ -31,8 +31,8 @@ describe("synthetic telemetry", () => {
     }
   });
   it("hash01 is in [0,1)", () => { for (let i = 0; i < 1000; i++) { const h = hash01(i, 3); expect(h >= 0 && h < 1).toBe(true); } });
-  it("the estate ontology declares every metric with role telemetry and validates", () => {
+  it("the estate ontology declares every metric with role events and validates", () => {
     expect(checkOntology(estateOntology).ok).toBe(true);
-    for (const m of ESTATE_METERS) expect(estateOntology.properties.find((p) => p.id.value === m.id)?.role).toBe("telemetry");
+    for (const m of ESTATE_METERS) expect(estateOntology.properties.find((p) => p.id.value === m.id)?.role).toBe("events");
   });
 });

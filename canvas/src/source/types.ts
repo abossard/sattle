@@ -48,9 +48,9 @@ export interface SpaceInfo { id: string; graphs: GraphInfo[] }
 /** Derived element -> the source elements it was derived from. Element keys are "n:<id>" / "e:<id>". */
 export interface Correspondence { target: string; sources: { graph: string; key: string }[] }
 
-/** A metric carried on nodes or edges. Telemetry is time-indexed, high rate and never creates revisions. */
+/** A metric carried on nodes or edges. Windows are time-indexed, high rate and never creates revisions. */
 export interface Meter {
-  /** property id; matches an ontology property with role "telemetry" */
+  /** property id; matches an ontology property with role "events" */
   id: string;
   target: "node" | "edge";
   label: string;
@@ -71,11 +71,11 @@ export interface ChannelDefaults {
 }
 
 /**
- * One sample set for one metric at one tick. A tick is the ordinal of a telemetry window, not a revision (engine PROTOCOL.md, "Ticks are not revisions"); a simulated stream delivers tick k together with patch k.
+ * One sample set for one metric at one tick. A tick is the ordinal of a window, not a revision (engine PROTOCOL.md, "Ticks are not revisions"); a simulated stream delivers tick k together with patch k.
  * Dense batches (ids omitted) carry one value per element of the initial snapshot, in snapshot order.
  * Sparse batches carry ids (entity ids for nodes, relationship ids for edges). The wire is columnar on purpose: 300k values per tick.
  */
-export interface TelemetryBatch {
+export interface WindowBatch {
   graph: string;
   tick: number;
   /** seconds since the stream start */
@@ -88,8 +88,8 @@ export interface TelemetryBatch {
   values: Float32Array;
 }
 
-/** Pull access to telemetry, for sources that can regenerate or replay any tick (static files, the synthetic estate). */
-export interface TelemetryFeed {
+/** Pull access to windows, for sources that can regenerate or replay any tick (static files, the synthetic estate). */
+export interface WindowFeed {
   meters: Meter[];
   defaults: ChannelDefaults;
   /** seconds per tick */
@@ -99,20 +99,20 @@ export interface TelemetryFeed {
   /** ticks the feed can keep producing for a simulated stream */
   maxTicks: number;
   /** `release` lets the page hand buffers back for reuse once the batches are ingested */
-  fetch(graph: string, tick: number): Promise<{ batches: TelemetryBatch[]; release?: () => void }>;
+  fetch(graph: string, tick: number): Promise<{ batches: WindowBatch[]; release?: () => void }>;
 }
 
 export type StreamEvent =
   /** `time` is the commit logical time in seconds when the source has one */
   | { type: "patch"; patch: Patch; time?: number }
-  | { type: "telemetry"; batch: TelemetryBatch }
+  | { type: "windows"; batch: WindowBatch }
   | { type: "rejected"; rejection: Rejection }
   /** history delivered; a live source keeps going after this */
   | { type: "caught-up" }
   /** the source replaced the graph state (history gap): the page should reload the source */
   | { type: "resync"; reason: string }
-  /** stored telemetry is stale (a definition edit re-activated the space); batches follow */
-  | { type: "telemetry-reset" }
+  /** stored windows are stale (a definition edit re-activated the space); batches follow */
+  | { type: "windows-reset" }
   /** the definition edit that re-activated the space can change the ontology and the value roles of a graph: they are read again */
   | { type: "meta"; meta: GraphMeta }
   | { type: "end" };
@@ -145,15 +145,15 @@ export interface GraphSource {
   /** Release what the source holds open (a live connection); called when the workspace is closed or reloaded. */
   dispose?(): void;
   readonly controls?: StreamControls;
-  /** Telemetry for the graphs of this space, when the source has any. A live source may also push `telemetry` stream events. */
-  readonly telemetry?: TelemetryFeed;
+  /** Windows for the graphs of this space, when the source has any. A live source may also push `windows` stream events. */
+  readonly windows?: WindowFeed;
   /** Live connection state, for sources that keep a connection open. */
   readonly connection?: { status: ConnectionStatus; onChange(cb: () => void): () => void };
   /** Definitions as text plus the catalog graph, for sources backed by the engine. */
   readonly definitions?: DefinitionService;
   /** id of the graph that holds the catalog (definitions typed by the kernel), when the source serves one */
   readonly catalogGraph?: string;
-  /** Telemetry declarations of a graph (live sources), for the channel mapping. */
+  /** Window declarations of a graph (live sources), for the channel mapping. */
   meters?(graph: string): Promise<{ meters: Meter[]; defaults: Partial<ChannelDefaults> } | null>;
   /** The rendered Markdown of a document graph at `revision` (the head when absent); null when the graph is not a document. */
   document?(graph: string, revision?: string): Promise<DocumentText | null>;

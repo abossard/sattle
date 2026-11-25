@@ -1,9 +1,9 @@
-// Telemetry state of one graph: the quantized store, the displayed tick, and the metric chosen for each visual channel.
-// Tick k is aligned with revision k, so one tick drives both the telemetry frame and the structural revision.
+// Windows state of one graph: the quantized store, the displayed tick, and the metric chosen for each visual channel.
+// Tick k is aligned with revision k, so one tick drives both the window frame and the structural revision.
 import { LIVE, shownTime, type Timeline } from "./timeline";
 import type { Graph } from "../core/graph";
-import { TelemetryStore, dequantize, warnByte } from "../core/telemetry";
-import type { Meter, TelemetryBatch, TelemetryFeed } from "../source/types";
+import { WindowStore, dequantize, warnByte } from "../core/windows";
+import type { Meter, WindowBatch, WindowFeed } from "../source/types";
 
 export type EdgeChannel = "width" | "flow" | "state";
 export type NodeChannel = "ring" | "size" | "state";
@@ -13,8 +13,8 @@ export const NODE_CHANNELS: NodeChannel[] = ["ring", "size", "state"];
 
 export interface Reading { meter: Meter; value: number; warn: boolean }
 
-export class TelemetryHub {
-  readonly store: TelemetryStore;
+export class WindowHub {
+  readonly store: WindowStore;
   edge: Record<EdgeChannel, string | null>;
   node: Record<NodeChannel, string | null>;
   enabled = true;
@@ -28,8 +28,8 @@ export class TelemetryHub {
   private snapEdgeIds: (string | undefined)[];
   private listeners = new Set<() => void>();
 
-  constructor(private readonly graph: Graph, feed: Pick<TelemetryFeed, "meters"> & { defaults: Partial<TelemetryFeed["defaults"]> }, window = 61) {
-    this.store = new TelemetryStore(feed.meters.map((m) => ({ ...m })), window);
+  constructor(private readonly graph: Graph, feed: Pick<WindowFeed, "meters"> & { defaults: Partial<WindowFeed["defaults"]> }, window = 61) {
+    this.store = new WindowStore(feed.meters.map((m) => ({ ...m })), window);
     const nz = <T extends Record<string, string>>(o: T) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v || null])) as { [K in keyof T]: string | null };
     this.edge = nz(feed.defaults.edge ?? {}) as Record<EdgeChannel, string | null>;
     this.node = nz(feed.defaults.node ?? {}) as Record<NodeChannel, string | null>;
@@ -53,7 +53,7 @@ export class TelemetryHub {
   }
 
   /** Create a metric the source did not declare (live engine): range from the values seen, default channels from the first metrics. */
-  private ensureMeter(b: TelemetryBatch): void {
+  private ensureMeter(b: WindowBatch): void {
     if (this.store.meter(b.target, b.property)) return;
     let mx = 0;
     for (const v of b.values) if (v > mx) mx = v;
@@ -62,7 +62,7 @@ export class TelemetryHub {
     else { this.node.ring ??= b.property; this.node.size ??= b.property; }
   }
 
-  ingest(b: TelemetryBatch): void {
+  ingest(b: WindowBatch): void {
     this.ensureMeter(b);
     const g = this.graph;
     this.store.ingest(b, (target, id) => (target === "node" ? g.nodeSlot.get(id) : g.edgeSlot.get(id)), Math.max(g.nodes.length, g.edges.length) + 16);

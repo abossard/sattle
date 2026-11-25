@@ -52,7 +52,7 @@
       "nullable": false,
       "itemKind": null,
       "unit": "By",
-      "role": "telemetry"
+      "role": "events"
     },
     {
       "id": {
@@ -62,7 +62,7 @@
       "nullable": false,
       "itemKind": null,
       "unit": null,
-      "role": "telemetry"
+      "role": "events"
     }
   ],
   "entityTypes": [

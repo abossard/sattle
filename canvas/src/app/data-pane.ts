@@ -18,7 +18,7 @@ import { hasHierarchyEdges, hasTreeRows, inHierarchy } from "./tree-model";
 import { besidePositions, blamePath, hasDependencyBranches, kindAxes, restatingTypes } from "./edge-kinds";
 import { tileThinsIsolated } from "./tile";
 import type { GraphInfo } from "../source/types";
-import { EDGE_CHANNELS, NODE_CHANNELS, type TelemetryHub } from "./telemetry-hub";
+import { EDGE_CHANNELS, NODE_CHANNELS, type WindowHub } from "./window-hub";
 import { ROLE_GLYPH, colorValueOf, entryOf, legendOf, resolveColoring, tally, type Coloring, type LegendEntry, type Target } from "./color-by";
 import { roleColors } from "./roles";
 import type { FilterState } from "../state/types";
@@ -80,9 +80,9 @@ export class DataPane {
   private disposed = false;
   private refreshSeq = 0;
 
-  #hub: TelemetryHub | null = null;
+  #hub: WindowHub | null = null;
   /** smoothed cost of copying frames into the GPU channels, ms */
-  #telemetryApplyMs = 0;
+  #windowsApplyMs = 0;
   /** the graph at the history's cursor */
   get graph(): Graph { return this.#graph; }
   get visibleReferenceCount(): number {
@@ -101,10 +101,10 @@ export class DataPane {
   /** the changes the pane marks (the last step, or since a revision) */
   get highlight(): ChangeSet | null { return this.#highlight; }
   /** smoothed cost of copying frames into the GPU channels, ms */
-  get telemetryApplyMs(): number { return this.#telemetryApplyMs; }
+  get windowsApplyMs(): number { return this.#windowsApplyMs; }
   private hubOff: (() => void) | null = null;
 
-  constructor(readonly info: GraphInfo, private readonly history: History, host: HTMLElement, private theme: Theme, private readonly ev: PaneEvents, hub: TelemetryHub | null = null) {
+  constructor(readonly info: GraphInfo, private readonly history: History, host: HTMLElement, private theme: Theme, private readonly ev: PaneEvents, hub: WindowHub | null = null) {
     this.#graph = history.graph;
     nameGraph(this.#graph, info.ontology, info.labels);
     this.model = this.modelNow();
@@ -122,35 +122,35 @@ export class DataPane {
       onActivate: (item) => this.onActivate(item),
       onKey: (ev) => this.onKey(ev),
     };
-    if (hub) this.attachTelemetry(hub);
+    if (hub) this.attachWindows(hub);
     host.setAttribute("role", "application");
     host.setAttribute("aria-label", `Graph ${info.id}. Arrow keys move the selection along edges. Alt plus arrows pan. Plus and minus zoom. F fits the view.`);
   }
 
-  // ---- telemetry ----
-  attachTelemetry(hub: TelemetryHub): void {
+  // ---- windows ----
+  attachWindows(hub: WindowHub): void {
     this.hubOff?.();
     this.#hub = hub;
     hub.revalidateAll();
-    this.hubOff = hub.onChange(() => this.applyTelemetry());
-    this.applyTelemetry();
+    this.hubOff = hub.onChange(() => this.applyWindows());
+    this.applyWindows();
   }
 
   /** Copy the frames of the chosen metrics into the GPU channels. No layout work and no instance rebuild. */
-  private applyTelemetry(): void {
+  private applyWindows(): void {
     const t0 = performance.now();
     const hub = this.#hub, sc = this.scene;
-    if (!hub || !hub.hasData) { sc.telemetry.on = false; return; }
-    sc.telemetry.on = hub.enabled;
-    sc.telemetry.flow = hub.flow;
-    sc.telemetry.warnNode = hub.warnByteOf("node");
-    sc.telemetry.warnEdge = hub.warnByteOf("edge");
+    if (!hub || !hub.hasData) { sc.windows.on = false; return; }
+    sc.windows.on = hub.enabled;
+    sc.windows.flow = hub.flow;
+    sc.windows.warnNode = hub.warnByteOf("node");
+    sc.windows.warnEdge = hub.warnByteOf("edge");
     if (hub.enabled) {
       for (let c = 0; c < NODE_CHANNELS.length; c++) sc.setChannel("node", c, hub.frame("node", c));
       for (let c = 0; c < EDGE_CHANNELS.length; c++) sc.setChannel("edge", c, hub.frame("edge", c));
     }
     this.view.requestRender();
-    this.#telemetryApplyMs += (performance.now() - t0 - this.#telemetryApplyMs) * 0.1;
+    this.#windowsApplyMs += (performance.now() - t0 - this.#windowsApplyMs) * 0.1;
     this.ev.changed();
   }
 

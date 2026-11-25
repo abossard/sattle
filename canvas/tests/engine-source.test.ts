@@ -25,7 +25,7 @@ describe("the engine's documents and stream messages are read into the viewer's 
   it("the commit times of /revisions are keyed by revision; one without a time is left out", () => {
     expect(revisionTimes([{ revision: "1", time: null }, { revision: "2", time: "2026-11-09T20:01:00Z" }, null])).toEqual({ "2": Date.parse("2026-11-09T20:01:00Z") / 1000 });
   });
-  it("telemetry batches keep the window start as epoch seconds", () => {
+  it("windows batches keep the window start as epoch seconds", () => {
     const r = batchFromWire(tel("2026-11-10T10:41:00Z", 3));
     expect(r.ok && r.batch.t).toBe(Date.parse("2026-11-10T10:41:00Z") / 1000);
     expect(batchFromWire({ ...tel("nope", 1) }).ok).toBe(false);
@@ -79,7 +79,7 @@ describe("a check answer carries the columns after each operator, and an older e
     expect(s["d:m/projection:p"].map((o) => [o.name, o.window, o.columns.length])).toEqual([["services", null, 1], ["w", "1m", 0]]);
   });
   it("an older engine sends none", () => expect(parseSchemas(undefined)).toBeUndefined());
-  it("a column keeps what it says and nulls what it does not", () => expect(parseColumns([{ name: "v", kind: "Decimal", unit: "ms", role: "telemetry", temporality: "gauge", period: "1m" }])[0]).toEqual({ name: "v", kind: "Decimal", type: null, unit: "ms", item: null, required: false, role: "telemetry", temporality: "gauge", period: "1m" }));
+  it("a column keeps what it says and nulls what it does not", () => expect(parseColumns([{ name: "v", kind: "Decimal", unit: "ms", role: "events", temporality: "gauge", period: "1m" }])[0]).toEqual({ name: "v", kind: "Decimal", type: null, unit: "ms", item: null, required: false, role: "events", temporality: "gauge", period: "1m" }));
 });
 
 describe("a preview carries the rows after each operator as text, and an absent cell stays absent", () => {
@@ -104,7 +104,7 @@ const open = async (extra: Record<string, () => { status?: number; body: unknown
   const log: string[] = [];
   const routes = baseRoutes({
     "GET /graphs/master/patches?after=0&to=3": () => ({ body: ndjson([wirePatch(0, 1)]) }),
-    "GET /graphs/master/telemetry?format=batches": () => ({ body: "" }),
+    "GET /graphs/master/windows?format=batches": () => ({ body: "" }),
     ...extra,
   });
   const src = new EngineSource(BASE, { fetch: makeFetch(routes, log), WebSocket: FakeSocket as never, backoff: [1] });
@@ -129,7 +129,7 @@ describe("the engine source opens a space, delivers its history and stream in or
   it("delivers history in order, then caught-up, and reports invalid records", async () => {
     const routes = baseRoutes({
       "GET /graphs/master/patches?after=0&to=3": () => ({ body: ndjson([wirePatch(0, 1), { nonsense: true }, wirePatch(1, 2)]) }),
-      "GET /graphs/master/telemetry?format=batches": () => ({ body: ndjson([tel("2026-11-10T10:41:00Z", 1), tel("2026-11-10T10:42:00Z", 2), { graph: "master" }]) }),
+      "GET /graphs/master/windows?format=batches": () => ({ body: ndjson([tel("2026-11-10T10:41:00Z", 1), tel("2026-11-10T10:42:00Z", 2), { graph: "master" }]) }),
     });
     const src = new EngineSource(BASE, { fetch: makeFetch(routes), WebSocket: FakeSocket as never });
     const rejected: Rejection[] = [];
@@ -137,7 +137,7 @@ describe("the engine source opens a space, delivers its history and stream in or
     await src.open();
     const { events } = collect(src, "master");
     await settle();
-    expect(events.map((e) => (e.type === "patch" ? `p${e.patch.to.revision}` : e.type === "telemetry" ? `t${e.batch.values[0]}` : e.type))).toEqual(["p1", "p2", "t1", "t2", "caught-up"]);
+    expect(events.map((e) => (e.type === "patch" ? `p${e.patch.to.revision}` : e.type === "windows" ? `t${e.batch.values[0]}` : e.type))).toEqual(["p1", "p2", "t1", "t2", "caught-up"]);
     expect(rejected.some((r) => r.where === "patch #2")).toBe(true);
     expect(rejected.some((r) => r.where === "line 3")).toBe(true);
     src.dispose();
@@ -147,7 +147,7 @@ describe("the engine source opens a space, delivers its history and stream in or
     ["with /revisions (engine 3.54) each patch has its commit time", { "GET /graphs/master/revisions?after=0&to=3": () => ({ body: ndjson([{ revision: "1", time: null }, { revision: "2", time: "2026-11-09T20:01:00Z" }]) }) }, [undefined, Date.parse("2026-11-09T20:01:00Z") / 1000]],
     ["without it (an older engine) the patches come without a time", {}, [undefined, undefined]],
   ])("the history: %s", async (_, extra, want) => {
-    const routes = baseRoutes({ "GET /graphs/master/patches?after=0&to=3": () => ({ body: ndjson([wirePatch(0, 1), wirePatch(1, 2)]) }), "GET /graphs/master/telemetry?format=batches": () => ({ body: "" }), ...extra });
+    const routes = baseRoutes({ "GET /graphs/master/patches?after=0&to=3": () => ({ body: ndjson([wirePatch(0, 1), wirePatch(1, 2)]) }), "GET /graphs/master/windows?format=batches": () => ({ body: "" }), ...extra });
     const src = new EngineSource(BASE, { fetch: makeFetch(routes), WebSocket: FakeSocket as never });
     await src.open();
     const { events } = collect(src, "master");
@@ -163,7 +163,7 @@ describe("the engine source opens a space, delivers its history and stream in or
     const routes = baseRoutes({
       "GET /graphs/master/patches?after=0&to=3": () => ({ body: ndjson([wirePatch(0, 1)]) }),
       "GET /graphs/master/patches?after=1": () => { after1 = "asked"; return { body: ndjson([wirePatch(1, 2), wirePatch(2, 3)]) }; },
-      "GET /graphs/master/telemetry?format=batches": () => ({ body: "" }),
+      "GET /graphs/master/windows?format=batches": () => ({ body: "" }),
     });
     const src = new EngineSource(BASE, { fetch: makeFetch(routes, log), WebSocket: FakeSocket as never });
     await src.open();
@@ -192,15 +192,15 @@ describe("the engine source opens a space, delivers its history and stream in or
     const routes = baseRoutes({
       "GET /graphs/master/patches?after=0&to=3": () => ({ body: ndjson([wirePatch(0, 1)]) }),
       "GET /graphs/master/patches?after=1": () => ({ body: ndjson([wirePatch(1, 2)]) }),
-      "GET /graphs/master/telemetry?format=batches": () => ({ body: "" }),
-      "GET /graphs/master/telemetry": () => ({ body: "" }), // the catch-up after the reconnect reads from the last window
+      "GET /graphs/master/windows?format=batches": () => ({ body: "" }),
+      "GET /graphs/master/windows": () => ({ body: "" }), // the catch-up after the reconnect reads from the last window
     });
     const src = new EngineSource(BASE, { fetch: makeFetch(routes), WebSocket: FakeSocket as never, backoff: [1] });
     await src.open();
     const { events } = collect(src, "master");
     await settle();
     expect(src.connection.status.state).toBe("live");
-    FakeSocket.instances[0].push({ type: "telemetry", graph: "master", seq: "12", batch: tel("2026-11-10T10:41:00Z", 5) });
+    FakeSocket.instances[0].push({ type: "windows", graph: "master", seq: "12", batch: tel("2026-11-10T10:41:00Z", 5) });
     FakeSocket.instances[0].close();
     await settle(30);
     expect(FakeSocket.instances.length).toBe(2);
@@ -211,13 +211,13 @@ describe("the engine source opens a space, delivers its history and stream in or
     src.dispose();
   });
 
-  it("a definition activation resets telemetry and reads it again; a history gap asks for a resync; end is forwarded", async () => {
+  it("a definition activation resets windows and reads it again; a history gap asks for a resync; end is forwarded", async () => {
     FakeSocket.instances = [];
     let reads = 0;
     const routes = baseRoutes({
       "GET /graphs/master/patches?after=0&to=3": () => ({ body: "" }),
       "GET /graphs/master/patches?after=0": () => ({ body: "" }),
-      "GET /graphs/master/telemetry?format=batches": () => { reads++; return { body: ndjson([tel("2026-11-10T10:41:00Z", reads)]) }; },
+      "GET /graphs/master/windows?format=batches": () => { reads++; return { body: ndjson([tel("2026-11-10T10:41:00Z", reads)]) }; },
     });
     const src = new EngineSource(BASE, { fetch: makeFetch(routes), WebSocket: FakeSocket as never });
     await src.open();
@@ -226,8 +226,8 @@ describe("the engine source opens a space, delivers its history and stream in or
     const ws = FakeSocket.instances[0];
     ws.push({ type: "activation", catalogRevision: "11", graphs: [{ id: "master", from: "1", to: "2" }] });
     await settle();
-    expect(events.some((e) => e.type === "telemetry-reset")).toBe(true);
-    expect(events.filter((e) => e.type === "telemetry").length).toBe(2);
+    expect(events.some((e) => e.type === "windows-reset")).toBe(true);
+    expect(events.filter((e) => e.type === "windows").length).toBe(2);
     ws.push({ type: "gap", firstSeq: "5" });
     ws.push({ type: "end" });
     await settle();
@@ -239,23 +239,23 @@ describe("the engine source opens a space, delivers its history and stream in or
 
   it("an activation that brings a graph the space did not have asks for a reload", async () => {
     FakeSocket.instances = [];
-    const src = new EngineSource(BASE, { fetch: makeFetch(baseRoutes({ "GET /graphs/master/patches?after=0&to=3": () => ({ body: "" }), "GET /graphs/master/telemetry?format=batches": () => ({ body: "" }) })), WebSocket: FakeSocket as never });
+    const src = new EngineSource(BASE, { fetch: makeFetch(baseRoutes({ "GET /graphs/master/patches?after=0&to=3": () => ({ body: "" }), "GET /graphs/master/windows?format=batches": () => ({ body: "" }) })), WebSocket: FakeSocket as never });
     await src.open();
     const { events } = collect(src, "master");
     await settle();
     FakeSocket.instances[0].push({ type: "activation", catalogRevision: "11", graphs: [{ id: "master", from: "3", to: "3" }, { id: "newGraph", from: "0", to: "1" }] });
     await settle();
     expect(events.some((e) => e.type === "resync")).toBe(true);
-    expect(events.filter((e) => e.type === "telemetry-reset").length).toBe(0);
+    expect(events.filter((e) => e.type === "windows-reset").length).toBe(0);
     src.dispose();
   });
 
-  it("a revised telemetry window, older than the newest, reaches the sinks with its new values", async () => {
+  it("a revised window, older than the newest, reaches the sinks with its new values", async () => {
     const { src, ws, events } = await open();
-    ws.push({ type: "telemetry", graph: "master", batch: tel("2026-11-10T10:42:00Z", 2) });
-    ws.push({ type: "telemetry", graph: "master", batch: tel("2026-11-10T10:41:00Z", 9) }); // window 10:41 revised after 10:42 was seen
+    ws.push({ type: "windows", graph: "master", batch: tel("2026-11-10T10:42:00Z", 2) });
+    ws.push({ type: "windows", graph: "master", batch: tel("2026-11-10T10:41:00Z", 9) }); // window 10:41 revised after 10:42 was seen
     await settle();
-    const values = events.flatMap((e) => (e.type === "telemetry" ? [e.batch.values[0]] : []));
+    const values = events.flatMap((e) => (e.type === "windows" ? [e.batch.values[0]] : []));
     expect(values, "the user keeps the old value of 10:41 until a reload").toEqual([2, 9]);
     src.dispose();
   });
@@ -288,14 +288,14 @@ describe("the engine source opens a space, delivers its history and stream in or
     src.dispose();
   });
 
-  it("the catalog graph is read without telemetry", async () => {
+  it("the catalog graph is read without windows", async () => {
     FakeSocket.instances = [];
     const log: string[] = [];
     const src = new EngineSource(BASE, { fetch: makeFetch(baseRoutes({ "GET /graphs/catalog/patches?after=0&to=10": () => ({ body: "" }) }), log), WebSocket: FakeSocket as never });
     await src.open();
     collect(src, "catalog");
     await settle();
-    expect(log.some((l) => l.includes("/graphs/catalog/telemetry"))).toBe(false);
+    expect(log.some((l) => l.includes("/graphs/catalog/windows"))).toBe(false);
     expect(JSON.parse(FakeSocket.instances[0].sent[0]).graphs).toEqual(["catalog"]);
     src.dispose();
   });
@@ -356,7 +356,7 @@ describe("the engine source opens a space, delivers its history and stream in or
     ["a retraction next to values", { ids: ["a"], values: [1], removed: ["b"] }, { ids: ["a"], removed: ["b"] }],
     ["a retraction alone, with empty ids and values", { ids: [], values: [], removed: ["b", "c"] }, { ids: [], removed: ["b", "c"] }],
     ["no retraction", { ids: ["a"], values: [1] }, { ids: ["a"], removed: undefined }],
-  ])("a telemetry batch with %s", (_, body, want) => {
+  ])("a windows batch with %s", (_, body, want) => {
     const r = batchFromWire({ graph: "g", windowStart: "2026-01-01T00:00:00Z", target: "node", property: "cpu", tick: 3, ...body });
     expect(r.ok && { ids: r.batch.ids, removed: r.batch.removed }).toEqual(want);
   });

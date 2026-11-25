@@ -17,7 +17,7 @@ export interface PaletteSlotValue { kind: "fieldRef" | "expr"; roots: string[]; 
 export interface PaletteSlot { name: string; children: string[]; multiplicity: string; ordered: boolean; childTypes?: PaletteChildType[]; value?: PaletteSlotValue }
 export interface PaletteOperator {
   kind: string; supported: boolean; unsupportedReason?: string; role: string; container: string; slot: string;
-  ports: PalettePort[]; params: PaletteParam[]; slots: PaletteSlot[]; strategy: string | null; sink: boolean; telemetry: boolean;
+  ports: PalettePort[]; params: PaletteParam[]; slots: PaletteSlot[]; strategy: string | null; sink: boolean; windows: boolean;
   /** engine 3.21: the references of the operator (empty when it has none; absent from an older engine) */
   references?: PaletteReference[];
 }
@@ -53,7 +53,7 @@ export interface Palette {
   valueRoleSlot?: { container: string; slot: string; type: string };
   kernelDigest: string; version: string; operators: PaletteOperator[];
   ruleClasses: { name: string; params: string[]; policies: string[]; supported: boolean }[];
-  /** `contexts` (engine 3.5): where the aggregate is allowed: the operator (Group over data, Rollup over telemetry), what it takes, and what it requires of it. Absent on an older engine. */
+  /** `contexts` (engine 3.5): where the aggregate is allowed: the operator (Group over data, Rollup over windows), what it takes, and what it requires of it. Absent on an older engine. */
   aggregates: AggregateSpec[];
   functions: { name: string; signature: string; role: string; supported: boolean }[];
   valueKinds: string[];
@@ -76,9 +76,9 @@ export function parsePalette(raw0: unknown): Palette {
   return { declarations: Object.fromEntries((raw.declarations ?? []).map((d) => [d.slot, d])), rowTypes: raw.rowTypes, equivalencePolicies: raw.equivalencePolicies, projectionPorts: raw.projectionPorts ?? [], rules: raw.rules, valueRoles: raw.valueRoles ?? [], valueRoleSlot: raw.valueRoleSlot, ...(raw.references && typeof raw.references === "object" ? { references: Object.fromEntries(Object.entries(raw.references as Record<string, unknown>).map(([t, l]) => [t, parseReferences(l)])) } : {}), kernelDigest: String(o.kernelDigest ?? ""), version: String(o.version ?? ""), operators: o.operators, ruleClasses: o.ruleClasses ?? [], aggregates: o.aggregates ?? [], functions: o.functions ?? [], valueKinds: o.valueKinds ?? ["Text", "Integer", "Decimal", "Boolean", "Instant", "Entity", "List"] };
 }
 
-/** Groups in the order an author builds a projection: sources, linear steps, telemetry steps, sinks. */
-export const ROLE_ORDER = ["source", "linear", "telemetry", "sink"];
-export const ROLE_LABEL: Record<string, string> = { source: "Sources", linear: "Transform", telemetry: "Telemetry", sink: "Emit" };
+/** Groups in the order an author builds a projection: sources, linear steps, windows steps, sinks. */
+export const ROLE_ORDER = ["source", "linear", "windows", "sink"];
+export const ROLE_LABEL: Record<string, string> = { source: "Sources", linear: "Transform", windows: "Windows", sink: "Emit" };
 export const scalarFunctions = (p: Palette): Set<string> => new Set(p.functions.filter((f) => f.role === "scalar").map((f) => f.name));
 
 /** The palette's description of a parameter of an operator, or of a child of one of its slots: found by the owner's node type. */

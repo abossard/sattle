@@ -1,6 +1,6 @@
-// Telemetry store: 8-bit quantized frames per (target, metric) in a ring of recent ticks, indexed by graph slot.
+// Windows store: 8-bit quantized frames per (target, metric) in a ring of recent ticks, indexed by graph slot.
 // 8 bits is the GPU format (normalized unsigned byte attributes), so a frame is uploaded as is.
-import type { Meter, TelemetryBatch } from "../source/types";
+import type { Meter, WindowBatch } from "../source/types";
 
 export const meterKey = (target: "node" | "edge", id: string): string => `${target}:${id}`;
 
@@ -28,7 +28,7 @@ export interface Frame { tick: number; t: number; data: Uint8Array; has: Uint8Ar
 
 export interface IngestStats { ticks: number; lastMs: number; avgMs: number }
 
-export class TelemetryStore {
+export class WindowStore {
   readonly meters = new Map<string, Meter>();
   private frames = new Map<string, Frame[]>();
   /** 1 while the slot still holds the element it held in the snapshot (dense batches are aligned to the snapshot) */
@@ -58,7 +58,7 @@ export class TelemetryStore {
    * Add a batch. `slotOf` resolves an element id to its slot (sparse batches); dense batches write by index.
    * `cap` is the current slot capacity so frames can be indexed by slot directly.
    */
-  ingest(b: TelemetryBatch, slotOf: (target: "node" | "edge", id: string) => number | undefined, cap: number): void {
+  ingest(b: WindowBatch, slotOf: (target: "node" | "edge", id: string) => number | undefined, cap: number): void {
     const t0 = performance.now();
     const m = this.meter(b.target, b.property);
     if (!m) return;

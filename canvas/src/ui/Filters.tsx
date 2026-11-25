@@ -1,4 +1,4 @@
-// Search, type filter, property filter, focus, layout, groups and telemetry channels of one graph. Every control dispatches an action.
+// Search, type filter, property filter, focus, layout, groups and windows channels of one graph. Every control dispatches an action.
 import { Accordion, AccordionHeader, AccordionItem, AccordionPanel, Button, Checkbox, Field, Input, Select, SearchBox, SpinButton, Switch, Text, makeStyles, tokens } from "@fluentui/react-components";
 import { useEffect, useMemo, useState } from "react";
 import { dispatch, useStore } from "../state/store";
@@ -64,7 +64,7 @@ export function FiltersPanel({ graph }: { graph: string }) {
   const rev = useRevision(graph);
   const ws = rev?.ws;
   const f = useStore((x) => x.filters[graph]) ?? emptyFilter();
-  const tel = useStore((x) => x.telemetry[graph]);
+  const tel = useStore((x) => x.windows[graph]);
   const info = ws?.graphInfo(graph);
   const [search, setSearch] = useState(f.search);
   // a filter that changed elsewhere (Clear filters, another graph) resets `search` below, and that cancels a send pending here
@@ -83,7 +83,7 @@ export function FiltersPanel({ graph }: { graph: string }) {
   const meters = (target: "node" | "edge") => tel?.meters.filter((m) => m.target === target) ?? [];
   const channel = (label: string, target: "node" | "edge", key: string, value: string) => (
     <Field label={label} key={`${target}-${key}`}>
-      <Select value={value} onChange={(_, d) => dispatch({ type: "telemetry/set", graph, change: { [target]: { [key]: d.value } } })}>
+      <Select value={value} onChange={(_, d) => dispatch({ type: "windows/set", graph, change: { [target]: { [key]: d.value } } })}>
         <option value="">(off)</option>
         {meters(target).map((m) => <option key={m.id} value={m.id}>{m.label}{m.unit ? ` (${m.unit})` : ""}</option>)}
       </Select>
@@ -167,10 +167,10 @@ export function FiltersPanel({ graph }: { graph: string }) {
         </AccordionPanel>
       </AccordionItem>
       {tel?.hasData && (
-        <AccordionItem value="telemetry">
-          <AccordionHeader>Telemetry</AccordionHeader>
+        <AccordionItem value="windows">
+          <AccordionHeader>Windows</AccordionHeader>
           <AccordionPanel className={s.col}>
-            <Switch checked={tel.enabled} label="Show telemetry on the graph" onChange={(_, d) => dispatch({ type: "telemetry/set", graph, change: { enabled: d.checked } })} />
+            <Switch checked={tel.enabled} label="Show windows on the graph" onChange={(_, d) => dispatch({ type: "windows/set", graph, change: { enabled: d.checked } })} />
             {channel("Edge width", "edge", "width", tel.edge.width)}
             {channel("Edge flow speed", "edge", "flow", tel.edge.flow)}
             {channel("Edge state (dashed at threshold)", "edge", "state", tel.edge.state)}
@@ -181,11 +181,11 @@ export function FiltersPanel({ graph }: { graph: string }) {
               const m = id ? tel.meters.find((x) => x.id === id && x.target === target) : undefined;
               return m ? (
                 <Field key={target} label={`${m.label} warning threshold`}>
-                  <SpinButton value={m.warn ?? null} min={m.min} max={m.max} step={m.max <= 1 ? 0.01 : 1} onChange={(_, d) => dispatch({ type: "telemetry/set", graph, change: { warn: { id: m.id, target, value: d.value ?? parseDecimal(d.displayValue) } } })} />
+                  <SpinButton value={m.warn ?? null} min={m.min} max={m.max} step={m.max <= 1 ? 0.01 : 1} onChange={(_, d) => dispatch({ type: "windows/set", graph, change: { warn: { id: m.id, target, value: d.value ?? parseDecimal(d.displayValue) } } })} />
                 </Field>
               ) : null;
             })}
-            <Switch checked={tel.flow} label="Animate flow" onChange={(_, d) => dispatch({ type: "telemetry/set", graph, change: { flow: d.checked } })} />
+            <Switch checked={tel.flow} label="Animate flow" onChange={(_, d) => dispatch({ type: "windows/set", graph, change: { flow: d.checked } })} />
           </AccordionPanel>
         </AccordionItem>
       )}

@@ -423,7 +423,7 @@ export class GraphView {
     const dense = s.edgeCount > 20000;
     const edgeAlpha = this.wires ? 0.9 : dense ? Math.min(0.75, 0.1 + 0.16 * Math.sqrt(rel)) : Math.min(0.85, 0.45 + 0.2 * Math.sqrt(rel));
     // pulses are only visible when edges are long enough on screen; otherwise skip the continuous redraw
-    let flowActive = s.telemetry.on && s.telemetry.flow && this.avgEdgeLen * this.camera.zoom >= 30 && !this.wires;
+    let flowActive = s.windows.on && s.windows.flow && this.avgEdgeLen * this.camera.zoom >= 30 && !this.wires;
     if (flowActive && s.nodeCount > 3000) {
       // estimate the edges on screen from the node grid; pulses over a very dense view are not readable and would force full redraws
       const [wx0, wy0] = this.screenToWorld(0, 0), [wx1, wy1] = this.screenToWorld(this.width, this.height);
@@ -435,7 +435,7 @@ export class GraphView {
       width: this.width, height: this.height, dpr: this.dpr, camera: this.camera, dim: this.dim,
       edgeAlpha, edgeWidth: dense && rel < 2 ? 1 : 1.4, arrows: this.wires ? false : this.avgEdgeLen * this.camera.zoom > 26,
       wires: this.wires, background: th.bgRgb, minNodePx: dense ? 1.4 : 2.2, edgeSkip: Math.round(this.edgeSkip),
-      telemetry: { on: s.telemetry.on, warnNode: s.telemetry.warnNode, warnEdge: s.telemetry.warnEdge, flow: flowActive, time: (now / 1000) % 1000 },
+      windows: { on: s.windows.on, warnNode: s.windows.warnNode, warnEdge: s.windows.warnEdge, flow: flowActive, time: (now / 1000) % 1000 },
       colors: { selected: th.selected, change: th.change, danger: th.danger, warning: th.warning },
     };
     this.renderer.render(params);
@@ -580,15 +580,15 @@ export class GraphView {
     }
     this.stats.visibleLabels = drawn;
 
-    // telemetry warning glyph: a non-color cue for nodes whose state channel is at or above its threshold
-    if (s.telemetry.on && s.telemetry.warnNode < 256 && this.hooks.nodeLabel) {
+    // windows warning glyph: a non-color cue for nodes whose state channel is at or above its threshold
+    if (s.windows.on && s.windows.warnNode < 256 && this.hooks.nodeLabel) {
       ctx.font = "bold 12px system-ui, sans-serif"; ctx.textAlign = "center";
       const [wx0, wy0] = this.screenToWorld(0, 0), [wx1, wy1] = this.screenToWorld(W, H);
       const cand = s.nodeCount > 3000 ? this.nodesInRect(wx0, wy0, wx1, wy1) : Array.from({ length: s.nodeCount }, (_, i) => i);
       let marks = 0;
       for (const i of cand) {
         if (marks > 400) break;
-        if (s.nodeT[2][i] < s.telemetry.warnNode || !s.nodeVisible(i)) continue;
+        if (s.nodeT[2][i] < s.windows.warnNode || !s.nodeVisible(i)) continue;
         const [x, y] = toS(s.positions[2 * i], s.positions[2 * i + 1]);
         const r = Math.max(s.radius[i] * z, 1.4) * 1.5;
         if (r < 5 || !inView(x, y, 20)) continue;

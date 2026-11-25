@@ -33,10 +33,10 @@ describe("SyntheticSource", () => {
       for (const c of await s.correspondences(gname)) for (const src of c.sources) expect(master.rel(src.key.slice(2))).toBeDefined();
     }
   });
-  it("derived graphs carry their own telemetry, with the same incident as the master", async () => {
+  it("derived graphs carry their own windows, with the same incident as the master", async () => {
     const s = new SyntheticSource("small", 0);
     await s.open();
-    const feed = s.telemetry!;
+    const feed = s.windows!;
     for (const g of ["master", "ownership", "dependencies"]) {
       const { batches } = await feed.fetch(g, 25);
       expect(batches.map((b) => `${b.target}:${b.property}`).sort()).toEqual(["edge:errorRate", "edge:latencyMs", "edge:requests", "node:cpu", "node:memory"]);

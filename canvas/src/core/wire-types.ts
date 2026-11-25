@@ -46,7 +46,7 @@ export interface GraphExtentWire { entities: EntityState[]; relationships: Relat
 
 export type ValueKind = "text" | "integer" | "decimal" | "boolean" | "instant" | "entity" | "list";
 export interface PropertyDefinition {
-  id: Id; valueKind: ValueKind; nullable: boolean; itemKind: ValueKind | null; unit: string | null; role: "graphData" | "telemetry";
+  id: Id; valueKind: ValueKind; nullable: boolean; itemKind: ValueKind | null; unit: string | null; role: "graphData" | "events";
 }
 export interface OntologyDefinition {
   schemaVersion: "1.0";

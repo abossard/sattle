@@ -7,7 +7,7 @@ import { stubEntity } from "../core/reference";
 import { DataPane, type PaneEvents, type Selection } from "./data-pane";
 import type { Action, FilterState } from "../state/types";
 import { History } from "./history";
-import { TelemetryHub } from "./telemetry-hub";
+import { WindowHub } from "./window-hub";
 import { mergeTimes, resolvePatchTimes, revisionCursorAt } from "../core/time-axis";
 import type { Theme } from "../render/theme";
 import { tally, type Coloring, type Target } from "./color-by";
@@ -17,7 +17,7 @@ export class Workspace {
   private readonly histories = new Map<string, History>();
   private readonly panes = new Map<string, DataPane>();
   private readonly corr = new Map<string, Correspondence[]>();
-  private readonly hubs = new Map<string, TelemetryHub>();
+  private readonly hubs = new Map<string, WindowHub>();
   /** sourceKey "graph|key" -> derived targets */
   private derivedOf = new Map<string, { graph: string; key: string }[]>();
   private targetSources = new Map<string, { graph: string; key: string }[]>();
@@ -50,13 +50,13 @@ export class Workspace {
       if (this.disposed) return;
       if (c?.length) this.addCorrespondences(g.id, c);
     }
-    // telemetry: pull the ticks a non-streaming source can give up front; streamed ticks arrive as events
-    const feed = this.source.telemetry;
+    // windows: pull the ticks a non-streaming source can give up front; streamed ticks arrive as events
+    const feed = this.source.windows;
     if (feed) {
       for (const g of this.info.graphs) {
         const h = this.histories.get(g.id)!;
         const total = h.graph.nodes.length + h.graph.edges.length;
-        this.hubs.set(g.id, new TelemetryHub(h.graph, feed, total > 150000 ? 61 : 241));
+        this.hubs.set(g.id, new WindowHub(h.graph, feed, total > 150000 ? 61 : 241));
       }
       for (let t = 0; t <= feed.ticks; t++) {
         for (const g of this.info.graphs) {
@@ -73,7 +73,7 @@ export class Workspace {
       for (const g of this.info.graphs) {
         const d = await this.source.meters(g.id);
         if (this.disposed) return;
-        if (d) this.hubs.set(g.id, new TelemetryHub(this.histories.get(g.id)!.graph, d, 241));
+        if (d) this.hubs.set(g.id, new WindowHub(this.histories.get(g.id)!.graph, d, 241));
       }
     }
     if (this.disposed) return;
@@ -84,8 +84,8 @@ export class Workspace {
       this.unsub.push(this.source.subscribe(g.id, (e) => {
         if (this.disposed) return;
         if (e.type === "patch") this.dispatch({ type: "feed/patch", graph: g.id, patch: e.patch, time: e.time });
-        else if (e.type === "telemetry") this.dispatch({ type: "feed/telemetry", graph: g.id, batch: e.batch });
-        else if (e.type === "telemetry-reset") this.dispatch({ type: "feed/telemetryReset", graph: g.id });
+        else if (e.type === "windows") this.dispatch({ type: "feed/windows", graph: g.id, batch: e.batch });
+        else if (e.type === "windows-reset") this.dispatch({ type: "feed/windowsReset", graph: g.id });
         else if (e.type === "meta") this.dispatch({ type: "feed/meta", graph: g.id, meta: e.meta });
         else if (e.type === "resync") this.dispatch({ type: "feed/resync", reason: e.reason });
         else if (e.type === "rejected") this.dispatch({ type: "feed/rejected", rejection: e.rejection, at: Date.now() });
@@ -168,7 +168,7 @@ export class Workspace {
   }
 
   // ---- shared time axis ----
-  /** Commit time of every patch of a graph: the source's times when all are present, else placed by order on the telemetry windows. */
+  /** Commit time of every patch of a graph: the source's times when all are present, else placed by order on the windows. */
   patchTimes(graph: string): { times: number[]; source: "source" | "ordinal" | "mixed" } {
     const h = this.histories.get(graph)!;
     const own = this.hubs.get(graph)?.hasData ? this.hubs.get(graph)!.store.frameTimes() : [];
@@ -177,7 +177,7 @@ export class Workspace {
     return resolvePatchTimes(h.sourceTimes, windows);
   }
 
-  /** All points on the axis: commit times of every revision and window starts of every telemetry frame. */
+  /** All points on the axis: commit times of every revision and window starts of every window frame. */
   axisPoints(): number[] {
     const lists: number[][] = [[0]];
     for (const g of this.info.graphs) if (g.role !== "catalog") lists.push(this.patchTimes(g.id).times);
@@ -188,15 +188,15 @@ export class Workspace {
   /** Revision cursor of a graph at the shared time. */
   cursorAt(graph: string, t: number): number { return revisionCursorAt(this.patchTimes(graph).times, t); }
 
-  /** Hub of a graph; created on the first telemetry batch for sources that stream telemetry without declaring it. */
-  hubFor(graph: string): TelemetryHub {
+  /** Hub of a graph; created on the first windows batch for sources that stream windows without declaring it. */
+  hubFor(graph: string): WindowHub {
     let hub = this.hubs.get(graph);
     if (!hub) {
       const h = this.histories.get(graph)!;
-      hub = new TelemetryHub(h.graph, { meters: [], defaults: {} }, 241);
+      hub = new WindowHub(h.graph, { meters: [], defaults: {} }, 241);
       hub.show(this.shownAt);
       this.hubs.set(graph, hub);
-      this.panes.get(graph)?.attachTelemetry(hub);
+      this.panes.get(graph)?.attachWindows(hub);
     }
     return hub;
   }
@@ -208,7 +208,7 @@ export class Workspace {
   history(graph: string): History | undefined { return this.histories.get(graph); }
   /** the pane of a graph once it is shown */
   pane(graph: string): DataPane | undefined { return this.panes.get(graph); }
-  hub(graph: string): TelemetryHub | undefined { return this.hubs.get(graph); }
+  hub(graph: string): WindowHub | undefined { return this.hubs.get(graph); }
   get timeline(): Timeline { return this.shownAt; }
   get selection(): Selection | null { return this.selected; }
   /** The same identity can be a meter in the master and a signal in a projection. Follow the input that holds the endpoint type the relationship names. */
@@ -266,7 +266,7 @@ export class Workspace {
     if (pane) { pane.applySteps(steps); this.highlight(graph, fs); }
   }
 
-  /** Move the whole space to time t: every graph shows the revision and the telemetry frame valid at that instant. */
+  /** Move the whole space to time t: every graph shows the revision and the window frame valid at that instant. */
   seek(t: number, filters: Record<string, FilterState>): void {
     this.shownAt = timelineAt(this.axisPoints(), t);
     for (const hub of this.hubs.values()) if (hub.hasData) hub.show(this.shownAt);

@@ -1,4 +1,4 @@
-// One shared time axis: revisions at commit time, telemetry frames at window start. Fluent Slider and toolbar, all through actions.
+// One shared time axis: revisions at commit time, window frames at window start. Fluent Slider and toolbar, all through actions.
 import { Badge, Button, Field, Select, Slider, SpinButton, Text, Toolbar, ToolbarButton, makeStyles, tokens } from "@fluentui/react-components";
 import { ChevronLeft20Regular, ChevronRight20Regular, Next20Regular, Pause20Regular, Play20Regular, Previous20Regular } from "@fluentui/react-icons";
 import { useEffect, useState, useSyncExternalStore } from "react";
@@ -65,8 +65,8 @@ export function Timeline({ graph, compact = false }: { graph: string; compact?: 
           <ToolbarButton aria-label="Next point in time" icon={<ChevronRight20Regular />} disabled={index >= points.length - 1} onClick={() => go(index + 1)} />
           <ToolbarButton aria-label="Latest" icon={<Next20Regular />} disabled={index >= points.length - 1} onClick={() => go(points.length - 1)} />
         </Toolbar>
-        <Slider className={s.grow} min={0} max={Math.max(points.length - 1, 0)} step={1} value={index} disabled={points.length <= 1} aria-label="Time of the graph space: revision and telemetry" aria-valuetext={`${formatTime(time.now)}, revision ${rev}`} onChange={(_, d) => go(d.value)} />
-        <Text title={pt.source !== "source" ? "This source gives no commit time for (some) revisions: those are placed by order on the telemetry windows." : "Revisions at commit time, telemetry at window start."}>{text}{!compact && pt.source !== "source" ? (pt.source === "ordinal" ? " · revisions placed by order" : " · some revisions placed by order") : ""}</Text>
+        <Slider className={s.grow} min={0} max={Math.max(points.length - 1, 0)} step={1} value={index} disabled={points.length <= 1} aria-label="Time of the graph space: revision and windows" aria-valuetext={`${formatTime(time.now)}, revision ${rev}`} onChange={(_, d) => go(d.value)} />
+        <Text title={pt.source !== "source" ? "This source gives no commit time for (some) revisions: those are placed by order on the windows." : "Revisions at commit time, windows at window start."}>{text}{!compact && pt.source !== "source" ? (pt.source === "ordinal" ? " · revisions placed by order" : " · some revisions placed by order") : ""}</Text>
       </div>
       {!compact && (
         <div className={s.row}>

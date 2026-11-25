@@ -13,7 +13,7 @@ import { initialStream, transition, type Effect, type Event as StreamInput, type
 import { readPresentation } from "./presentation";
 import { parsePatch, parseRecords, parseSnapshot } from "./snapshot-file";
 import type {
-  ConnectionStatus, DefinitionService, DocumentText, GraphInfo, GraphSource, Lineage, Reference, ReverseLineage, ModuleText, SpaceInfo, StreamEvent, TelemetryBatch,
+  ConnectionStatus, DefinitionService, DocumentText, GraphInfo, GraphSource, Lineage, Reference, ReverseLineage, ModuleText, SpaceInfo, StreamEvent, WindowBatch,
 } from "./types";
 
 export interface EngineOptions {
@@ -84,7 +84,7 @@ export class EngineSource implements GraphSource {
     this.doc = parseSpace(JSON.parse(await this.text(ENGINE_ENDPOINTS.space)));
     for (const g of this.doc.graphs) this.heads.set(g.id, g.head);
     const graphs: GraphInfo[] = [];
-    const seed: { id: string; revision: string | undefined; telemetry: boolean }[] = [];
+    const seed: { id: string; revision: string | undefined; windows: boolean }[] = [];
     for (const g of this.doc.graphs) {
       const { hints, tree, kinds, labels, restating, ontology: rawOntology } = readPresentation(JSON.parse(await this.text(ENGINE_ENDPOINTS.ontology(g.id))));
       const ont = checkOntology(rawOntology);
@@ -100,7 +100,7 @@ export class EngineSource implements GraphSource {
         id: g.id, role: g.role, descriptor: snap.descriptor, ontology: (ont.ok ? ont.value : rawOntology) as GraphInfo["ontology"], presentation: hints.length ? hints : undefined, tree: tree ?? undefined, edgeKinds: Object.keys(kinds).length ? kinds : undefined, labels: Object.keys(labels).length ? labels : undefined, restating: restating.length ? restating : undefined, description: g.description, direction: g.direction, editable: g.editable, document: g.document || undefined,
         ...bindings(g),
       });
-      seed.push({ id: g.id, revision: snap.snapshot.version.revision, telemetry: g.role !== "catalog" });
+      seed.push({ id: g.id, revision: snap.snapshot.version.revision, windows: g.role !== "catalog" });
     }
     // the stream resumes after the sequence number of the space document; history read later overlaps it and duplicates are dropped by revision
     this.stream = initialStream(seed, this.doc.seq);
@@ -166,7 +166,7 @@ export class EngineSource implements GraphSource {
       case "retry": this.after(f.attempt, { t: "retry", graph: f.graph, gen: f.gen }); return;
       case "reconnect": this.status.reconnects++; this.after(f.attempt, { t: "reconnectDue" }); return;
       case "readPatches": void this.readPatches(f.graph, f.gen, f.why, f.after); return;
-      case "readTelemetry": void this.readTelemetry(f.graph, f.gen, f.why, f.from); return;
+      case "readWindows": void this.readWindows(f.graph, f.gen, f.why, f.from); return;
     }
   }
 
@@ -189,11 +189,11 @@ export class EngineSource implements GraphSource {
     } catch (e) { this.step({ t: "readFailed", graph, gen, why, error: (e as Error).message }); }
   }
 
-  /** Telemetry windows from the last window seen (inclusive: a window may have been revised). */
-  private async readTelemetry(graph: string, gen: number, why: Why, from: number | undefined): Promise<void> {
+  /** Windows from the last window seen (inclusive: a window may have been revised). */
+  private async readWindows(graph: string, gen: number, why: Why, from: number | undefined): Promise<void> {
     try {
-      const path = ENGINE_ENDPOINTS.telemetry(graph, from === undefined ? undefined : new Date(from * 1000).toISOString());
-      const batches: TelemetryBatch[] = [];
+      const path = ENGINE_ENDPOINTS.windows(graph, from === undefined ? undefined : new Date(from * 1000).toISOString());
+      const batches: WindowBatch[] = [];
       for (const [i, raw] of parseRecords(await this.text(path), path, true, (r) => this.reject(r)).entries()) {
         const r = batchFromWire(raw);
         if (!r.ok) { this.reject({ source: path, where: `line ${i + 1}`, errors: r.errors }); continue; }
@@ -253,10 +253,10 @@ export class EngineSource implements GraphSource {
     if ("seq" in m && m.seq !== undefined) this.step({ t: "seq", seq: m.seq });
     switch (m.type) {
       case "patch": { const p = parsePatch(m.patch, "ws", `patch of ${m.graph}`, (r) => this.reject(r)); if (p) this.step({ t: "wsPatch", graph: m.graph, patch: p, seq: m.seq, time: m.time }); return; }
-      case "telemetry": {
+      case "windows": {
         const r = batchFromWire(m.batch);
-        if (!r.ok) { this.reject({ source: "ws", where: `telemetry of ${m.graph}`, errors: r.errors }); return; }
-        this.step({ t: "wsTelemetry", graph: m.graph, batch: r.batch, seq: m.seq });
+        if (!r.ok) { this.reject({ source: "ws", where: `windows of ${m.graph}`, errors: r.errors }); return; }
+        this.step({ t: "wsWindows", graph: m.graph, batch: r.batch, seq: m.seq });
         return;
       }
       case "time": { const t = instantSeconds(m.logicalTime); if (Number.isFinite(t)) this.step({ t: "wsTime", logicalTime: t }); return; }
