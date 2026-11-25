@@ -544,6 +544,45 @@ public class DifferentialTests
         Assert.Equal(expected, States(Sattle.Reference.ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), log)));
     }
 
+    /// <summary>The worked example after paper Def. 6.7, with its numbers, on the reference's fold (#172 A5). A tick is a minute: hourly windows (width and hop
+    /// 60), lateness 10, a look-back of 180 from the start of each hour. The fold of `fill and no data` is the watch of the example (off for normal, on for busy,
+    /// and silent), with c = 5 (`above` 5, `below` 4), up = 2, down = 3 and gap = 3 from 0. Hours 0 and 1 are high, hours 2 to 4 silent. Hour 0 is dropped at 180
+    /// with the seed (off, 1, 0), hour 1 at 240 with (on, 0, 0); the download of hour 0 withdrawn at 250 changes nothing; the move to silent at hour 4 is selected
+    /// at 310 and kept at 420 with the seed (silent, 0, 3), which the silent hours after it keep. Each case: the last clock, the seed (state, streak, quiet; - for
+    /// none), the kept transitions and the selected ones, as hour:from>to.</summary>
+    [Theory]
+    [InlineData(130L, "-", "", "0:off>off 1:off>on")]
+    [InlineData(180L, "off 1 0", "0:off>off", "0:off>off 1:off>on")]
+    [InlineData(240L, "on 0 0", "0:off>off 1:off>on", "0:off>off 1:off>on")]
+    [InlineData(250L, "on 0 0", "0:off>off 1:off>on", "0:off>off 1:off>on")]
+    [InlineData(310L, "on 0 1", "0:off>off 1:off>on", "0:off>off 1:off>on 4:on>silent")]
+    [InlineData(420L, "silent 0 3", "0:off>off 1:off>on 4:on>silent", "0:off>off 1:off>on 4:on>silent")]
+    [InlineData(600L, "silent 0 3", "0:off>off 1:off>on 4:on>silent", "0:off>off 1:off>on 4:on>silent")]
+    public void The_worked_example_of_the_seeded_fold(long clock, string seed, string kept, string selected)
+    {
+        var fold = Worlds.All.Single(x => x.Name == "fill and no data").Catalog.Projections.Values.SelectMany(p => p.Ops).OfType<Sattle.Language.TFold>().Single();
+        static Sattle.Reference.Relation Hours(params long[] hours) => new(["c", "windowStart", "hits", Sattle.Language.TSeries.NoDataColumn],
+            Sattle.Reference.ZSet.Of(hours.Select(h => (System.Collections.Immutable.ImmutableArray.Create(Value.Text("pkg"), Value.Instant(60 * h), Value.Integer(6L), Value.Boolean(false)), 1L))));
+        var policy = new Sattle.Reference.Relation(["c", "above", "below", "enterAfter", "exitAfter", "gap"],
+            Sattle.Reference.ZSet.Of([(System.Collections.Immutable.ImmutableArray.Create(Value.Text("pkg"), Value.Integer(5L), Value.Integer(4L), Value.Integer(2L), Value.Integer(3L), Value.Integer(3L)), 1L)]));
+        (long Clock, Sattle.Reference.Relation Rows)[] states = [(0, Hours(0, 1)), (130, Hours(0, 1)), (180, Hours(0, 1)), (240, Hours(0, 1)), (250, Hours(1)), (310, Hours(1)), (420, Hours(1)), (600, Hours(1))];
+        var carried = Sattle.Reference.Denotation.Carried.None;
+        Sattle.Reference.Relation? result = null;
+        long? before = null;
+        foreach (var (at, rows) in states.Where(x => x.Clock <= clock))
+        {
+            (result, carried) = Sattle.Reference.Denotation.Fold(fold, rows, policy, 60, 60, 10, 180, before, at, carried);
+            before = at;
+        }
+        static string Show(Value v) => v switch { TextValue t => t.S, IntegerValue n => n.N.ToString(System.Globalization.CultureInfo.InvariantCulture), InstantValue i => (i.Ns / 60).ToString(System.Globalization.CultureInfo.InvariantCulture), _ => "?" };
+        static string Moves(Sattle.Reference.Relation r) => string.Join(" ", r.Rows.Where(x => x.Weight > 0).Select(x => r.Reader(x.Row))
+            .Select(f => $"{Show(f("windowStart"))}:{Show(f("from"))}>{Show(f("to"))}").Order(StringComparer.Ordinal));
+        var state = carried.Seeds.Values.Select(x => x.State).SingleOrDefault();
+        Assert.Equal(seed, state is null ? "-" : $"{Show(state["state"])} {Show(state["streak"])} {Show(state["quiet"])}");
+        Assert.Equal(kept, Moves(result! with { Rows = carried.Kept }));
+        Assert.Equal(selected, Moves(result!));
+    }
+
     /// <summary>A node row of `ranked` (item `k`, rank `n`, none for null) or an edge row `from>to` with its impact after a colon, signed.</summary>
     static Sattle.Reference.RowInput FixpointRow(string change)
     {
