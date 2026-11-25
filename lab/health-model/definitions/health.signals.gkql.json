@@ -1459,6 +1459,21 @@
    }
   },
   {
+   "id": "metricSampled",
+   "verb": "where",
+   "condition": {
+    "fn": ">",
+    "args": [
+     {
+      "ref": "samples"
+     },
+     {
+      "lit": 0.0
+     }
+    ]
+   }
+  },
+  {
    "id": "metricAverage",
    "verb": "project",
    "columns": {
@@ -1483,15 +1498,7 @@
        ]
       },
       {
-       "fn": "coalesce",
-       "args": [
-        {
-         "ref": "samples"
-        },
-        {
-         "lit": 0.0
-        }
-       ]
+       "ref": "samples"
       }
      ]
     }
@@ -3068,6 +3075,10 @@
   },
   {
    "from": "metricSamples",
+   "to": "metricSampled"
+  },
+  {
+   "from": "metricSampled",
    "to": "metricAverage"
   },
   {

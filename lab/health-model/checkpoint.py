@@ -5,8 +5,11 @@
                               collector output, a reference file (lab/health-mirror/export-model.py --scrub LOCAL_SALT),
                               the app role name and the same salt -> OUT/capture/rows.ndjson, OUT/checkpoint.json,
                               OUT/cuts.txt
-  compare OUT                 OUT/replays/<cut>/master.final.snapshot.json -> one line per mismatch, exit 1 on any
-  mutate OUT                  OUT/mutants/<name>: the definitions with one binding dropped, one edge reversed, one
+  cases                       checkpoints/<case>/ for every hand-made case below: records whose signal values follow
+                              from the Azure query alone, where the exported checkpoints hold none
+  compare OUT                 OUT/replays/<cut>/master.final.snapshot.json -> one line per mismatch, and one if the
+                              last replay divided by zero; exit 1 on any
+  mutate OUT                 OUT/mutants/<name>: the definitions with one binding dropped, one edge reversed, one
                               threshold crossed, each with the cuts that show it
   verify OUT                  compare OUT and each mutant: OUT must match, every mutant must not
 
@@ -169,12 +172,54 @@ def prepare(raw, reference, out, app_role, salt_file):
     (out / "cuts.txt").write_text("".join(iso(c) + "\n" for c in cuts))
 
 
+def divisions(log):
+    """Divisions by zero the replay counted: a value the program left undefined, where Azure gives none."""
+    hit = re.search(r"(\d+) division by zero", log)
+    return [f"runtime faults: {hit[1]} division by zero"] if hit and hit[1] != "0" else []
+
+
 def found(out):
     out = Path(out)
     expected = json.loads((out / "checkpoint.json").read_text())
     snapshots = {cut: json.loads((out / "replays" / cut / "master.final.snapshot.json").read_text())
                  for cut in (out / "cuts.txt").read_text().split()}
-    return expected, mismatches(expected, snapshots)
+    return expected, mismatches(expected, snapshots) + divisions((out / "replays.log").read_text())
+
+
+CASE_START = datetime(2026, 1, 1, tzinfo=timezone.utc)
+APPLY = {"AppRoleName": "demo-workload", "Name": "POST /api/sessions/{sid}/tasks/{tid}/apply"}
+CASES = {
+    # A1 (#174): 2 of 3 runs pass; Azure gives round(100.0 * 2 / 3, 2), below the unhealthy limit 67
+    "ratio": ([("AvailabilityRow", m, {"Name": "test-f0205069f4a4", "Success": ok}) for m, ok in ((1, True), (2, False), (3, True))],
+              {"container-app-apply/azureLogAnalytics/availability-test": ("Unhealthy", 66.67)}),
+    # A2 (#174): every minute of the window has a count of 0, so the average has no value
+    "empty-average": ([("MetricRow", m, {"resource": "webApp", "metric": "CpuPercentage", "at": iso(CASE_START + timedelta(minutes=m)),
+                                         "total": 0, "count": 0}) for m in (1, 2, 3)],
+                      {"container-app-apply/azureResource/cpu-percentage": ("Unknown", None)}),
+    # A3 (#174): Azure counts toint(ResultCode) >= 500: 503 and 600, not 5, 50 or 200; 2 is above degraded (0), not unhealthy (2)
+    "server-errors": ([("RequestRow", 1, {**APPLY, "ResultCode": code}) for code in ("5", "50", "503", "600", "200")],
+                      {"system-model-write/azureLogAnalytics/apply-request-failures": ("Degraded", 2.0)}),
+}
+
+
+def write_cases():
+    """Each case as a checkpoint: its records seen 5 s after their time, a metric minute at its end, one cut at minute 5."""
+    model = json.loads((Path(__file__).parent / "reference" / "model.json").read_text())
+    cut = CASE_START + timedelta(minutes=5)
+    for name, (records, signals) in CASES.items():
+        lines = []
+        for i, (rows, m, values) in enumerate(records):
+            moment = CASE_START + timedelta(minutes=m, seconds=i)
+            values = values if rows == "MetricRow" else {"TimeGenerated": iso(moment), **values}
+            lines.append(json.dumps({"source": "records:" + rows, "key": f"{name}/{i}", "payload": {"values": values},
+                                     "meta": {"position": iso(moment + timedelta(seconds=5))}}))
+        expected = {"capturedAt": iso(cut), "entities": {}, "edges": edges(model),
+                    "signals": {key: {"cut": iso(cut), "state": state, "value": value} for key, (state, value) in signals.items()}}
+        out = Path(__file__).parent / "checkpoints" / name
+        (out / "capture").mkdir(parents=True, exist_ok=True)
+        (out / "capture" / "rows.ndjson").write_text("".join(json.dumps(e) + "\n" for e in capture(lines, [cut], lambda rows, v: v, "case")))
+        (out / "checkpoint.json").write_text(json.dumps(expected, indent=1) + "\n")
+        (out / "cuts.txt").write_text(iso(cut) + "\n")
 
 
 def compare(out):
@@ -238,6 +283,8 @@ def verify(out):
 if __name__ == "__main__":
     if sys.argv[1:2] == ["prepare"] and len(sys.argv) == 7:
         prepare(*sys.argv[2:7])
+    elif sys.argv[1:] == ["cases"]:
+        write_cases()
     elif sys.argv[1:2] == ["compare"] and len(sys.argv) == 3:
         sys.exit(compare(sys.argv[2]))
     elif sys.argv[1:2] == ["mutate"] and len(sys.argv) == 3:
