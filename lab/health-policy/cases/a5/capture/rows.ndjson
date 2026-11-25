@@ -5,4 +5,4 @@
 {"v": 1, "source": "records:DependsOn", "key": "DependsOn/4", "payload": {"key": "DependsOn/4", "values": {"consumer": "search", "dependency": "store", "required": false}}, "capturedAt": "2025-12-31T23:59:30.000000Z", "seq": 4}
 {"v": 1, "source": "records:Reading", "key": "Reading/5", "payload": {"key": "Reading/5", "values": {"key": "store", "t": "2026-01-01T00:00:10.000000Z", "value": 20}}, "capturedAt": "2026-01-01T00:00:15.000000Z", "seq": 5}
 {"v": 1, "source": "records:Reading", "key": "Reading/6", "payload": {"key": "Reading/6", "values": {"key": "store", "t": "2026-01-01T00:01:10.000000Z", "value": 95}}, "capturedAt": "2026-01-01T00:01:15.000000Z", "seq": 6}
-{"v": 1, "source": "records:Reading", "key": "heartbeat/2026-01-01T00:06:00.000000Z", "payload": {}, "capturedAt": "2026-01-01T00:06:00.000000Z", "seq": 7}
+{"v": 1, "source": "records:Reading", "key": "heartbeat/2026-01-01T00:11:00.000000Z", "payload": {}, "capturedAt": "2026-01-01T00:11:00.000000Z", "seq": 7}

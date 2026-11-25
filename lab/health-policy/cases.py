@@ -6,7 +6,8 @@
 
 Run replay.sh between write and check. Time is minutes from 2026-01-01 00:00 UTC; windows are one minute wide. A reading
 of minute m is taken at m:10 and captured at m:15 unless a case delays it; a policy row is captured at its given minute
-and second; the last record is a heartbeat at the case's end, where the replay stops with the clock (--no-flush).
+and second; the last record is a heartbeat at the case's end, where the replay stops with the clock (--no-flush). Readings
+have a lateness of 6m (Azure captures a signal reading up to 299 s after its time), so window m closes at m + 7.
 """
 from datetime import datetime, timedelta, timezone
 import json
@@ -56,18 +57,18 @@ P1 = at(-1, 30)  # the capture of a policy row of revision 1
 ABOVE4 = {0: 90, 1: 90, 2: 90, 3: 90}
 CASES = {
     # A3: four windows above the threshold; the entry streak is data of the policy row, the program is the same
-    "a3-streak2": {"records": [policy("api", enter=2), *readings("api", ABOVE4)], "end": 8,
+    "a3-streak2": {"records": [policy("api", enter=2), *readings("api", ABOVE4)], "end": 13,
                    "expect": {"health": {"Transition": [t("api", 0, "Healthy", "Healthy", 1, P1), t("api", 1, "Healthy", "Unhealthy", 1, P1)]}}},
-    "a3-streak4": {"records": [policy("api", enter=4), *readings("api", ABOVE4)], "end": 8,
+    "a3-streak4": {"records": [policy("api", enter=4), *readings("api", ABOVE4)], "end": 13,
                    "expect": {"health": {"Transition": [t("api", 0, "Healthy", "Healthy", 1, P1), t("api", 3, "Healthy", "Unhealthy", 1, P1)]}}},
     # A4: recovery after three windows below 50; two (minutes 1, 2) and a window between the limits (3) change nothing;
     # three silent windows (7, 8, 9) reach the freshness limit of 3 and show the missing-data state
-    "a4": {"records": [policy("db", enter=1, exit=3, gap=3), *readings("db", {0: 90, 1: 10, 2: 10, 3: 60, 4: 10, 5: 10, 6: 10})], "end": 14,
+    "a4": {"records": [policy("db", enter=1, exit=3, gap=3), *readings("db", {0: 90, 1: 10, 2: 10, 3: 60, 4: 10, 5: 10, 6: 10})], "end": 19,
            "expect": {"health": {"Transition": [t("db", 0, "Healthy", "Unhealthy", 1, P1), t("db", 6, "Unhealthy", "Healthy", 1, P1),
                                                 t("db", 9, "Healthy", "Unknown", 1, P1)]}}},
     # A5: checkout requires store, search only uses it; both read the same transition of store
     "a5": {"records": [policy("store", enter=1), policy("checkout"), policy("search"), depends("checkout", "store", True),
-                       depends("search", "store", False), *readings("store", {0: 20, 1: 95})], "end": 6,
+                       depends("search", "store", False), *readings("store", {0: 20, 1: 95})], "end": 11,
            "expect": {"health": {
                "Transition": [t("store", 0, "Healthy", "Healthy", 1, P1), t("store", 1, "Healthy", "Unhealthy", 1, P1)],
                "Impact": [{"consumer": "checkout", "dependency": "store", "required": True, "dependencyState": "Unhealthy", "effect": "Degraded",
@@ -78,16 +79,16 @@ CASES = {
     "a6": {"records": [*task("t1", {0: "started", 2: "running", 5: "failed"}), *task("t2", {1: "started", 3: "succeeded"})], "end": 9,
            "expect": {"completion": {"Transition": [t("t1", 0, "Unknown", "Unknown", 1, at(0, 15)), t("t1", 5, "Unknown", "Failed", 1, at(0, 15)),
                                                     t("t2", 1, "Unknown", "Unknown", 1, at(1, 15)), t("t2", 3, "Unknown", "Succeeded", 1, at(1, 15))]}}},
-    # #174 A4: the reading of minute 2 is captured at 3:15, in the next window and within the lateness of 1m; it folds
+    # #174 A4: the reading of minute 2 is captured at 3:15, in the next window and within the lateness of 6m; it folds
     # into window 2, its event time, not into window 3, where it was captured
-    "late": {"records": [policy("api", enter=1), *readings("api", {0: 20, 1: 20, 3: 20}), *readings("api", {2: 95}, delay=65)], "end": 8,
+    "late": {"records": [policy("api", enter=1), *readings("api", {0: 20, 1: 20, 3: 20}), *readings("api", {2: 95}, delay=65)], "end": 13,
              "expect": {"health": {"Transition": [t("api", 0, "Healthy", "Healthy", 1, P1), t("api", 2, "Healthy", "Unhealthy", 1, P1)]}}},
-    # A7: revision 2 (entry streak 4) is added at 8:30, after window 6 closed (8:00) and before window 7 closes (9:00);
+    # A7: revision 2 (entry streak 4) is added at 13:30, after window 6 closed (13:00) and before window 7 closes (14:00);
     # the windows before keep revision 1, the later ones are folded with revision 2
     "a7": {"records": [policy("api", enter=2), *readings("api", {**ABOVE4, 4: 10, 5: 10, 6: 10, 9: 90, 10: 90, 11: 90, 12: 90}),
-                       policy("api", revision=2, enter=4, minute=8, second=30)], "end": 17,
+                       policy("api", revision=2, enter=4, minute=13, second=30)], "end": 22,
            "expect": {"health": {"Transition": [t("api", 0, "Healthy", "Healthy", 1, P1), t("api", 1, "Healthy", "Unhealthy", 1, P1),
-                                                t("api", 6, "Unhealthy", "Healthy", 1, P1), t("api", 12, "Healthy", "Unhealthy", 2, at(8, 30))]}}},
+                                                t("api", 6, "Unhealthy", "Healthy", 1, P1), t("api", 12, "Healthy", "Unhealthy", 2, at(13, 30))]}}},
 }
 
 

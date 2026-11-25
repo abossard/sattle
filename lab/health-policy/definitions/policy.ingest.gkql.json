@@ -7,7 +7,7 @@
    "name": "readings",
    "rows": "policy.Reading",
    "time": "t",
-   "lateness": "1m"
+   "lateness": "6m"
   },
   {
    "name": "policies",

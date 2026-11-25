@@ -44,7 +44,7 @@
     "element": "s",
     "property": "reading",
     "lookback": "6h",
-    "lateness": "1m"
+    "lateness": "6m"
    }
   },
   {

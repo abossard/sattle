@@ -6,4 +6,4 @@
 {"v": 1, "source": "records:Reading", "key": "Reading/5", "payload": {"key": "Reading/5", "values": {"key": "db", "t": "2026-01-01T00:04:10.000000Z", "value": 10}}, "capturedAt": "2026-01-01T00:04:15.000000Z", "seq": 5}
 {"v": 1, "source": "records:Reading", "key": "Reading/6", "payload": {"key": "Reading/6", "values": {"key": "db", "t": "2026-01-01T00:05:10.000000Z", "value": 10}}, "capturedAt": "2026-01-01T00:05:15.000000Z", "seq": 6}
 {"v": 1, "source": "records:Reading", "key": "Reading/7", "payload": {"key": "Reading/7", "values": {"key": "db", "t": "2026-01-01T00:06:10.000000Z", "value": 10}}, "capturedAt": "2026-01-01T00:06:15.000000Z", "seq": 7}
-{"v": 1, "source": "records:Reading", "key": "heartbeat/2026-01-01T00:14:00.000000Z", "payload": {}, "capturedAt": "2026-01-01T00:14:00.000000Z", "seq": 8}
+{"v": 1, "source": "records:Reading", "key": "heartbeat/2026-01-01T00:19:00.000000Z", "payload": {}, "capturedAt": "2026-01-01T00:19:00.000000Z", "seq": 8}

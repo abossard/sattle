@@ -185,31 +185,39 @@
      "lit": "ratio"
     },
     "value": {
-     "fn": "/",
+     "fn": "round",
      "args": [
       {
-       "fn": "*",
+       "fn": "/",
        "args": [
         {
-         "lit": 100.0
+         "fn": "*",
+         "args": [
+          {
+           "lit": 100.0
+          },
+          {
+           "fn": "todecimal",
+           "args": [
+            {
+             "ref": "passed"
+            }
+           ]
+          }
+         ]
         },
         {
          "fn": "todecimal",
          "args": [
           {
-           "ref": "passed"
+           "ref": "runs"
           }
          ]
         }
        ]
       },
       {
-       "fn": "todecimal",
-       "args": [
-        {
-         "ref": "runs"
-        }
-       ]
+       "lit": 2
       }
      ]
     }
@@ -967,21 +975,26 @@
      "fn": "countif",
      "args": [
       {
-       "fn": "startswith",
+       "fn": ">=",
        "args": [
         {
          "fn": "coalesce",
          "args": [
           {
-           "ref": "ResultCode"
+           "fn": "toint",
+           "args": [
+            {
+             "ref": "ResultCode"
+            }
+           ]
           },
           {
-           "lit": ""
+           "lit": 0
           }
          ]
         },
         {
-         "lit": "5"
+         "lit": 500
         }
        ]
       }
