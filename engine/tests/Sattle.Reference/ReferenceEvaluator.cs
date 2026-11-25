@@ -28,8 +28,8 @@ public sealed record SpaceFacts(ImmutableSortedDictionary<string, GraphFacts> Gr
 /// The meaning of a graph space on an input log, computed from scratch (Def. 6.4): after each input every graph is evaluated in batch from the integrated inputs.
 /// Three things are functions of the log and not of the integrated state, and are carried from one input to the next as plain sets:
 /// the rows a windowed Group accepted (lateness is judged against the frontier at the row's position, premise B2),
-/// the state of a Threshold key after the windows that left its look-back (Def. 7.10, D33),
-/// and, to find what an input added to or took from such an operator, its integrated input after the previous input.
+/// and, to find what an input added to or took from such an operator, its integrated input after the previous input;
+/// and per fold (Def. 6.5) its policy rows with the clock each entered at (#151 D4), the state of each active key after its newest closed window (D2) and the transitions selected so far.
 /// Two more are recorded facts (Def. 7.14): how far each source has reported, and since which clock (the arrival of its row, kept while it has a row at the end of each clock) an element has had a row in the structural input of a Series that fills or has a time to live.
 /// </summary>
 public static class ReferenceEvaluator
@@ -54,7 +54,7 @@ public static class ReferenceEvaluator
         ImmutableSortedDictionary<string, ZSet> SeenInput,
         ImmutableSortedDictionary<string, ZSet> Accepted,
         ImmutableSortedDictionary<string, ImmutableArray<LinkFact>> Links,
-        ImmutableSortedDictionary<string, ImmutableSortedDictionary<string, Denotation.Carried>> Carried,
+        ImmutableSortedDictionary<string, Denotation.Carried> Carried,
         ImmutableSortedDictionary<string, long> Covered,
         ImmutableSortedDictionary<string, ImmutableSortedDictionary<string, long>> Since,
         ImmutableSortedSet<long> Lost,
@@ -62,7 +62,7 @@ public static class ReferenceEvaluator
     {
         static readonly ImmutableSortedDictionary<string, ZSet> None = ImmutableSortedDictionary.Create<string, ZSet>(StringComparer.Ordinal);
         public static readonly Position Start = new(None, None, None, ImmutableSortedDictionary.Create<string, ImmutableArray<LinkFact>>(StringComparer.Ordinal),
-            ImmutableSortedDictionary.Create<string, ImmutableSortedDictionary<string, Denotation.Carried>>(StringComparer.Ordinal),
+            ImmutableSortedDictionary.Create<string, Denotation.Carried>(StringComparer.Ordinal),
             ImmutableSortedDictionary.Create<string, long>(StringComparer.Ordinal), ImmutableSortedDictionary.Create<string, ImmutableSortedDictionary<string, long>>(StringComparer.Ordinal),
             ImmutableSortedSet<long>.Empty,
             new SpaceFacts(ImmutableSortedDictionary.Create<string, GraphFacts>(StringComparer.Ordinal), null));
@@ -166,15 +166,11 @@ public static class ReferenceEvaluator
                         outs = outs.SetItem(op.Name, Denotation.Of(group, _ => rows with { Rows = closed }, inputs));
                         break;
                     }
-                case TThreshold threshold:
+                case TFold fold:
                     {
-                        var rows = In("in");
-                        var series = Upstream<TSeries>(plan, threshold);
-                        var within = series?.WithinNs;
-                        var (result, carried) = Denotation.Threshold(threshold, rows with { Rows = p.SeenInput.GetValueOrDefault(slot, ZSet.Empty) }, rows,
-                            within is { } w && frontier is { } f ? f - w : null, within, frontier, (long)System.Int128.Min((within ?? 0) + (series is null ? 0 : settings.Horizon(series.PeriodNs)), long.MaxValue),
-                            p.Carried.GetValueOrDefault(slot, ImmutableSortedDictionary.Create<string, Denotation.Carried>(StringComparer.Ordinal)));
-                        p = p with { SeenInput = p.SeenInput.SetItem(slot, rows.Rows), Carried = p.Carried.SetItem(slot, carried) };
+                        var (width, hop, lateness, within) = Windows(plan, fold, settings);
+                        var (result, carried) = Denotation.Fold(fold, In("in"), In("policy"), width, hop, lateness, within, frontierBefore, frontier, p.Carried.GetValueOrDefault(slot, Denotation.Carried.None));
+                        p = p with { Carried = p.Carried.SetItem(slot, carried) };
                         outs = outs.SetItem(op.Name, result);
                         break;
                     }
@@ -220,15 +216,30 @@ public static class ReferenceEvaluator
     }
     static string PortSlot(TGraph graph, string port) => graph.Name + "/port:" + port;
 
-    /// <summary>The nearest operator of a kind upstream of an operator along its `in` inputs: the Window whose windows a Group closes, the Series whose look-back a Threshold reads through.</summary>
-    static T? Upstream<T>(TypedProjection plan, TOp op) where T : TOp
+    /// <summary>The nearest operator of a kind upstream of an operator along its `in` inputs: the Window whose windows a Group closes, the Window or Series whose windows a fold reads.</summary>
+    static T? Upstream<T>(TypedProjection plan, TOp op, Func<T, bool>? fits = null) where T : TOp
     {
         for (var cur = op; cur.Inputs.TryGetValue("in", out var src) && !src.IsPort;)
         {
             cur = plan.Ops.First(o => o.Name == src.Name);
-            if (cur is T found) return found;
+            if (cur is T found && (fits is null || fits(found))) return found;
         }
         return null;
+    }
+
+    /// <summary>Def. 6.4 for a fold: the windows of its nearest Window (width, hop, windows start on the grid of the hop) or Series (width and hop its period), and
+    /// the lateness λ that closes them, the time the engine keeps such a window revisable: the Window's lateness, else the late horizon, at most the retention.
+    /// `Within`: the look-back of the nearest Series upstream, null without one.</summary>
+    static (long Width, long Hop, long Lateness, long? Within) Windows(TypedProjection plan, TFold fold, Settings s)
+    {
+        long Revisable(long width, long? lateness) => (long)System.Int128.Min(lateness ?? s.Horizon(width), s.WindowRetentionNs);
+        var within = Upstream<TSeries>(plan, fold)?.WithinNs;
+        return Upstream<TOp>(plan, fold, o => o is TWindow or TSeries) switch
+        {
+            TWindow w => (w.WidthNs, w.HopNs, Revisable(w.WidthNs, w.LatenessNs), within),
+            TSeries x => (x.PeriodNs, x.PeriodNs, Revisable(x.PeriodNs, null), within),
+            _ => throw new Undefined($"Fold {fold.Name} has no Window or Series upstream"),
+        };
     }
 
     /// <summary>Premise B2 and Def. 7.6: a row counts for its window unless the window was beyond the late horizon; a row for a closed window revises it.</summary>

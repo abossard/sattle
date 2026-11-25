@@ -6,7 +6,7 @@ using Sattle.Cli;
 
 namespace Sattle.Tests;
 
-/// <summary>PROTOCOL.md on a host in process, each test on the answers of one family of endpoints: definitions served as a graph (Theorem 9.1), check, a definition commit with its re-activation, the event stream (Theorem 12.1, Proposition 12.2), windows and meters (Theorem 7.1), the hysteresis of a threshold (Theorem 7.4), lineage. A test that only reads shares one host of the class.</summary>
+/// <summary>PROTOCOL.md on a host in process, each test on the answers of one family of endpoints: definitions served as a graph (Theorem 9.1), check, a definition commit with its re-activation, the event stream (Theorem 12.1, Proposition 12.2), windows and meters (Theorem 7.1), the state changes of a fold (Theorem 7.4), lineage. A test that only reads shares one host of the class.</summary>
 public class HostTests
 {
     const long Min = 60_000_000_000;
@@ -106,7 +106,7 @@ public class HostTests
         var d = bad["diagnostics"]!.AsArray().First(x => x!["severity"]!.GetValue<string>() == "error")!;      // the column is unknown; which code names it is the language's
         Assert.True(d["line"]!.GetValue<int>() > 0 && d["column"]!.GetValue<int>() > 0);
         Assert.Equal(File, d["file"]!.GetValue<string>());
-        var changed = h.Check(File, Text(File).Replace("\"above\": 0.05", "\"above\": 0.5"));
+        var changed = h.Check(File, Text(File).Replace("\"above\": {\"lit\": 0.05}", "\"above\": {\"lit\": 0.5}"));
         Assert.True(changed["ok"]!.GetValue<bool>());
         Assert.NotEmpty(changed["patch"]!["edits"]!.AsArray());
         Assert.Contains("acme.svc", changed["affected"]!["modules"]!.AsArray().Select(x => x!.GetValue<string>()));
@@ -124,7 +124,7 @@ public class HostTests
         using var h = new SpaceHost(Shared.Value.Files, new HostOptions { Projections = Repo.Projections, LateHorizonWindows = 3, InputRowCap = 10 }, Shared.Value.Loaded);
         Drive(h);
         var file = h.ProjectionFile("acme.svc.serviceDeps");
-        var edited = Text(file).Replace("\"above\": 0.05, \"enterAfter\": 3, \"below\": 0.02, \"exitAfter\": 3", "\"above\": 0.05, \"enterAfter\": 3, \"below\": 0.0, \"exitAfter\": 30");
+        var edited = Text(file).Replace("\"above\": {\"lit\": 0.05}, \"below\": {\"lit\": 0.02}, \"enterAfter\": {\"lit\": 3}, \"exitAfter\": {\"lit\": 3}", "\"above\": {\"lit\": 0.05}, \"below\": {\"lit\": 0.0}, \"enterAfter\": {\"lit\": 3}, \"exitAfter\": {\"lit\": 30}");
         Assert.NotEqual(Text(file), edited);
         var draft = call == "preview" ? h.CreateDraft(null)["draft"]!.GetValue<string>() : null;
         if (draft is not null) Assert.True(h.SetDraftText(draft, file, edited, 0)["ok"]!.GetValue<bool>());
@@ -149,7 +149,7 @@ public class HostTests
         var masterHead = Head(h, "master");
         // initial 3 windows of 10 percent drops: lower the entry threshold so the status ends degraded
         var File = h.ProjectionFile("acme.svc.serviceDeps");
-        var edited = Text(File).Replace("\"above\": 0.05, \"enterAfter\": 3, \"below\": 0.02, \"exitAfter\": 3", "\"above\": 0.05, \"enterAfter\": 3, \"below\": 0.0, \"exitAfter\": 30");
+        var edited = Text(File).Replace("\"above\": {\"lit\": 0.05}, \"below\": {\"lit\": 0.02}, \"enterAfter\": {\"lit\": 3}, \"exitAfter\": {\"lit\": 3}", "\"above\": {\"lit\": 0.05}, \"below\": {\"lit\": 0.0}, \"enterAfter\": {\"lit\": 3}, \"exitAfter\": {\"lit\": 30}");
         Assert.NotEqual(Text(File), edited);
         var rev0 = h.CatalogRevision;
         var res = h.Commit(File, edited, rev0);
@@ -180,7 +180,7 @@ public class HostTests
         using var h = NewHost();
         Drive(h, 3);
         var file = h.ProjectionFile("acme.svc.serviceDeps");
-        var texts = new[] { Text(file), Text(file).Replace("\"above\": 0.05, \"enterAfter\": 3, \"below\": 0.02, \"exitAfter\": 3", "\"above\": 0.05, \"enterAfter\": 3, \"below\": 0.0, \"exitAfter\": 30") };
+        var texts = new[] { Text(file), Text(file).Replace("\"above\": {\"lit\": 0.05}, \"below\": {\"lit\": 0.02}, \"enterAfter\": {\"lit\": 3}, \"exitAfter\": {\"lit\": 3}", "\"above\": {\"lit\": 0.05}, \"below\": {\"lit\": 0.0}, \"enterAfter\": {\"lit\": 3}, \"exitAfter\": {\"lit\": 30}") };
         var replaced = new List<WeakReference>(); var rev0 = h.CatalogRevision;
         for (var i = 1; i <= 3; i++) replaced.Add(CommitAndForget(h, file, texts[i % 2]));
         Assert.Equal(rev0 + 3, h.CatalogRevision);
@@ -270,9 +270,9 @@ public class HostTests
         Assert.Equal((3, 3, 1), (h.Entities("serviceTree", "ServiceGroup").Count, h.Relationships("serviceTree", "Contains").Count, h.Relationships("serviceTree", "DependsOn").Count));
     }
 
-    /// <summary>Theorem 7.4 (bounded churn) on served patches: the drop ratio is over the threshold in windows 0 to 2 and under it in windows 3 to 8, and the status of the dependency changes only when the state machine of the threshold changes state. Its served history is ok, degraded, ok: at most floor(N / n) = 3 changes for N = 9 windows and runs of n = 3.</summary>
+    /// <summary>Theorem 7.4 (bounded churn) on served patches: the drop ratio is over the threshold in windows 0 to 2 and under it in windows 3 to 8, and the status of the dependency changes only when the fold changes state (#151, each window folded at its end plus the late horizon of 3). Its served history is ok, degraded, ok: at most floor(N / n) = 3 changes for N = 9 windows and runs of n = 3.</summary>
     [Fact]
-    public void Threshold_hysteresis_changes_the_structural_status_only_on_state_changes()
+    public void A_fold_changes_the_structural_status_only_on_state_changes()
     {
         var statuses = Driven.Value.Patches("serviceTree", 0).SelectMany(p => p["edits"]!.AsArray()).Where(e => e!["after"] is { } after && after.Is("DependsOn"))
             .Select(e => e!["after"]!.Prop("status")).Where(s => s is not null).ToList();
@@ -292,9 +292,9 @@ public class HostTests
         Assert.Equal(60, series[0]!["periodSeconds"]!.GetValue<long>());
         var meters = h.Meters("serviceTree");
         var drop = meters["meters"]!.AsArray().First(m => m!["id"]!.GetValue<string>() == "dropRatio")!;
-        Assert.Equal(0.05, drop["warn"]!.GetValue<double>());
+        Assert.Null(drop["warn"]);                                                    // PROTOCOL 3.67: a policy is data of its policy rows (#151 D4), so a meter has no warn line
         Assert.Equal("gauge", drop["temporality"]!.GetValue<string>());
-        Assert.Equal("degraded", meters["thresholds"]![0]!["high"]!.GetValue<string>());
+        Assert.False(meters.AsObject().ContainsKey("thresholds"));
         var batches = h.Windows("master", null, null, null, null, batches: true).AsArray();
         Assert.NotEmpty(batches);
         Assert.All(batches, b => Assert.NotNull(b!["windowStart"]));
@@ -331,14 +331,15 @@ public class HostTests
     [Fact]
     public void The_catalog_has_empty_meters() => Assert.Empty(Fresh.Value.Meters("catalog")["meters"]!.AsArray());
 
-    /// <summary>Review: Export.cs:296. The thresholds document states the thresholds that apply: a threshold of the estate enters after one window or more, and has no parameter read from a row.</summary>
+    /// <summary>Review: Export.cs:296, after #151 D4. The meters document claims no threshold: the policy of a fold is the data of its policy rows, one per key and since, so the export has no one value to state. Its meters stay.</summary>
     [Theory]
     [InlineData("serviceTree")] [InlineData("capabilities")]
-    public void An_exported_threshold_never_claims_to_enter_after_zero_windows(string graph)
+    public void An_exported_meter_claims_no_threshold(string graph)
     {
-        var thresholds = Fresh.Value.Meters(graph)["thresholds"]!.AsArray();
-        Assert.NotEmpty(thresholds);
-        Assert.All(thresholds, t => Assert.True(t!["enterAfter"]!.GetValue<long>() >= 1 && t["byRow"] is null, t.ToJsonString()));
+        var answer = Fresh.Value.Meters(graph);
+        Assert.False(answer.AsObject().ContainsKey("thresholds"), answer.ToJsonString());
+        Assert.NotEmpty(answer["meters"]!.AsArray());
+        Assert.All(answer["meters"]!.AsArray(), m => Assert.False(m!.AsObject().ContainsKey("warn"), m.ToJsonString()));
     }
 
     [Fact]

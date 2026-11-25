@@ -271,27 +271,31 @@ public class DifferentialTests
         Assert.Equal("7", LoadOf(restored));
     }
 
-    /// <summary>Review finding (data-driven thresholds): parameters that come from the row are checked at run time. A row whose parameters are no state machine (`above` not greater than `below`, a run of less than one window) is dropped and counted, and the rows of other keys still give their states; the reference drops the same rows (the world agrees under every cut).</summary>
-    [Fact]
-    public void Row_parameters_that_are_no_state_machine_are_dropped_and_counted()
+    /// <summary>#151 D4, world `threshold with parameters of the row`: the policy of a key comes from its policy rows, here the item, `above` its `n` and `enterAfter` n - 1.
+    /// A window is folded with the policy row of greatest `since` that entered before the window closed, so a revised item holds from the windows that close after it
+    /// entered, and a transition already selected stays. The engine gives the reference's state under every cut.</summary>
+    [Theory]
+    [InlineData("n = 2: above 2 for one window, so a window of 2 turns the key on", new[] { 2L }, false, "on")]
+    [InlineData("n = 3: above 3 for two windows, so one window of 2 leaves it off", new[] { 3L }, false, "off")]
+    [InlineData("revised to n = 2 before the window from 0 s is folded: the window is folded with the newer policy", new[] { 3L, 2L }, false, "on")]
+    [InlineData("revised to n = 2 after the window from 0 s was folded with n = 3: that window stays off, and a window of 2 from 240 s turns the key on", new[] { 3L, 2L }, true, "on")]
+    public void A_policy_holds_from_the_windows_that_close_after_it_entered(string what, long[] ns, bool afterTheFold, string expected)
     {
         var w = Worlds.RowParameters;
-        var (dropped, states) = (0L, 0);
-        foreach (var seed in Enumerable.Range(0, 12))
+        static Sattle.Reference.Input At(long seconds) => new Sattle.Reference.AdvanceInput(Logs.Origin + seconds * Logs.Second);
+        Sattle.Reference.Input[] revise = ns.Length == 1 ? [] : [PlainRow("a", -1, "k0", "g0", ns[0], 0), PlainRow("a", 1, "k0", "g0", ns[1], 0)];
+        Sattle.Reference.Input[] log = afterTheFold
+            ? [PlainRow("a", 1, "k0", "g0", ns[0], 0), PlainRow("b", 1, "k0", "g0", 2, 10), At(60), At(240), .. revise, At(300), PlainRow("b", 1, "k0", "g0", 2, 250), At(480)]
+            : [PlainRow("a", 1, "k0", "g0", ns[0], 0), PlainRow("b", 1, "k0", "g0", 2, 10), At(60), .. revise, At(240)];
+        static string States(Sattle.Reference.SpaceFacts f) => string.Join(" ", f.Graphs["view"].Entities.Values.SelectMany(e => e.Props).Where(kv => kv.Key.EndsWith("prop:state", StringComparison.Ordinal)).Select(kv => kv.Value is TextValue t ? t.S : "-").Order(StringComparer.Ordinal));
+        Assert.True(States(Sattle.Reference.ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), log)) == expected, what);
+        if (afterTheFold)
+            Assert.Equal("off", States(Sattle.Reference.ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), log[..^2])));       // at 300 s: the window from 0 s stays off
+        foreach (var chunking in new[] { Chunking.OneByOne, Chunking.Largest, Chunking.Reversed })
         {
-            using var e = new Engine(w.Catalog, w.Catalog.Spaces.Keys.Single());
-            var seq = 0L;
-            foreach (var input in w.Log(seed, 20))
-                switch (input)
-                {
-                    case Sattle.Reference.AdvanceInput a: e.Advance(a.Frontier, ++seq); break;
-                    case Sattle.Reference.RowInput row: EngineRun.Ingest(e, [row], ++seq); break;
-                }
-            dropped += e.Counters().InvalidParameter;
-            states += e.Graph("view").State.Entities.Count(x => x.Props.Text("d:w.view/prop:state") is not null);
+            var engine = States(EngineRun.Final(w.Catalog, log, chunking));
+            Assert.True(engine == expected, $"{what}, {chunking.Name}: engine {engine}, expected {expected}");
         }
-        Assert.True(dropped > 0, "no row with parameters that are no state machine");
-        Assert.True(states > 0, "no state from the valid rows");
     }
 
     static void Agrees(string world, int seeds, int length, bool reordered)
@@ -390,9 +394,10 @@ public class DifferentialTests
         }
     }
 
-    /// <summary>#159 G2 (R1): two items of one group give a hysteresis by the group two rows for one window. The program is accepted. The window at 0 s
-    /// (k0 above) turns the group on. The window at 60 s gets a row below from one item before the advance to 150 s closes it, and a row above from the other
-    /// after: it has no reading whichever came first, so the group stays on, under every cut, as in the reference.</summary>
+    /// <summary>#159 G2 (R1) and #151 D1: two items of one group give a fold by the group two rows for one window. The program is accepted. The window at 0 s
+    /// (k0 above) turns the group on. The window at 60 s gets a row below from one item before the advance to 150 s, and a row above from the other after, both
+    /// before the window is folded at 300 s: its observation is the set of both values (D1), whose max is not below, so the group stays on whichever came first,
+    /// under every cut, as in the reference.</summary>
     [Theory]
     [InlineData("k0", 0, "k1", 3)]
     [InlineData("k1", 3, "k0", 0)]
@@ -401,7 +406,7 @@ public class DifferentialTests
         var w = Worlds.SharedKeyThreshold;
         Sattle.Reference.Input[] log = [PlainRow("a", 1, "k0", "g0", 1, 0), PlainRow("a", 1, "k1", "g0", 1, 0), PlainRow("b", 1, "k0", "g0", 3, 10),
             PlainRow("b", 1, first, "g0", firstHits, 70), new Sattle.Reference.AdvanceInput(Logs.Origin + 150 * Logs.Second),
-            PlainRow("b", 1, second, "g0", secondHits, 80), new Sattle.Reference.AdvanceInput(Logs.Origin + 180 * Logs.Second)];
+            PlainRow("b", 1, second, "g0", secondHits, 80), new Sattle.Reference.AdvanceInput(Logs.Origin + 300 * Logs.Second)];
         static string States(Sattle.Reference.SpaceFacts f) => string.Join(" ", f.Graphs["view"].Entities.Values.SelectMany(e => e.Props).Where(kv => kv.Key.EndsWith("prop:state", StringComparison.Ordinal)).Select(kv => kv.Value is TextValue t ? t.S : "-").Order(StringComparer.Ordinal));
         const string expected = "on";
         Assert.Equal(expected, States(Sattle.Reference.ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), log)));
@@ -413,7 +418,8 @@ public class DifferentialTests
     }
 
     /// <summary>#159 G3 (R1): an element is in a Series since its row arrived, at the clock it entered, not since an advance after it. Two runs with the same rows
-    /// and the same clock, one with an advance between, give the same states, under every cut, and the reference agrees.</summary>
+    /// and the same clock, one with an advance between, give the same states, under every cut, and the reference agrees. The record of the element in the window
+    /// from 60 s starts its key (#151 D3: a key starts at its first window that is not silent), and the silent windows after it make the key silent.</summary>
     [Theory]
     [InlineData("no data without a fill")]
     [InlineData("fill and no data")]
@@ -421,9 +427,10 @@ public class DifferentialTests
     {
         var w = Worlds.All.Single(x => x.Name == world);
         static Sattle.Reference.Input At(long seconds) => new Sattle.Reference.AdvanceInput(Logs.Origin + seconds * Logs.Second);
-        Sattle.Reference.Input[] between = [At(60), PlainRow("a", 1, "k0", "g0", 1, 0), At(120), At(600)], direct = [At(60), PlainRow("a", 1, "k0", "g0", 1, 0), At(600)];
+        Sattle.Reference.Input[] between = [At(60), PlainRow("a", 1, "k0", "g0", 1, 0), PlainRow("b", 1, "k0", "g0", 0, 70), At(120), At(300), At(600)],
+            direct = [At(60), PlainRow("a", 1, "k0", "g0", 1, 0), PlainRow("b", 1, "k0", "g0", 0, 70), At(300), At(600)];
         static string States(Sattle.Reference.SpaceFacts f) => string.Join(" ", f.Graphs["view"].Entities.Values.SelectMany(e => e.Props).Where(kv => kv.Key.EndsWith("prop:state", StringComparison.Ordinal)).Select(kv => kv.Value is TextValue t ? t.S : "-").Order(StringComparer.Ordinal));
-        const string expected = "silent";       // k0 has no record, and it arrived at 60 s, more than the time to live before 600 s
+        const string expected = "silent";       // k0 arrived at 60 s with a record of 0, folded at 300 s (off); the windows from 120 s are silent, more than the gap of them by 600 s
         Assert.Equal(expected, States(Sattle.Reference.ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), direct)));
         Assert.Equal(expected, States(Sattle.Reference.ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), between)));
         foreach (var log in new[] { between, direct })
@@ -432,6 +439,37 @@ public class DifferentialTests
                 var engine = States(EngineRun.Final(w.Catalog, log, chunking));
                 Assert.True(engine == expected, $"{log.Length} inputs, {chunking.Name}: engine {engine}, reference {expected}");
             }
+    }
+
+    /// <summary>#151: a fold keeps the rows of a window that it saw inside the look-back of its Series, when the Series withdraws the window for leaving the
+    /// look-back before or as the window closes. So the window is folded with its rows whether its close and its leaving fall in one advance or in several, and a
+    /// look-back shorter than a window and its late horizon still gives states (it gave an empty view before). `fill and no data` (look-back 5 minutes): k1's record
+    /// at 70 s, seen at 120 s; the window from 60 s closes at 300 s and leaves the look-back at 360 s: off there, then three silent windows make k1 silent.
+    /// `threshold over a short look-back` (3 minutes): two windows at 6, seen at 120 s, leave the look-back at 180 and 240 s, before they close at 240 and 300 s,
+    /// and turn k0 on. A window the series never showed inside its look-back (one advance past its end and the look-back) is silent for the fold, so a key whose
+    /// only windows were never shown never starts and has no state. The engine gives the reference's state under every cut.</summary>
+    [Theory]
+    [InlineData("fill and no data", new[] { 540L }, "")]
+    [InlineData("threshold over a short look-back", new[] { 360L }, "")]
+    [InlineData("fill and no data", new[] { 120L, 540L }, "silent")]
+    [InlineData("fill and no data", new[] { 120L, 300L, 360L, 540L }, "silent")]
+    [InlineData("threshold over a short look-back", new[] { 120L, 360L }, "on")]
+    [InlineData("threshold over a short look-back", new[] { 120L, 240L, 300L, 360L }, "on")]
+    public void A_window_that_leaves_the_look_back_is_folded_with_its_rows(string world, long[] advances, string expected)
+    {
+        var w = Worlds.All.Single(x => x.Name == world);
+        static Sattle.Reference.Input At(long seconds) => new Sattle.Reference.AdvanceInput(Logs.Origin + seconds * Logs.Second);
+        Sattle.Reference.Input[] rows = world == "fill and no data"
+            ? [At(60), PlainRow("a", 1, "k1", "g0", 1, 0), PlainRow("b", 1, "k1", "g0", 2, 70)]
+            : [PlainRow("a", 1, "k0", "g0", 1, 0), PlainRow("b", 1, "k0", "g0", 6, 0), PlainRow("b", 1, "k0", "g0", 6, 60)];
+        Sattle.Reference.Input[] log = [.. rows, .. advances.Select(At)];
+        static string States(Sattle.Reference.SpaceFacts f) => string.Join(" ", f.Graphs["view"].Entities.Values.SelectMany(e => e.Props).Where(kv => kv.Key.EndsWith("prop:state", StringComparison.Ordinal)).Select(kv => kv.Value is TextValue t ? t.S : "-").Order(StringComparer.Ordinal));
+        Assert.Equal(expected, States(Sattle.Reference.ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), log)));
+        foreach (var chunking in new[] { Chunking.OneByOne, Chunking.Largest, Chunking.Reversed })
+        {
+            var engine = States(EngineRun.Final(w.Catalog, log, chunking));
+            Assert.True(engine == expected, $"{world}, advances {string.Join(",", advances)}, {chunking.Name}: engine {engine}, expected {expected}");
+        }
     }
 
     /// <summary>A node row of `ranked` (item `k`, rank `n`, none for null) or an edge row `from>to` with its impact after a colon, signed.</summary>

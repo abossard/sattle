@@ -32,12 +32,12 @@ public class DraftTests
         return text.Replace(OneGroup, TwoGroups);
     }
 
-    /// <summary>The service tree's text with a threshold that never recovers: below 0.0 for 30 windows keeps the degraded state.</summary>
+    /// <summary>The service tree's text with a fold policy that never recovers: below 0.0 for 30 windows keeps the degraded state.</summary>
     static string NeverRecovers(SpaceHost h)
     {
         var text = h.Definition(Deps(h));
-        Assert.Contains("\"below\": 0.02, \"exitAfter\": 3", text);
-        return text.Replace("\"below\": 0.02, \"exitAfter\": 3", "\"below\": 0.0, \"exitAfter\": 30");
+        Assert.Contains("\"below\": {\"lit\": 0.02}, \"enterAfter\": {\"lit\": 3}, \"exitAfter\": {\"lit\": 3}", text);
+        return text.Replace("\"below\": {\"lit\": 0.02}, \"enterAfter\": {\"lit\": 3}, \"exitAfter\": {\"lit\": 3}", "\"below\": {\"lit\": 0.0}, \"enterAfter\": {\"lit\": 3}, \"exitAfter\": {\"lit\": 30}");
     }
 
     /// <summary>Code review 2, defect 7, for a module written as a document: a structural patch of it is refused and not recorded, so the draft stays usable; the module changes by its draft text.</summary>
@@ -251,8 +251,8 @@ public class DraftTests
         using var h = HostTests.NewHost();
         var draft = h.CreateDraft(null)["draft"]!.GetValue<string>();
         var text = h.Definition(Deps(h));
-        Assert.Contains("\"above\": 0.05", text);
-        h.Commit(Deps(h), text.Replace("\"above\": 0.05", "\"above\": 0.06"), h.CatalogRevision);
+        Assert.Contains("\"above\": {\"lit\": 0.05}", text);
+        h.Commit(Deps(h), text.Replace("\"above\": {\"lit\": 0.05}", "\"above\": {\"lit\": 0.06}"), h.CatalogRevision);
         var changed = h.CheckDraft(draft)["modules"]!.AsObject().Where(m => m.Value!["changed"]?.GetValue<bool>() == true).Select(m => m.Key);
         Assert.Empty(changed);
     }

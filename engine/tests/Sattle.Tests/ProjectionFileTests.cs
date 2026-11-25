@@ -96,7 +96,7 @@ public class ProjectionFileTests
         {
             foreach (var f in Directory.EnumerateFiles(Repo.Definitions)) File.Copy(f, Path.Combine(dir, Path.GetFileName(f)));
             using var h = new SpaceHost(Catalog.ReadDirectory(dir), Options) { DefinitionsDir = dir, WriteDefinitions = true };
-            var edited = Text(Deps).Replace("\"below\": 0.02, \"exitAfter\": 3", "\"below\": 0.0, \"exitAfter\": 30");
+            var edited = Text(Deps).Replace("\"below\": {\"lit\": 0.02}, \"enterAfter\": {\"lit\": 3}, \"exitAfter\": {\"lit\": 3}", "\"below\": {\"lit\": 0.0}, \"enterAfter\": {\"lit\": 3}, \"exitAfter\": {\"lit\": 30}");
             Assert.NotEqual(Text(Deps), edited);
             h.Commit(Deps, edited, h.CatalogRevision);
             Assert.Equal(edited, File.ReadAllText(Path.Combine(dir, Deps)));

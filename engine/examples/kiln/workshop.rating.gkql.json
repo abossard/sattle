@@ -24,23 +24,9 @@
       "graph": "master",
       "series": {"element": "p", "property": "temperature", "lookback": "15m", "freshness": "2m"}
     },
-    {
-      "id": "crossing",
-      "verb": "hysteresis",
-      "hysteresis": {
-        "by": ["p", "name"],
-        "value": "temperature",
-        "above": 80,
-        "enterAfter": 2,
-        "below": 65,
-        "exitAfter": 3,
-        "high": "Hot",
-        "low": "Ready",
-        "initial": "Ready",
-        "noData": "No reading",
-        "evidenceWindow": true
-      }
-    },
+    {"id": "crossingPolicy", "verb": "extend", "columns": {"above": {"lit": 80.0}, "below": {"lit": 65.0}, "enterAfter": {"lit": 2}, "exitAfter": {"lit": 3}, "gap": {"lit": 2}}},
+    {"id": "crossingFold", "verb": "fold", "fold": {"by": ["p", "name"], "observe": {"n": {"fn": "count", "args": [{"ref": "temperature"}]}, "v": {"fn": "max", "args": [{"ref": "temperature"}]}}, "policy": ["above", "below", "enterAfter", "exitAfter", "gap"], "state": {"state": {"start": {"lit": "Ready"}, "next": {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "n"}, {"lit": 0}]}, {"fn": "iff", "args": [{"fn": ">=", "args": [{"fn": "+", "args": [{"ref": "quiet"}, {"lit": 1}]}, {"ref": "gap"}]}, {"lit": "No reading"}, {"ref": "state"}]}, {"fn": "iff", "args": [{"fn": "and", "args": [{"fn": "iff", "args": [{"fn": "==", "args": [{"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "state"}, {"lit": "No reading"}]}, {"lit": "Ready"}, {"ref": "state"}]}, {"lit": "Ready"}]}, {"fn": ">=", "args": [{"fn": "coalesce", "args": [{"ref": "v"}, {"lit": 0.0}]}, {"ref": "above"}]}, {"fn": "<=", "args": [{"fn": "coalesce", "args": [{"ref": "v"}, {"lit": 0.0}]}, {"ref": "below"}]}]}, {"fn": "iff", "args": [{"fn": "==", "args": [{"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "state"}, {"lit": "No reading"}]}, {"lit": "Ready"}, {"ref": "state"}]}, {"lit": "Ready"}]}, {"fn": ">=", "args": [{"fn": "+", "args": [{"ref": "streak"}, {"lit": 1}]}, {"ref": "enterAfter"}]}, {"fn": ">=", "args": [{"fn": "+", "args": [{"ref": "streak"}, {"lit": 1}]}, {"ref": "exitAfter"}]}]}]}, {"fn": "iff", "args": [{"fn": "==", "args": [{"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "state"}, {"lit": "No reading"}]}, {"lit": "Ready"}, {"ref": "state"}]}, {"lit": "Ready"}]}, {"lit": "Hot"}, {"lit": "Ready"}]}, {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "state"}, {"lit": "No reading"}]}, {"lit": "Ready"}, {"ref": "state"}]}]}]}}, "streak": {"start": {"lit": 0}, "next": {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "n"}, {"lit": 0}]}, {"lit": 0}, {"fn": "iff", "args": [{"fn": "iff", "args": [{"fn": "==", "args": [{"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "state"}, {"lit": "No reading"}]}, {"lit": "Ready"}, {"ref": "state"}]}, {"lit": "Ready"}]}, {"fn": ">=", "args": [{"fn": "coalesce", "args": [{"ref": "v"}, {"lit": 0.0}]}, {"ref": "above"}]}, {"fn": "<=", "args": [{"fn": "coalesce", "args": [{"ref": "v"}, {"lit": 0.0}]}, {"ref": "below"}]}]}, {"fn": "iff", "args": [{"fn": "iff", "args": [{"fn": "==", "args": [{"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "state"}, {"lit": "No reading"}]}, {"lit": "Ready"}, {"ref": "state"}]}, {"lit": "Ready"}]}, {"fn": ">=", "args": [{"fn": "+", "args": [{"ref": "streak"}, {"lit": 1}]}, {"ref": "enterAfter"}]}, {"fn": ">=", "args": [{"fn": "+", "args": [{"ref": "streak"}, {"lit": 1}]}, {"ref": "exitAfter"}]}]}, {"lit": 0}, {"fn": "+", "args": [{"ref": "streak"}, {"lit": 1}]}]}, {"lit": 0}]}]}}, "quiet": {"start": {"lit": 0}, "next": {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "n"}, {"lit": 0}]}, {"fn": "iff", "args": [{"fn": ">=", "args": [{"fn": "+", "args": [{"ref": "quiet"}, {"lit": 1}]}, {"ref": "gap"}]}, {"ref": "gap"}, {"fn": "+", "args": [{"ref": "quiet"}, {"lit": 1}]}]}, {"lit": 0}]}}}, "show": "state"}},
+    {"id": "crossing", "verb": "summarize", "by": {"p": {"ref": "p"}, "name": {"ref": "name"}}, "aggregates": {"state": {"fn": "arg_max", "args": [{"ref": "windowStart"}, {"ref": "to"}]}, "decidedIn": {"fn": "arg_max", "args": [{"ref": "windowStart"}, {"ref": "windowStart"}]}}},
     {
       "id": "rating",
       "verb": "nodes",
@@ -50,7 +36,7 @@
             "var": "p",
             "label": "Instrument",
             "id": {"ref": "p"},
-            "props": {"name": {"ref": "name"}, "state": {"ref": "state"}, "changedIn": {"ref": "windowStart"}}
+            "props": {"name": {"ref": "name"}, "state": {"ref": "state"}, "changedIn": {"ref": "decidedIn"}}
           }
         ]
       }
@@ -60,7 +46,10 @@
     {"from": "meters", "to": "boundMetric"},
     {"from": "boundMetric", "to": "label"},
     {"from": "label", "to": "temperatures"},
-    {"from": "temperatures", "to": "crossing"},
+    {"from": "temperatures", "to": "crossingFold"},
+    {"from": "label", "to": "crossingPolicy"},
+    {"from": "crossingPolicy", "to": "crossingFold", "port": "policy"},
+    {"from": "crossingFold", "to": "crossing"},
     {"from": "crossing", "to": "rating"}
   ]
 }

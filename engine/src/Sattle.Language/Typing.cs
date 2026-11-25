@@ -107,19 +107,26 @@ public sealed record TWindow(string Name, string Id, IReadOnlyDictionary<string,
 public sealed record TSeriesRead(string Var, string PropId, string OutName, string ValueKind, decimal? Fill = null);
 /// <summary>`TtlNs`: the time to live (Def. 7.16). With it the output has the column `noData`: true on the one record an element in no data has, which carries no values.</summary>
 public sealed record TSeries(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string GraphPort, IReadOnlyList<TSeriesRead> Reads, long WithinNs, long PeriodNs, string TargetVar, long? TtlNs = null)
-    : TOp(Name, Id, "Series", Inputs, Out);
-/// <summary>`Members`: the columns of the input that tell the members of a key apart (its graph data columns, without the window). `NoData`: the input carries the `noData` column of a Series with a time to live; the roll-up leaves the records of members in no data out and marks a key whose members are all in no data.</summary>
-public sealed record TRollup(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, IReadOnlyList<(string Name, TExpr Value)> Keys, IReadOnlyList<TAgg> Aggs, long PeriodNs, bool NoData = false, IReadOnlyList<string>? Members = null)
-    : TOp(Name, Id, "Rollup", Inputs, Out);
-public sealed record TThreshold(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, TExpr Value, IReadOnlyList<(string Name, TExpr Value)> Keys, string Target,
-    decimal Above, long EnterAfter, string High, decimal Below, long ExitAfter, string Low, string Initial,
-    TExpr? AboveBy = null, TExpr? EnterBy = null, TExpr? BelowBy = null, TExpr? ExitBy = null, string? NoData = null, bool NoDataIgnore = false, bool EvidenceWindow = false) : TOp(Name, Id, "Threshold", Inputs, Out)
+    : TOp(Name, Id, "Series", Inputs, Out)
 {
     /// <summary>The column a Series with a time to live adds and a Rollup passes on.</summary>
     public const string NoDataColumn = "noData";
-    /// <summary>The input has the no-data column: the Threshold reads it and declares what no data gives (`NoData`), or ignores it (`NoDataIgnore`).</summary>
-    public bool ReadsNoData => NoData is not null || NoDataIgnore;
 }
+/// <summary>`Members`: the columns of the input that tell the members of a key apart (its graph data columns, without the window). `NoData`: the input carries the `noData` column of a Series with a time to live; the roll-up leaves the records of members in no data out and marks a key whose members are all in no data.</summary>
+public sealed record TRollup(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, IReadOnlyList<(string Name, TExpr Value)> Keys, IReadOnlyList<TAgg> Aggs, long PeriodNs, bool NoData = false, IReadOnlyList<string>? Members = null)
+    : TOp(Name, Id, "Rollup", Inputs, Out);
+/// <summary>The keyed fold over ordered windows (Ch. 6, Def. 6.5); a transition at the key's first window comes from the shown start state. Per key (`Keys`, read from the window rows and, by name, from the policy rows) a state over the
+/// windows in order, silent ones too: `start` of the policy, then `next` of the policy, the state and the window's observation. `Observe`: count, min and max over the
+/// distinct values of a row expression in a window, as `next` reads the observation. `Policy`: the columns of a policy row that make the policy. `Step`: the schema `start`
+/// and `next` read (policy, state fields, observed names). `Show`: the state field a transition shows. `NoData`: the input has a series' no-data column; its marker rows
+/// are no observation (#151 D3).</summary>
+public sealed record TFold(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, IReadOnlyList<(string Name, TExpr Value)> Keys, IReadOnlyList<TAgg> Observe,
+    IReadOnlyList<Col> Policy, IReadOnlyList<TFoldState> States, string Show, Schema Step, bool NoData) : TOp(Name, Id, "Fold", Inputs, Out)
+{
+    /// <summary>The column of a transition that holds the clock at which its policy row entered (#151 D4).</summary>
+    public const string Since = "since";
+}
+public sealed record TFoldState(string Name, TExpr Start, TExpr Next);
 public sealed record TEmitEntity(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string TypeId, bool Update, TExpr EntityId, IReadOnlyList<TSet> Sets, string? Rule)
     : TOp(Name, Id, "EmitEntity", Inputs, Out);
 public sealed record TEmitRel(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string TypeId, bool Update, string Key, TExpr Source, TExpr Target, IReadOnlyList<TSet> Sets, string Retype, string? Rule)

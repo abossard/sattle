@@ -228,7 +228,14 @@ public static class PlanCompiler
                 case TGroup g: op = new GroupOp(g, inL, cx, from?.Cols, withCompanions); strategies.Add($"{g.Name}: Group, per-key accumulators updated by signed weights"); break;
                 case TSeries s: op = new SeriesOp(s, inL, cx.It); strategies.Add($"{s.Name}: Series, bilinear: new rows against seen windows, new windows against all rows, retraction at the look-back"); break;
                 case TRollup r: op = new RollupOp(r, inL, cx, withCompanions); strategies.Add($"{r.Name}: Rollup, per (key, window) accumulators, decomposable sum"); break;
-                case TThreshold th: op = new ThresholdOp(th, inL, cx, SeriesOf(tp, th)); strategies.Add($"{th.Name}: Threshold, per-key state machine over ordered closed windows"); break;
+                case TFold fo:
+                    {
+                        var (width, hop, lambda) = SeriesOf(tp, fo) is { } series ? (series.PeriodNs, series.PeriodNs, cx.RevisableFor(series.PeriodNs))
+                            : WindowOf(tp, fo) is var w ? (w.WidthNs, w.HopNs, cx.RevisableFor(w.WidthNs, w.LatenessNs)) : default;
+                        op = new FoldOp(fo, inL, InputLayout(fo, "policy"), cx, width, hop, lambda, SeriesOf(tp, fo)?.WithinNs);
+                        strategies.Add($"{fo.Name}: Fold, per key a state over its windows in order, stepped when the clock passes a window's close; transitions are never withdrawn");
+                        break;
+                    }
                 case TEmitEntity e: op = new EmitEntityOp(e, sink++, inL, cx, Compile, from?.Cols ?? [], from?.Group); strategies.Add($"{e.Name}: EmitEntity {(e.Update ? "update" : "create")}, support-counted element layer"); break;
                 case TEmitRel e: op = new EmitRelOp(e, sink++, inL, cx, Compile, from?.Cols ?? [], from?.Group); strategies.Add($"{e.Name}: EmitRelationship {(e.Update ? "update" : "create")}, support-counted element layer"); break;
                 case TLink l: op = new LinkOp(l, MakeId(l.Left), MakeId(l.Right), cat); strategies.Add($"{l.Name}: Link, identity binding (alias) when asserted"); break;

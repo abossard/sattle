@@ -184,7 +184,8 @@ public class GkqlSpaceTests
         Assert.Equal(view, host.Definition("pairs.links.gkql.json"));
     }
 
-    /// <summary>The kiln example space, end to end from graph documents (#128): readings make the instrument hot, a threshold edit makes it ready, both survive a restart, and restoring the previous release makes it hot again.</summary>
+    /// <summary>The kiln example space, end to end from graph documents (#128): readings make the instrument hot, a threshold edit makes it ready, both survive a restart, and restoring the previous release makes it hot again.
+    /// The fold decides a window three windows after it ends (#151 D5), so the instrument is hot from the tick at 10:05, which closes the window from 10:01.</summary>
     [Fact]
     public void A_space_of_graph_documents_runs_through_an_edit_a_restart_and_a_restore()
     {
@@ -195,7 +196,7 @@ public class GkqlSpaceTests
         static string Threshold(string text, int enterAfter)
         {
             var program = JsonNode.Parse(text)!;
-            program["verbs"]!.AsArray().Single(v => (string?)v!["verb"] == "hysteresis")!["hysteresis"]!["enterAfter"] = enterAfter;
+            program["verbs"]!.AsArray().Single(v => (string?)v!["id"] == "crossingPolicy")!["columns"]!["enterAfter"] = new JsonObject { ["lit"] = enterAfter };
             return program.ToJsonString();
         }
         static string Described(string module)
@@ -214,7 +215,7 @@ public class GkqlSpaceTests
             {
                 Assert.Equal(SpaceHost.LiveResult.Consumed, host.LiveEnvelope("kiln-feed", line, (++position).ToString()));
                 host.LiveFlush();
-                if ((string?)JsonNode.Parse(line)!["source"] == "records:Clock" && DateTimeOffset.Parse((string)JsonNode.Parse(line)!["capturedAt"]!).Minute == 2) break;
+                if ((string?)JsonNode.Parse(line)!["source"] == "records:Clock" && DateTimeOffset.Parse((string)JsonNode.Parse(line)!["capturedAt"]!).Minute == 5) break;
             }
             Assert.Equal("Hot", State(host));
             original = host.Definition(rating);

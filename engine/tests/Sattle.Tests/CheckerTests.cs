@@ -99,14 +99,24 @@ public class CheckerTests
     static SourceFile[] Plain(string types = "{}", string graphs = ViewGraph) => View(Items + ", " + Out, FromItems + ", " + Wire("fields", "out"), types, graphs);
     /// <summary>The windows of the items' hits within three minutes.</summary>
     const string Signals = """{"id": "series", "verb": "series", "graph": "master", "series": {"element": "i", "property": "hits", "lookback": "3m"}}""";
-    const string Said = ", \"noData\": \"silent\"";
 
-    /// <summary>The windows of `value` over three minutes with the further series options `series`, a threshold with the given no-data state over them, and a sink.</summary>
-    static SourceFile[] Quiet(string series, string noData, string value = "hits") => View(
+    /// <summary>A fold `id` by `key` over the windows of `value` (#151): per key "on" from a window with at least `above` (3) distinct values, "off" from one with fewer,
+    /// kept over a silent window (D2). Its policy rows are the rows wired to `id`Policy with `above` added (D4), and the verb `id` is the current state of each key.</summary>
+    static string Fold(string id, string key, string value) => """
+        {"id": "@idPolicy", "verb": "extend", "columns": {"above": {"lit": 3}}},
+        {"id": "@idFold", "verb": "fold", "fold": {"by": ["@key"], "observe": {"n": {"fn": "count", "args": [{"ref": "@value"}]}}, "policy": ["above"],
+            "state": {"state": {"start": {"lit": "off"}, "next": {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "n"}, {"lit": 0}]}, {"ref": "state"}, {"fn": "iff", "args": [{"fn": ">=", "args": [{"ref": "n"}, {"ref": "above"}]}, {"lit": "on"}, {"lit": "off"}]}]}}}, "show": "state"}},
+        {"id": "@id", "verb": "summarize", "by": {"@key": {"ref": "@key"}}, "aggregates": {"state": {"fn": "arg_max", "args": [{"ref": "windowStart"}, {"ref": "to"}]}}}
+        """.Replace("@id", id).Replace("@key", key).Replace("@value", value);
+    /// <summary>The wires of the fold `id`: the windows from `windows`, the policy rows from `policy`.</summary>
+    static string FoldWires(string id, string windows, string policy) => string.Join(", ", Wire(windows, id + "Fold"), Wire(policy, id + "Policy"), Wire(id + "Policy", id + "Fold", "policy"), Wire(id + "Fold", id));
+
+    /// <summary>The windows of `value` over three minutes with the further series options `series`, a fold over them (silence is its silent windows, #151 D3), and a sink.</summary>
+    static SourceFile[] Quiet(string series, string value = "hits") => View(
         Items + ", {\"id\": \"series\", \"verb\": \"series\", \"graph\": \"master\", \"series\": {\"element\": \"i\", \"property\": \"" + value + "\", \"lookback\": \"3m\"" + series + "}}, "
-        + "{\"id\": \"state\", \"verb\": \"hysteresis\", \"hysteresis\": {\"by\": [\"k\"], \"value\": \"" + value + "\", \"above\": 3.0, \"enterAfter\": 2, \"below\": 1.0, \"exitAfter\": 2, \"high\": \"on\", \"low\": \"off\", \"initial\": \"off\"" + noData + "}}, "
+        + Fold("state", "k", value) + ", "
         + """{"id": "out", "verb": "nodes", "target": {"nodes": [{"var": "o", "label": "Out", "id": {"identity": "out", "args": [{"ref": "k"}]}, "props": {"k": {"ref": "k"}, "flag": {"ref": "state"}}}]}}""",
-        string.Join(", ", FromItems, Wire("fields", "series"), Wire("series", "state"), Wire("state", "out")));
+        string.Join(", ", FromItems, Wire("fields", "series"), FoldWires("state", "series", "fields"), Wire("state", "out")));
 
     const string LoadType = """
         {"entities": [{"name": "Load", "properties": [{"name": "k", "type": "Text"}, {"name": "hits", "type": "Integer", "optional": true, "events": {"temporality": "delta", "combine": "sum", "period": "1m"}}]}],
@@ -227,22 +237,24 @@ public class CheckerTests
         { "the condition of an if is an event value, so its result is: it is no value of a data property", View(Items + ", " + Signals + ", " + """
             {"id": "out", "verb": "nodes", "target": {"nodes": [{"var": "o", "label": "Out", "id": {"identity": "out", "args": [{"ref": "k"}]}, "props": {"k": {"ref": "k"}, "flag": {"fn": "iff", "args": [{"fn": ">", "args": [{"ref": "hits"}, {"lit": 2}]}, {"lit": "hot"}, {"lit": "cold"}]}}}]}}
             """, string.Join(", ", FromItems, Wire("fields", "series"), Wire("series", "out"))), "RoleInterference", "event value" },
-        { "a key and the state of a threshold of one name", View("""
+        { "a key and a column of the transitions of a fold of one name", View("""
             {"id": "items", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "i", "label": "Item"}]}},
-            {"id": "keys", "verb": "project", "columns": {"i": {"ref": "i"}, "state": {"ref": "i.k"}}},
+            {"id": "keys", "verb": "project", "columns": {"i": {"ref": "i"}, "to": {"ref": "i.k"}}},
             {"id": "series", "verb": "series", "graph": "master", "series": {"element": "i", "property": "hits", "lookback": "3m"}},
-            {"id": "level", "verb": "hysteresis", "hysteresis": {"by": ["state"], "value": "hits", "above": 3.0, "enterAfter": 2, "below": 1.0, "exitAfter": 2, "high": "on", "low": "off", "initial": "off"}},
-            {"id": "out", "verb": "nodes", "target": {"nodes": [{"var": "o", "label": "Out", "id": {"identity": "out", "args": [{"ref": "state"}]}, "props": {"k": {"ref": "state"}}}]}}
-            """, string.Join(", ", Wire("items", "keys"), Wire("keys", "series"), Wire("series", "level"), Wire("level", "out"))), "DuplicateColumn", "'state'" },
+            """ + Fold("level", "to", "hits") + ", " + """
+            {"id": "out", "verb": "nodes", "target": {"nodes": [{"var": "o", "label": "Out", "id": {"identity": "out", "args": [{"ref": "to"}]}, "props": {"k": {"ref": "to"}}}]}}
+            """, string.Join(", ", Wire("items", "keys"), Wire("keys", "series"), FoldWires("level", "series", "keys"), Wire("level", "out"))), "Fold", "two columns are named 'to'" },
         { "two labels on one type", Plain("""{"entities": [{"name": "Named", "properties": [{"name": "k", "type": "Text", "label": true}, {"name": "title", "type": "Text", "label": true}]}]}"""), "Label", "second" },
         { "a label that is no text", Plain("""{"entities": [{"name": "Named", "properties": [{"name": "k", "type": "Text"}, {"name": "rank", "type": "Integer", "label": true}]}]}"""), "Label", "must be a Text property" },
-        { "a fill on a gauge", Quiet(", \"freshness\": \"2m\", \"fill\": 0.0", Said, "level"), "Series", "takes no fill" },
-        { "a fill of an Integer property that is no integer", Quiet(", \"freshness\": \"2m\", \"fill\": 0.5", Said), "Series", "must be an integer" },
-        { "a time to live below one window", Quiet(", \"freshness\": \"30s\"", Said), "Series", "at least one window" },
-        { "a time to live above the look-back", Quiet(", \"freshness\": \"4m\"", Said), "Series", "at most the look-back less one window" },
-        { "a time to live as long as the look-back", Quiet(", \"freshness\": \"3m\"", Said), "Series", "at most the look-back less one window" },
-        { "a threshold over a series with a time to live that does not say what no data gives", Quiet(", \"freshness\": \"2m\"", ""), "Threshold", "what no data gives" },
-        { "a no-data state without a time to live upstream", Quiet("", Said), "Threshold", "needs events with a time to live" },
+        { "a fill on a gauge", Quiet(", \"freshness\": \"2m\", \"fill\": 0.0", "level"), "Series", "takes no fill" },
+        { "a fill of an Integer property that is no integer", Quiet(", \"freshness\": \"2m\", \"fill\": 0.5"), "Series", "must be an integer" },
+        { "a time to live below one window", Quiet(", \"freshness\": \"30s\""), "Series", "at least one window" },
+        { "a time to live above the look-back", Quiet(", \"freshness\": \"4m\""), "Series", "at most the look-back less one window" },
+        { "a time to live as long as the look-back", Quiet(", \"freshness\": \"3m\""), "Series", "at most the look-back less one window" },
+        { "a fold whose policy rows lack its key: a policy is a key's (#151 D4)", View(Items + ", " + Signals + ", " + """{"id": "groups", "verb": "project", "columns": {"g": {"ref": "g"}}}, """ + Fold("state", "k", "hits") + ", " + Out,
+            string.Join(", ", FromItems, Wire("fields", "series"), Wire("fields", "groups"), FoldWires("state", "series", "groups"), Wire("state", "out"))), "Program", "the policy rows have no key column 'k'" },
+        { "a fold over rows that are no windows: silence is silent windows, so it reads a series or a summary of windows (#151 D3)", View(Items + ", " + Fold("state", "k", "g") + ", " + Out,
+            string.Join(", ", FromItems, FoldWires("state", "fields", "fields"), Wire("state", "out"))), "Program", "a fold reads windows: a series or a summary of windows" },
         { "a roll-up of windows keyed finer than the element it writes (premise B1)", View(Loaded(ByKey + ", \"g\": {\"ref\": \"g\"}"), LoadedWires, LoadType), "B1", "grouped by 'g'" },
         { "a fixpoint whose image list goes down: the equation would not be monotone (R7)", Fixpoint("\"value\": \"g\", \"order\": [\"a\", \"b\", \"c\"], " + ByG + "[\"a\", \"c\", \"b\"]}}"), "Fixpoint", "the image list of 'x' goes down" },
         { "a fixpoint whose image list leaves the order", Fixpoint("\"value\": \"g\", \"order\": [\"a\", \"b\", \"c\"], " + ByG + "[\"a\", \"b\", \"z\"]}}"), "Fixpoint", "the image list of 'x' has one value of the order per value of the order" },
@@ -339,9 +351,9 @@ public class CheckerTests
             {"id": "beats", "verb": "graph-match", "graph": "view", "pattern": {"nodes": [{"var": "b", "label": "Beat"}]}},
             {"id": "keys", "verb": "project", "columns": {"b": {"ref": "b"}, "k": {"ref": "b.k"}}},
             {"id": "series", "verb": "series", "graph": "view", "series": {"element": "b", "property": "beats", "lookback": "3m", "freshness": "2m", "fill": 0}},
-            {"id": "state", "verb": "hysteresis", "hysteresis": {"by": ["k"], "value": "beats", "above": 3.0, "enterAfter": 2, "below": 1.0, "exitAfter": 2, "high": "on", "low": "off", "initial": "off", "noData": "silent"}},
+            """ + Fold("state", "k", "beats") + ", " + """
             {"id": "out", "verb": "nodes", "target": {"nodes": [{"var": "o", "label": "Out", "id": {"identity": "out", "args": [{"ref": "k"}]}, "props": {"k": {"ref": "k"}, "flag": {"ref": "state"}}}]}}
-            """, string.Join(", ", Wire("beats", "keys"), Wire("keys", "series"), Wire("series", "state"), Wire("state", "out"))))];
+            """, string.Join(", ", Wire("beats", "keys"), Wire("keys", "series"), FoldWires("state", "series", "keys"), Wire("state", "out"))))];
         var (catalog, errors) = Load(files);
         Assert.True(errors.Count == 0, string.Join("; ", errors.Select(e => e.ToString())));
         var refused = Assert.Throws<InvalidOperationException>(() => new Engine(catalog, catalog.Spaces.Keys.Single()));

@@ -47,21 +47,9 @@
       "graph": "master",
       "series": {"element": "m", "property": "reading", "lookback": "2h"}
     },
-    {
-      "id": "cpuState",
-      "verb": "hysteresis",
-      "hysteresis": {
-        "by": ["r", "m", "armId", "metric"],
-        "value": "reading",
-        "above": 8,
-        "enterAfter": 2,
-        "below": 7,
-        "exitAfter": 3,
-        "high": "Degraded",
-        "low": "Healthy",
-        "initial": "Healthy"
-      }
-    },
+    {"id": "cpuStatePolicy", "verb": "extend", "columns": {"above": {"lit": 8}, "below": {"lit": 7}, "enterAfter": {"lit": 2}, "exitAfter": {"lit": 3}}},
+    {"id": "cpuStateFold", "verb": "fold", "fold": {"by": ["r", "m", "armId", "metric"], "observe": {"n": {"fn": "count", "args": [{"ref": "reading"}]}, "v": {"fn": "max", "args": [{"ref": "reading"}]}}, "policy": ["above", "below", "enterAfter", "exitAfter"], "state": {"state": {"start": {"lit": "Healthy"}, "next": {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "n"}, {"lit": 0}]}, {"ref": "state"}, {"fn": "iff", "args": [{"fn": "and", "args": [{"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "state"}, {"lit": "Healthy"}]}, {"fn": ">=", "args": [{"ref": "v"}, {"ref": "above"}]}, {"fn": "<=", "args": [{"ref": "v"}, {"ref": "below"}]}]}, {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "state"}, {"lit": "Healthy"}]}, {"fn": ">=", "args": [{"fn": "+", "args": [{"ref": "streak"}, {"lit": 1}]}, {"ref": "enterAfter"}]}, {"fn": ">=", "args": [{"fn": "+", "args": [{"ref": "streak"}, {"lit": 1}]}, {"ref": "exitAfter"}]}]}]}, {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "state"}, {"lit": "Healthy"}]}, {"lit": "Degraded"}, {"lit": "Healthy"}]}, {"ref": "state"}]}]}}, "streak": {"start": {"lit": 0}, "next": {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "n"}, {"lit": 0}]}, {"ref": "streak"}, {"fn": "iff", "args": [{"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "state"}, {"lit": "Healthy"}]}, {"fn": ">=", "args": [{"ref": "v"}, {"ref": "above"}]}, {"fn": "<=", "args": [{"ref": "v"}, {"ref": "below"}]}]}, {"fn": "iff", "args": [{"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "state"}, {"lit": "Healthy"}]}, {"fn": ">=", "args": [{"fn": "+", "args": [{"ref": "streak"}, {"lit": 1}]}, {"ref": "enterAfter"}]}, {"fn": ">=", "args": [{"fn": "+", "args": [{"ref": "streak"}, {"lit": 1}]}, {"ref": "exitAfter"}]}]}, {"lit": 0}, {"fn": "+", "args": [{"ref": "streak"}, {"lit": 1}]}]}, {"lit": 0}]}]}}}, "show": "state"}},
+    {"id": "cpuState", "verb": "summarize", "by": {"r": {"ref": "r"}, "m": {"ref": "m"}, "armId": {"ref": "armId"}, "metric": {"ref": "metric"}}, "aggregates": {"state": {"fn": "arg_max", "args": [{"ref": "windowStart"}, {"ref": "to"}]}}},
     {
       "id": "signal",
       "verb": "nodes",
@@ -85,7 +73,10 @@
     {"from": "meter", "to": "apiServerCpu"},
     {"from": "apiServerCpu", "to": "keys"},
     {"from": "keys", "to": "readings"},
-    {"from": "readings", "to": "cpuState"},
+    {"from": "readings", "to": "cpuStateFold"},
+    {"from": "keys", "to": "cpuStatePolicy"},
+    {"from": "cpuStatePolicy", "to": "cpuStateFold", "port": "policy"},
+    {"from": "cpuStateFold", "to": "cpuState"},
     {"from": "cpuState", "to": "signal"}
   ]
 }

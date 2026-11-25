@@ -152,27 +152,27 @@ public static class Worlds
 
     public static readonly World FilteredEmit = Rows("filtered emit", "Filter, EmitEntity");
     public static readonly World OptionalProperty = Rows("optional property", "EmitEntity") with { Witnesses = ["prop:d="] };
-    /// <summary>A threshold whose look-back (3 minutes) is shorter than the logs: the state has to outlive the windows that set it.</summary>
-    /// <summary>#159 G2: a hysteresis by the group `g` of the items, straight over their series, so two items of one group give two rows for one key and window.</summary>
-    public static readonly World SharedKeyThreshold = View("threshold by a key two items share", "Series, Threshold", 0.3, Dense) with { Witnesses = ["state=t:off"] };
-    public static readonly World Hysteresis = View("threshold over a short look-back", "Series, Rollup, Threshold", 0.3, Dense) with { Witnesses = ["state=t:on", "state=t:off"] };
-    /// <summary>T-B4 (premise B4 of Theorem 6.2): a threshold over a roll-up by group, whose members change group (a keyed item row is replaced with another group, so the item leaves one key and joins another), with windows that leave the retained range of three minutes (the look-back, the least the engine accepts). Every advance is its own step in the engine and in the reference, so an advance and a structure change never share one; the harness cuts the rows between them every way.</summary>
-    public static readonly World MembersLeave = View("threshold over a roll-up whose members leave", "Series, Rollup, Threshold, structure change", 0.3, [
+    /// <summary>A fold whose look-back (3 minutes) is shorter than the logs and than a window and its late horizon of three: a window leaves the series before it closes, and the fold keeps its rows (#151); the state has to outlive the windows that set it (D2).</summary>
+    /// <summary>#159 G2 and #151 D1: a fold by the group `g` of the items, straight over their series, so two items of one group give two rows for one key and window.</summary>
+    public static readonly World SharedKeyThreshold = View("threshold by a key two items share", "Series, Fold", 0.3, Dense) with { Witnesses = ["state=t:off"] };
+    public static readonly World Hysteresis = View("threshold over a short look-back", "Series, Rollup, Fold", 0.45, Dense) with { Witnesses = ["state=t:on", "state=t:off"] };
+    /// <summary>T-B4 (premise B4 of Theorem 6.2): a fold over a roll-up by group, whose members change group (a keyed item row is replaced with another group, so the item leaves one key and joins another), with windows that leave the retained range of five minutes (the look-back; a window and its late horizon of three take four). Every advance is its own step in the engine and in the reference, so an advance and a structure change never share one; the harness cuts the rows between them every way.</summary>
+    public static readonly World MembersLeave = View("threshold over a roll-up whose members leave", "Series, Rollup, Fold, structure change", 0.3, [
             new("a", (r, now) => Row(("k", Text(r, "k", 3)), ("g", Text(r, "g", 2)), ("n", Value.Integer(1)), ("d", Value.Null), ("t", Value.Instant(now))), f => ((TextValue)f["k"]).S),
             Dense[1], Dense[2],
-        ]) with { RetentionNs = 3 * Minute, Witnesses = ["state=t:on", "state=t:off"] };
-    /// <summary>Def. 7.15 and 7.16 on one element: `hits` are filled with 0 where the source of the hits has reported and the item existed, so a covered silence ends a state; an item without a record for three minutes is in no data, which the threshold gives as "silent", and data that return end it. The source of the hits reports (adapter harness.reporting): an authored source would not, and its fill is refused.</summary>
+        ]) with { RetentionNs = 5 * Minute, Witnesses = ["state=t:on", "state=t:off"] };
+    /// <summary>Def. 7.15 on one element and the fold's silence (#151 D3): `hits` are filled with 0 where the source of the hits has reported and the item existed, so a covered silence ends a state; a window without a record or a fill is silent, `gap` of them in a row (the policy: 3 for a time to live of three minutes, 2 for two) make the key "silent", and data that return leave it. The source of the hits reports (adapter harness.reporting): an authored source would not, and its fill is refused.</summary>
     static World Silence(string name, string kind) => View(name, kind, 0.3, Dense) with { Reporting = ["b"], ProgressShare = 0.15, Witnesses = ["state=t:on", "state=t:off", "state=t:silent"] };
-    public static readonly World Fill = Silence("fill and no data", "Series with fill and ttl, Map, Threshold");
+    public static readonly World Fill = Silence("fill and no data", "Series with fill and ttl, Map, Fold");
     /// <summary>Def. 7.14: a window in which the source lost events is not covered, so it holds no fill; a loss mark that arrives after the window was filled takes the fill back.</summary>
-    public static readonly World FillAroundLoss = Silence("fill around a loss", "Series with fill and ttl, loss marks, Map, Threshold") with { LossShare = 0.12 };
+    public static readonly World FillAroundLoss = Silence("fill around a loss", "Series with fill and ttl, loss marks, Map, Fold") with { LossShare = 0.12 };
     /// <summary>#111: fill and no data over hop windows: the hits of an item in windows of 3 minutes every 60 s, read with a fill and a time to live, with gaps and loss marks. A filled window is one the source covered to its end, so a fill is neither early nor doubled.</summary>
-    public static readonly World FillOverHop = Silence("fill and no data over hop windows", "Window with a hop, Series with fill and ttl, loss marks, Threshold") with { LossShare = 0.12 };
-    public static readonly World TimeToLive = Silence("no data without a fill", "Series with ttl, Map, Threshold");
-    public static readonly World RollupAll = Silence("roll-up in no data when all members are", "Series with fill and ttl, Rollup, Threshold");
+    public static readonly World FillOverHop = Silence("fill and no data over hop windows", "Window with a hop, Series with fill and ttl, loss marks, Fold") with { LossShare = 0.12 };
+    public static readonly World TimeToLive = Silence("no data without a fill", "Series with ttl, Map, Fold") with { AdvanceShare = 0.35 };
+    public static readonly World RollupAll = Silence("roll-up in no data when all members are", "Series with fill and ttl, Rollup, Fold");
 
-    /// <summary>A threshold whose `above` and `enterAfter` come from the row (the item's `n`), with a constant `below` of 1: an item with n below 2 gives parameters that are no state machine, and a revised item changes the parameters of every window of its key.</summary>
-    public static readonly World RowParameters = View("threshold with parameters of the row", "Series, Map, Threshold", 0.3,
+    /// <summary>#151 D4: a fold whose policy rows are the items, `above` the item's `n` and `enterAfter` n - 1, with a constant `below` of 1: a revised item is a new policy row, which holds from the windows that close after it entered.</summary>
+    public static readonly World RowParameters = View("threshold with parameters of the row", "Series, Map, Fold", 0.45,
         [
             new("a", (r, now) => Row(("k", Text(r, "k", 2)), ("g", Value.Text("g0")), ("n", Value.Integer(r.Next(4))), ("d", Value.Null), ("t", Value.Instant(now))), f => ((TextValue)f["k"]).S),
             .. Dense.Skip(1),
@@ -280,6 +280,6 @@ public static class Worlds
         View("series and rollup", "Series, Rollup", 0.25) with { Witnesses = ["d:w.view/prop:v"] },
         Hysteresis, SharedKeyThreshold, RowParameters, SharedWindow, Fill, FillAroundLoss, FillOverHop, TimeToLive, RollupAll, TwoKeyRules, LiftedDependency, OptionalProperty,
         Rows("conflicting fragments", "EmitEntity, Def. 6.4") with { Witnesses = ["prop:g=", "prop:n="] },
-        View("threshold", "Series, Rollup, Threshold", 0.3, Dense) with { Witnesses = ["state=t:on", "state=t:off"] },
+        View("threshold", "Series, Rollup, Fold", 0.45, Dense) with { Witnesses = ["state=t:on", "state=t:off"] },
     ];
 }

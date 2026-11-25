@@ -88,7 +88,7 @@ public static class KernelTable
         T("Values : Operator |"), T("Fixpoint : Operator | key:T valueField:T order:Any from:T to:T by:T?"), T("FixpointMap | when:T image:Any"),
         T("EmitEntity : Operator | mode:T"), T("EmitRelationship : Operator | mode:T key:T retype:T"), T("Link : Operator |"),
         T("Series : Operator | within:I ttl:I?"), T("Rollup : Operator |"), T("Delta : Operator | target:T"),
-        T("Threshold : Operator | target:T above:D enterAfter:I high:T below:D exitAfter:I low:T initial:T nodata:T? nodataIgnore:B? evidenceWindow:B?"),
+        T("Fold : Operator | show:T"), T("FoldState | target:T"),
         T("PatternNode | var:T side:T? create:B?"), T("PatternEdge | var:T? minHops:I? maxHops:I? side:T? create:B?"),
         T("FieldRef : Expr | path:T fill:D?"), T("Literal : Expr | value:Any"), T("Call : Expr |"), T("IdOf : Expr |"),
         T("Assign | target:T"), T("Aggregate | target:T fn:T row:T? percent:D?"), T("SetProperty |"), T("SetComponent |"), T("RowValue |"),
@@ -207,7 +207,8 @@ public static class KernelTable
         S("EmitRelationship", "source", "Expr", "1"), S("EmitRelationship", "target", "Expr", "1"), S("EmitRelationship", "set", "SetProperty", "*"),
         S("Link", "left", "IdOf", "1"), S("Link", "right", "IdOf", "1"), S("Link", "confidence", "Expr", "1"),
         S("Series", "read", "FieldRef", "+", true), S("Rollup", "key", "Assign", "+"), S("Rollup", "agg", "Aggregate", "+"),
-        S("Delta", "key", "Assign", "+"), S("Delta", "value", "Expr", "1"), S("Threshold", "key", "Assign", "+"), S("Threshold", "value", "Expr", "1"), S("Threshold", "aboveBy", "Expr", "?"), S("Threshold", "enterBy", "Expr", "?"), S("Threshold", "belowBy", "Expr", "?"), S("Threshold", "exitBy", "Expr", "?"),
+        S("Delta", "key", "Assign", "+"), S("Delta", "value", "Expr", "1"), S("Fold", "key", "Assign", "+"), S("Fold", "observe", "Aggregate", "*"), S("Fold", "policy", "FieldRef", "+", true), S("Fold", "state", "FoldState", "+", true),
+        S("FoldState", "start", "Expr", "1"), S("FoldState", "next", "Expr", "1"),
         S("Call", "arg", "Expr", "*", true), S("IdOf", "component", "SetComponent", "+"), S("Assign", "value", "Expr", "1"),
         S("Aggregate", "value", "Expr", "?"), S("Aggregate", "order", "Expr", "?"),
         S("SetProperty", "value", "Expr", "1"), S("SetComponent", "value", "Expr", "1"), S("RowValue", "assign", "Assign", "+"),
@@ -218,7 +219,8 @@ public static class KernelTable
     public static (string Name, string Direction, string Kind)[] OperatorPorts(string op) => op switch
     {
         "Match" => [("graph", "in", "graph"), ("out", "out", "rows")],
-        "Filter" or "Map" or "Distinct" or "Retain" or "Group" or "Window" or "Rollup" or "Delta" or "Threshold" => [("in", "in", "rows"), ("out", "out", "rows")],
+        "Filter" or "Map" or "Distinct" or "Retain" or "Group" or "Window" or "Rollup" or "Delta" => [("in", "in", "rows"), ("out", "out", "rows")],
+        "Fold" => [("in", "in", "rows"), ("policy", "in", "rows"), ("out", "out", "rows")],
         "Join" => [("left", "in", "rows"), ("right", "in", "rows"), ("out", "out", "rows")],
         "Traverse" => [("graph", "in", "graph"), ("in", "in", "rows"), ("out", "out", "rows")],
         "Values" => [("out", "out", "rows")],
@@ -347,5 +349,5 @@ public static class Kernel
 
     /// <summary>Digest of the kernel graph. The compiled constant is checked by a test (section 2.8, step 2).</summary>
     public static string ComputeDigest() => Graph.Digest();
-    public const string CompiledDigest = "sha256:e9cf3ac01ab13c2cb233f30c8057553f1a784820f198ee89b679e7acdb97a9bc";
+    public const string CompiledDigest = "sha256:52598d41a007067d92e67f6c43a9e54cd29e7135b7d29113ec1869de69d451f7";
 }

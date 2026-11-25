@@ -209,11 +209,11 @@ public static class Denotation
     /// </summary>
     static Relation RollupWithNoData(TRollup r, Relation rows)
     {
-        bool Marked(ImmutableArray<Value> row) => True(rows.Reader(row)(TThreshold.NoDataColumn));
+        bool Marked(ImmutableArray<Value> row) => True(rows.Reader(row)(TSeries.NoDataColumn));
         string? KeyOf(ImmutableArray<Value> row) => r.Keys.Select(k => Expressions.Eval(k.Value, rows.Reader(row))).ToImmutableArray() is var vs && vs.All(v => v is not NullValue) ? Canon.Of(vs) : null;
         string Member(ImmutableArray<Value> row) => Canon.Of([.. r.Members!.Select(c => rows.Reader(row)(c))]);
         var present = rows.Rows.Where(x => x.Weight > 0 && KeyOf(x.Row) is not null).ToList();
-        var aggregated = Group(r, WithWindow(r.Keys), r.Aggs, rows with { Rows = ZSet.Of(rows.Rows.Where(x => !Marked(x.Row))) }, r.PeriodNs, [(TThreshold.NoDataColumn, Value.Boolean(false))]);
+        var aggregated = Group(r, WithWindow(r.Keys), r.Aggs, rows with { Rows = ZSet.Of(rows.Rows.Where(x => !Marked(x.Row))) }, r.PeriodNs, [(TSeries.NoDataColumn, Value.Boolean(false))]);
         var silent =
             from g in present.GroupBy(x => KeyOf(x.Row)!, StringComparer.Ordinal)
             let markers = g.Where(x => Marked(x.Row)).ToList()
@@ -223,7 +223,7 @@ public static class Denotation
             let read = rows.Reader(markers[0].Row)
             let start = markers.Max(x => Instant(rows.Reader(x.Row)("windowStart")))       // the greatest window of its members' markers (#159 G7)
             select Shape(r, r.Keys.Select(k => (k.Name, Expressions.Eval(k.Value, read))).Concat(r.Aggs.Select(a => (a.Target, Value.Null)))
-                .Concat([("windowStart", Value.Instant(start)), ("windowEnd", Value.Instant(start + r.PeriodNs)), (TThreshold.NoDataColumn, Value.Boolean(true))]).ToDictionary(x => x.Item1, x => x.Item2, StringComparer.Ordinal));
+                .Concat([("windowStart", Value.Instant(start)), ("windowEnd", Value.Instant(start + r.PeriodNs)), (TSeries.NoDataColumn, Value.Boolean(true))]).ToDictionary(x => x.Item1, x => x.Item2, StringComparer.Ordinal));
         var markerRows = silent.ToList();
         var at = r.Out.Cols.Select((c, i) => (c.Name, i)).ToDictionary(x => x.Name, x => x.i, StringComparer.Ordinal);
         string Place(ImmutableArray<Value> row) => Canon.Of([.. r.Keys.Select(k => row[at[k.Name]]), row[at["windowStart"]]]);
@@ -377,7 +377,7 @@ public static class Denotation
             var records = g.Windows.Keys.Where(k => k.Element == id).Select(k => k.Start).Concat(fillable).Distinct()
                 .Where(start => frontier is null || start >= frontier - s.WithinNs).Order()
                 .Select(start => (Start: start, Values: s.Reads.Select((_, i) => At(i, start)).ToArray())).Where(x => x.Values.All(v => v is not null)).ToList();
-            IEnumerable<(string, Value)> Marker(bool noData) => s.TtlNs is null ? [] : [(TThreshold.NoDataColumn, Value.Boolean(noData))];
+            IEnumerable<(string, Value)> Marker(bool noData) => s.TtlNs is null ? [] : [(TSeries.NoDataColumn, Value.Boolean(noData))];
             foreach (var rec in records)
                 result.Add((Shape(s, With(Named(rows, r.Row), [("windowStart", Value.Instant(rec.Start)), ("windowEnd", Value.Instant(rec.Start + s.PeriodNs)),
                     .. s.Reads.Select((x, i) => (x.OutName, x.ValueKind == "Decimal" ? Value.Decimal(rec.Values[i]!.Value) : Value.Integer((BigInteger)rec.Values[i]!.Value))), .. Marker(false)])), r.Weight));
@@ -392,71 +392,127 @@ public static class Denotation
         return new Relation(Names(s), ZSet.Of(result));
     }
 
-    /// <summary>The state machine of one key after the newest of its windows that left the look-back (Def. 7.10, deviation D33): its state, the length of the current run, and the start of that window.</summary>
-    public sealed record Carried(string State, long Run, long LastStart);
+    // ---- the keyed fold over ordered windows ----
 
     /// <summary>
-    /// Def. 7.10 as ruled (D33). The windows of a key form episodes: runs in which each window starts less than `within` after the one before. The state of a key is the state machine folded over its current episode, started in `initial`.
-    /// A key has a row while it has a window in the look-back (`current`). Windows that left the look-back with this input (`previous` holds them, `edge` is the new lower bound) are folded into the carried state with the values they had then.
-    /// The carried state of a key without a window in the look-back is kept while a late window could still continue its episode: until the frontier reaches the start of its last window plus `within` plus the late horizon (`keep`).
+    /// What a fold keeps from one input to the next. `Policies`: the present policy rows by their canonical text, with their key, their policy `ζ` and the clock they
+    /// entered at (#151 D4; null: before the first advance, below every tick). `Keys`: per active key its key values, its state after the newest window folded and
+    /// that window's start; the state has no end (D2). `Selected`: the transitions selected so far, never withdrawn (Thm. 6.8). `Open`: per key and start of a window
+    /// not yet closed, its rows as last seen while the window was inside the look-back of the series upstream.
     /// </summary>
-    public static (Relation Result, ImmutableSortedDictionary<string, Carried> Carried) Threshold(TThreshold t, Relation previous, Relation current, long? edge, long? within, long? frontier, long keep, ImmutableSortedDictionary<string, Carried> carried)
+    public sealed record Carried(
+        ImmutableSortedDictionary<string, (string? Key, ImmutableArray<Value> Policy, long? Since)> Policies,
+        ImmutableSortedDictionary<string, (ImmutableArray<Value> Key, ImmutableSortedDictionary<string, Value> State, long Last)> Keys,
+        ZSet Selected,
+        ImmutableDictionary<(string Key, long Start), ImmutableArray<(Func<string, Value> Read, ImmutableArray<Value> Values)>> Open)
     {
-        string? Key(Relation rel, ImmutableArray<Value> row)
-        {
-            var vs = t.Keys.Select(k => Expressions.Eval(k.Value, rel.Reader(row))).ToImmutableArray();
-            return vs.Any(v => v is NullValue) || Expressions.Eval(t.Value, rel.Reader(row)) is NullValue ? null : Canon.Of(vs);
-        }
-        decimal Parameter(TExpr? by, decimal constant, Func<string, Value> read) => by is not null && Expressions.Eval(by, read) is var v && v is not NullValue ? Canon.Number(v) : constant;
-        // parameters given by the row are not checked when the definitions are: a row whose parameters are no state machine (`above` not greater than `below`, a run of less than one window) is no window of the key
-        bool IsMachine(Func<string, Value> read) =>
-            Parameter(t.AboveBy, t.Above, read) > Parameter(t.BelowBy, t.Below, read) && (long)Parameter(t.EnterBy, t.EnterAfter, read) >= 1 && (long)Parameter(t.ExitBy, t.ExitAfter, read) >= 1;
+        public static readonly Carried None = new(
+            ImmutableSortedDictionary.Create<string, (string?, ImmutableArray<Value>, long?)>(StringComparer.Ordinal),
+            ImmutableSortedDictionary.Create<string, (ImmutableArray<Value>, ImmutableSortedDictionary<string, Value>, long)>(StringComparer.Ordinal),
+            ZSet.Empty,
+            ImmutableDictionary<(string Key, long Start), ImmutableArray<(Func<string, Value> Read, ImmutableArray<Value> Values)>>.Empty);
+    }
 
-        Carried Step(Carried? before, Func<string, Value> read)
+    /// <summary>
+    /// Def. 6.5 on the windows of Def. 6.4 that close with this input. A window is named by its start `a` on the grid of `hop`; it ends at a + `width` and closes at
+    /// close(a) = a + `width` + λ (`lateness`). It closes now when `before` &lt; close(a) ≤ `frontier`, and its observation is what `rows` hold for it now: rows for a
+    /// window already closed are late and never read, rows withdrawn after the close change nothing (Thm. 6.8). A series withdraws a window whose start falls below
+    /// clock − `within` (its look-back); that changes no event of the window, so such a window keeps the rows last seen while it was inside the look-back.
+    /// The observation is read through the observe aggregates over the distinct present values of the window's rows of the key (D1); the no-data marker rows of a
+    /// series are no rows of a window (D3); a window without a row of the key is silent.
+    /// The policy of a key at window a is that of its present policy rows with the greatest `since` below close(a), when they hold one value (D4).
+    /// A key becomes active at its first window that closes not silent with a policy (n_k): its state is next(ζ, start(ζ), obs) and its transition goes from show(start(ζ)).
+    /// Every later window, silent ones too, is folded in order with its policy; a window without one keeps the state. A window whose shown state differs from the
+    /// one before is a transition, selected at its close and never withdrawn.
+    /// </summary>
+    public static (Relation Result, Carried Carried) Fold(TFold t, Relation rows, Relation policy, long width, long hop, long lateness, long? within, long? before, long? frontier, Carried carried)
+    {
+        Int128 Close(long a) => (Int128)a + width + lateness;
+        Int128 Floor(Int128 x) => x - ((x % hop) + hop) % hop;
+        static string? KeyOf(IEnumerable<Value> vs) => vs.ToImmutableArray() is var k && k.All(v => v is not NullValue) ? Canon.Of(k) : null;
+
+        // D4: a policy row keeps the clock it entered at while it is present; one that leaves and comes back enters again
+        var policies = policy.Rows.Where(r => r.Weight > 0).ToImmutableSortedDictionary(r => Canon.Of(r.Row),
+            (string? Key, ImmutableArray<Value> Policy, long? Since) (r) => carried.Policies.TryGetValue(Canon.Of(r.Row), out var had) ? had
+                : (KeyOf(t.Keys.Select(k => policy.Reader(r.Row)(k.Name))), t.Policy.Select(c => policy.Reader(r.Row)(c.Name)).ToImmutableArray(), before), StringComparer.Ordinal);
+        (ImmutableArray<Value> Policy, long? Since)? InForce(string key, long a)
         {
-            var start = Instant(read("windowStart"));
-            var (state, run) = before is null || within is { } w && start - before.LastStart >= w ? (t.Initial, 0L) : (before.State, before.Run);     // a gap of `within` or more starts a new episode
-            var v = Canon.Number(Expressions.Eval(t.Value, read));
-            var low = state == t.Low;
-            var extends = low ? v >= Parameter(t.AboveBy, t.Above, read) : v <= Parameter(t.BelowBy, t.Below, read);
-            run = extends ? run + 1 : 0;
-            var needed = low ? (long)Parameter(t.EnterBy, t.EnterAfter, read) : (long)Parameter(t.ExitBy, t.ExitAfter, read);
-            return extends && run >= needed ? new Carried(low ? t.High : t.Low, 0, start) : new Carried(state, run, start);
+            var held = policies.Values.Where(x => x.Key == key && (x.Since is not { } s || s < Close(a))).ToList();
+            if (held.Count == 0) return null;
+            var since = held.Max(x => x.Since);       // null only when every row entered before the first advance
+            var values = held.Where(x => x.Since == since).GroupBy(x => Canon.Of(x.Policy), StringComparer.Ordinal).ToList();
+            return values.Count == 1 ? (values[0].First().Policy, since) : null;      // two policies at one greatest `since`: none
         }
 
-        bool Silent(Relation rel, ImmutableArray<Value> row) => t.ReadsNoData && True(rel.Reader(row)(TThreshold.NoDataColumn));      // the record of a key in no data: no window of the episode
-        ILookup<string, ImmutableArray<Value>> Windows(Relation rel, Func<long, bool> keep) =>
-            rel.Rows.Where(r => r.Weight > 0 && !Silent(rel, r.Row) && Key(rel, r.Row) is not null && IsMachine(rel.Reader(r.Row)) && keep(Instant(rel.Reader(r.Row)("windowStart"))))
-                .SelectMany(r => Enumerable.Repeat(r, (int)r.Weight)).ToLookup(r => Key(rel, r.Row)!, r => r.Row, StringComparer.Ordinal);
-        Carried? Fold(Carried? from, Relation rel, IEnumerable<ImmutableArray<Value>> rows)
+        bool Marker(ImmutableArray<Value> row) => t.NoData && True(rows.Reader(row)(TSeries.NoDataColumn));
+        bool Inside(long a) => within is not { } w || frontier is not { } f || a >= (Int128)f - w;      // inside the look-back at the clock after this input
+        bool Closed(long a) => before is { } b && Close(a) <= b;
+        var seen = rows.Rows.Where(r => r.Weight > 0 && !Marker(r.Row))
+            .Select(r => (Read: rows.Reader(r.Row), Values: t.Keys.Select(k => Expressions.Eval(k.Value, rows.Reader(r.Row))).ToImmutableArray()))
+            .Where(x => KeyOf(x.Values) is not null)
+            .GroupBy(x => (Key: KeyOf(x.Values)!, Start: Instant(x.Read("windowStart"))))
+            .Where(g => Inside(g.Key.Start) && !Closed(g.Key.Start))
+            .ToImmutableDictionary(g => g.Key, g => g.ToImmutableArray());
+        var windows = carried.Open.Where(w => !Inside(w.Key.Start) && !Closed(w.Key.Start)).ToImmutableDictionary().SetItems(seen);
+        ImmutableArray<(string Name, Value Value)> Observation(string key, long a)
         {
-            // #159 G2: a window that two rows hold has no reading, as a gap has none
-            var byWindow = rows.GroupBy(row => Instant(rel.Reader(row)("windowStart"))).Where(w => w.Count() == 1).OrderBy(w => w.Key).ToArray();
-            return byWindow.Aggregate(from, (c, w) => Step(c, rel.Reader(w.Single())));
+            var present = windows.GetValueOrDefault((key, a), []).Select(x => (x.Read, 1L)).ToImmutableArray();
+            return [.. t.Observe.Select(o => (o.Target, Aggregate(o.Fn == "count" ? o with { Fn = "countDistinct" } : o, present)))];       // D1: distinct present values
         }
 
-        var live = Windows(current, _ => true);
-        var left = Windows(previous, start => edge is { } e && start < e);
-        var next = ImmutableSortedDictionary.CreateBuilder<string, Carried>(StringComparer.Ordinal);
-        var rows = new List<(ImmutableArray<Value>, long)>();
-        foreach (var key in carried.Keys.Concat(left.Select(k => k.Key)).Concat(live.Select(k => k.Key)).Distinct(StringComparer.Ordinal))
+        Dictionary<string, Value> Named(ImmutableArray<Value> zeta, IEnumerable<KeyValuePair<string, Value>> more) =>
+            t.Policy.Select((c, i) => KeyValuePair.Create(c.Name, zeta[i])).Concat(more).ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal);
+        ImmutableSortedDictionary<string, Value> Start(ImmutableArray<Value> zeta) =>
+            t.States.ToImmutableSortedDictionary(s => s.Name, s => Expressions.Eval(s.Start, n => Named(zeta, [])[n]), StringComparer.Ordinal);
+        ImmutableSortedDictionary<string, Value> Next(ImmutableArray<Value> zeta, ImmutableSortedDictionary<string, Value> state, ImmutableArray<(string Name, Value Value)> obs)
         {
-            var afterLeft = Fold(carried.GetValueOrDefault(key), previous, left[key]);
-            var isLive = live.Contains(key);
-            if (afterLeft is not null && (isLive || frontier is null || frontier - afterLeft.LastStart < keep)) next[key] = afterLeft;
-            if (!isLive || !live[key].GroupBy(row => Instant(current.Reader(row)("windowStart"))).Any(w => w.Count() == 1)) continue;       // a key whose windows are all shared has no reading (G2)
-            var first = live[key].First();
-            rows.Add((Shape(t, t.Keys.Select(x => (x.Name, Expressions.Eval(x.Value, current.Reader(first)))).Append((t.Target, Value.Text(Fold(afterLeft, current, live[key])!.State)))
-                .ToDictionary(x => x.Item1, x => x.Item2, StringComparer.Ordinal)), 1L));
+            var named = Named(zeta, state.Concat(obs.Select(o => KeyValuePair.Create(o.Name, o.Value))));
+            return t.States.ToImmutableSortedDictionary(s => s.Name, s => Expressions.Eval(s.Next, n => named[n]), StringComparer.Ordinal);
         }
-        if (t.NoData is not { } noData) return (new Relation(Names(t), ZSet.Of(rows)), next.ToImmutable());
-        // Def. 7.16: a key in no data gives the declared value. It is an output over the state machine, which goes on as the episode rule says
-        var silent = current.Rows.Where(r => r.Weight > 0 && Silent(current, r.Row))
-            .Select(r => t.Keys.Select(x => (x.Name, Value: Expressions.Eval(x.Value, current.Reader(r.Row)))).ToList()).Where(k => k.All(x => x.Value is not NullValue))
-            .GroupBy(k => Canon.Of([.. k.Select(x => x.Value)]), StringComparer.Ordinal).ToDictionary(k => k.Key, k => k.First(), StringComparer.Ordinal);
-        var at = t.Keys.Select(k => Names(t).IndexOf(k.Name)).ToArray();
-        var spoken = rows.Where(r => !silent.ContainsKey(Canon.Of([.. at.Select(i => r.Item1[i])])));
-        var overlay = silent.Values.Select(k => (Shape(t, k.Append((t.Target, (Value)Value.Text(noData))).ToDictionary(x => x.Item1, x => x.Item2, StringComparer.Ordinal)), 1L));
-        return (new Relation(Names(t), ZSet.Of(spoken.Concat(overlay))), next.ToImmutable());
+        ImmutableArray<Value> Transition(ImmutableArray<Value> key, long a, Value from, Value to, ImmutableArray<(string Name, Value Value)> obs, (ImmutableArray<Value> Policy, long? Since) zeta) =>
+            Shape(t, t.Keys.Select((k, i) => (k.Name, key[i]))
+                .Concat([("windowStart", Value.Instant(a)), ("windowEnd", Value.Instant(a + width)), ("from", from), ("to", to)])
+                .Concat(obs).Concat(t.Policy.Select((c, i) => (c.Name, zeta.Policy[i])))
+                .Append((TFold.Since, zeta.Since is { } s ? Value.Instant(s) : Value.Null)).ToDictionary(x => x.Item1, x => x.Item2, StringComparer.Ordinal));
+
+        var selected = carried.Selected;
+        var keys = carried.Keys;
+        if (frontier is not { } now) return (new Relation(Names(t), selected), carried with { Policies = policies, Open = windows });
+        var last = Floor((Int128)now - width - lateness);       // the newest window closed
+        bool ClosesNow(long a) => Close(a) <= now && (before is not { } b || Close(a) > b);
+        foreach (var key in keys.Keys.Concat(windows.Select(w => w.Key.Key)).Distinct(StringComparer.Ordinal).ToList())
+        {
+            if (!keys.TryGetValue(key, out var active))
+            {
+                // n_k: the first window of the key that closes not silent with a policy; one closed before now had no policy, and none can enter for it later (D4)
+                var first = windows.Where(w => w.Key.Key == key && ClosesNow(w.Key.Start) && InForce(key, w.Key.Start) is not null).Select(w => (long?)w.Key.Start).Min();
+                if (first is not { } nk) continue;
+                var zeta = InForce(key, nk)!.Value;
+                var obs = Observation(key, nk);
+                var started = Start(zeta.Policy);       // σ_{n_k−1} = start(ζ_{n_k})
+                var state = Next(zeta.Policy, started, obs);
+                var values = windows[(key, nk)].First().Values;
+                selected = selected.Add(Transition(values, nk, started[t.Show], state[t.Show], obs, zeta), 1);
+                active = (values, state, nk);
+            }
+            for (var a = active.Last + hop; a <= last; a += hop)
+            {
+                var silent = !windows.ContainsKey((key, a));
+                var obs = Observation(key, a);
+                var next = InForce(key, a) is { } zeta ? Next(zeta.Policy, active.State, obs) : active.State;       // a window without a policy keeps the state
+                if (InForce(key, a) is { } shown && Canon.Of(next[t.Show]) != Canon.Of(active.State[t.Show]))
+                    selected = selected.Add(Transition(active.Key, a, active.State[t.Show], next[t.Show], obs, shown), 1);
+                var still = silent && next.All(f => Canon.Of(f.Value) == Canon.Of(active.State[f.Key]));
+                active = (active.Key, next, a);
+                if (!still) continue;
+                // a silent window that keeps the state keeps it until a window is not silent or the policy in force can change (rest(ζ) of Def. 6.5)
+                var change = windows.Where(w => w.Key.Key == key && w.Key.Start > a).Select(w => (Int128)w.Key.Start)
+                    .Concat(policies.Values.Where(x => x.Key == key && x.Since is { } s && s >= Close(a)).Select(x => Floor((Int128)x.Since!.Value - width - lateness) + hop))
+                    .Append(last + hop).Min();
+                a = (long)(change - hop);
+            }
+            keys = keys.SetItem(key, active with { Last = (long)Int128.Max(active.Last, last) });
+        }
+        return (new Relation(Names(t), selected), new Carried(policies, keys, selected, windows.Where(w => Close(w.Key.Start) > now).ToImmutableDictionary()));
     }
 }

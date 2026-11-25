@@ -158,7 +158,7 @@ sealed class SeriesOp : PhysOp
     public SeriesOp(TSeries t, Layout inLayout, Interner it) : base(t)
     {
         fills = [.. t.Reads.Select(r => r.Fill)]; ttl = t.TtlNs; hi = [.. t.Reads.Select(_ => long.MinValue)];
-        if (t.TtlNs is not null) outNoData = OutLayout.Index(TThreshold.NoDataColumn);
+        if (t.TtlNs is not null) outNoData = OutLayout.Index(TSeries.NoDataColumn);
         this.t = t; this.inLayout = inLayout;
         elemCol = inLayout.Index(t.TargetVar);
         propHandles = [.. t.Reads.Select(r => it.Intern(r.PropId))];

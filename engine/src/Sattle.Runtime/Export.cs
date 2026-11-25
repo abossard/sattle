@@ -295,41 +295,23 @@ public sealed class CanvasExport(Engine engine, Catalog catalog, bool plain = fa
         return new JsonObject { ["schemaVersion"] = "1.0", ["id"] = space.Name, ["master"] = new JsonObject { ["graph"] = Id(master.Name), ["ingestionProjection"] = Projection(master) }, ["projections"] = new JsonArray([.. derived]) };
     }
 
-    /// <summary>The meter declarations of a graph: every event property of its ontology with unit, temporality, combine, period, the largest value seen (for scaling) and the warn line of a threshold on it, and the thresholds themselves. `GET /graphs/{g}/meters` and `NAME.meters.json` of `replay --out`.</summary>
+    /// <summary>The meter declarations of a graph: every event property of its ontology with unit, temporality, combine, period, the largest value seen (for scaling). `GET /graphs/{g}/meters` and `NAME.meters.json` of `replay --out`.</summary>
     public JsonNode MetersDocument(GraphRuntime rt)
     {
         var g = rt.Name;
             var view = catalog.OntologyOf(rt.Typed.OutputModule);
             var maxOf = LargestValues(rt);
             var edgeProps = view.Types.Values.Where(t => t.IsRel).SelectMany(t => t.OwnProps.Keys).ToHashSet();
-            var thresholds = rt.Typed.Ops.OfType<TThreshold>().Select(t => (Op: t, Meter: t.Value is TField f ? f.Name : null)).ToList();
             var tele = view.Props.Values.Where(p => p.Role == "events" && Ids.ModuleOf(p.Id) == rt.Typed.OutputModule || p.Role == "events" && Ids.ModuleOf(p.Id) != Ids.KernelModule && rt.Typed.Ops.OfType<TEmitEntity>().Any(e => e.Sets.Any(s => s.PropId == p.Id)) ).OrderBy(p => p.Id, StringComparer.Ordinal).ToList();
             var meters = new JsonArray([.. tele.Select(p =>
             {
-                var warn = thresholds.Where(t => t.Meter == p.Name && t.Op.AboveBy is null).Select(t => (double?)(double)t.Op.Above).FirstOrDefault();
                 return (JsonNode)new JsonObject
                 {
                     ["id"] = PropNameOf(p.Id), ["target"] = edgeProps.Contains(p.Id) ? "edge" : "node", ["label"] = p.Name, ["unit"] = p.Unit ?? "", ["temporality"] = p.Temporality, ["combine"] = p.Combine,
-                    ["periodSeconds"] = p.Period / 1_000_000_000, ["min"] = 0, ["max"] = maxOf.TryGetValue(p.Id, out var m) ? Math.Round((double)m, 6) : 1, ["scale"] = "sqrt", ["warn"] = warn,
+                    ["periodSeconds"] = p.Period / 1_000_000_000, ["min"] = 0, ["max"] = maxOf.TryGetValue(p.Id, out var m) ? Math.Round((double)m, 6) : 1, ["scale"] = "sqrt",
                 };
             })]);
-            // a parameter that is read from the row (`above above for enterAfter`) has no one value: it is null, and `byRow` names the column it is read from
-            static string? Column(TExpr? by) => by is null ? null : by is TField f ? f.Name : "expression";
-            var ths = new JsonArray([.. thresholds.Select(t =>
-            {
-                var o = new JsonObject
-                {
-                    ["graph"] = g, ["operator"] = t.Op.Name, ["meter"] = t.Meter,
-                    ["above"] = t.Op.AboveBy is null ? (double)t.Op.Above : null, ["enterAfter"] = t.Op.EnterBy is null ? t.Op.EnterAfter : null,
-                    ["below"] = t.Op.BelowBy is null ? (double)t.Op.Below : null, ["exitAfter"] = t.Op.ExitBy is null ? t.Op.ExitAfter : null,
-                    ["state"] = t.Op.Target, ["high"] = t.Op.High, ["low"] = t.Op.Low,
-                };
-                var byRow = new JsonObject();
-                foreach (var (name, by) in new[] { ("above", t.Op.AboveBy), ("enterAfter", t.Op.EnterBy), ("below", t.Op.BelowBy), ("exitAfter", t.Op.ExitBy) }) if (Column(by) is { } c) byRow[name] = c;
-                if (byRow.Count > 0) o["byRow"] = byRow;
-                return (JsonNode)o;
-            })]);
-            return new JsonObject { ["meters"] = meters, ["thresholds"] = ths, ["defaults"] = new JsonObject() };
+            return new JsonObject { ["meters"] = meters, ["defaults"] = new JsonObject() };
     }
 
     /// <summary>Writes the NDJSON and JSON files the canvas StaticSource reads: manifest.json, space.json, per graph ontology, snapshot, patches and windows.</summary>

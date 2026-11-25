@@ -97,7 +97,7 @@ public class PaletteTests
     }
 
     [Theory]
-    [InlineData("enterAfter", "windows")] [InlineData("exitAfter", "windows")] [InlineData("minDepth", "hops")] [InlineData("maxDepth", "hops")]
+    [InlineData("minHops", "hops")] [InlineData("maxHops", "hops")] [InlineData("minDepth", "hops")] [InlineData("maxDepth", "hops")]
     public void A_count_parameter_names_what_it_counts(string name, string unit)
     {
         var p = Params(Built).First(x => x["name"]!.GetValue<string>() == name);

@@ -41,7 +41,7 @@ One row per verb. "Fails" is the requirement that fails if the row is wrong.
 | `window` | L: a row goes to every window of `period`, one every `hop`, that holds `time(e)` | none | nothing | R8 |
 | `summarize` after `window` | K, then T | `κ` = (`by`, window start); `s` = window end, `u = ∞` | per key and window | R6, R8 |
 | `series` | J of element rows and windows, then T; with `fill`: K, J, L, T (see time) | `κ₁` = the element column, `κ₂` = the window's element; `s = −∞`, `u` = window start + `lookback` | per element its rows and `since` | R1, R6, R8 |
-| `hysteresis` | K, not summarised: a state machine over the windows of a key, in window order | `κ` = the `by` columns; a window two rows of one key hold has no reading until one row holds it (G2) | per key its windows in the look-back and one carried state | R1, R6 |
+| `fold` | K over two inputs, then T: per key a state over its windows in order, silent ones too (Ch. 6, Def. 6.5) | `κ` = the `by` columns of the window rows and, by name, of the policy rows; `s` = the window's close (end + λ of the windows upstream), `u = ∞` | per key its policy rows, the state after the last stepped window and the observations of the windows not yet closed | R1, R6, R8 |
 | `retain` | T | `s = −∞`, `u = time(e) + age`, against the clock | the rows by time | R8 |
 | `traverse` | J unrolled at most `max` times, then K | J: rows keyed by start, edges keyed by the frontier id; K: (start, reached id), keeping the least depth; `0 ≤ min ≤ max ≤ 64` and `max ≥ 1`, else refused | rows by start; depth per (start, id), both ways | R5, R6 |
 | `fixpoint` | F, the least solution (cycles allowed), then J with the node rows | `κ_F`: a node row names its key, an edge row its `from`; J: the keys with an own row of positive weight and a value above `⊥` | per node its rows, its edges both ways, its value | R7 |
@@ -99,7 +99,7 @@ After a change `fixpoint` evaluates only the changed keys and the nodes that rea
 | `series` | T, `u` = window start + `lookback`; `since` is the clock at the end of which the element first had rows, sampled at the end of each clock (D3 on #159) |
 | `series` with `fill` | the progress of a source is a recorded input, records (source, until), not a time: the greatest `until` per source (K), joined with the sources that feed the window (J), window end at or before `until` less the hop lag (L), and window end at or before the clock (T) |
 | `series` with `freshness` | the no-data record of an element: T with `s = S + freshness`, `S` the later of `since` and the end of its newest record, until a newer record; it sits at the window that holds `S + freshness`. A roll-up in no data: K by the roll-up key, at the greatest window of its members' records |
-| `hysteresis` | reads the window start of its rows; the look-back edge comes from the series upstream |
+| `fold` | a window is folded when the clock passes its close, with the policy row of greatest `since` (the clock at which the row entered, #151 D4); a row for a closed window is late (`lateRows`); a transition is never withdrawn (Thm. 6.8) |
 
 ## Gaps
 
@@ -112,4 +112,4 @@ Found by this note (second pass, listed on #159 before code):
 | G5 | decimals in `min`, `max`, `arg_max`, `arg_min`, keys, `distinct` | the output kept the digits of the first equal value that arrived | R1 | fixed with #161 (D7) |
 | G6 | `series` with `fill` | the progress of a source looked like a second time | R8 | not a gap: progress is a recorded input (D7); see time |
 | G7 | `series` no-data record | it sat at a window made from the clock | R8 | fixed (D8); no output changed, the window is not observable |
-| G8 | windowed `summarize`, `hysteresis` without a declared lateness | the state is dropped at a host horizon, not at a lateness of the program | R1 | moved to #142 (D1 (b), D10): a lateness is declared only on rows inputs, and a `hysteresis` reads windows, which have none |
+| G8 | windowed `summarize`, `fold` without a declared lateness | the state is dropped at a host horizon, not at a lateness of the program | R1 | moved to #142 (D1 (b), D10): a lateness is declared only on rows inputs, and a `fold` reads windows, which have none |

@@ -7,7 +7,7 @@ namespace Sattle.Tests;
 
 /// <summary>
 /// Def. 7.14 to 7.16 and Def. 10.9 through the adapters, the replay and a durable host, read from the served graph. A view over the shipped master reads the warning events of each instance with a fill of 0 and a time to live.
-/// Every envelope of a source is progress of it, a heartbeat (`{}`) too: while the event source reports, an instance without events has windows of 0 and its signal goes off; when it stops reporting and only another source goes on, the instance is in no data.
+/// Every envelope of a source is progress of it, a heartbeat (`{}`) too: while the event source reports, an instance without events has windows of 0 and its signal goes off; when it stops reporting and only another source goes on, the windows of the instance are silent, and three in a row make it silent (#151 D3: silence is silent windows, the fold's `gap`).
 /// </summary>
 [Trait("Category", "Slow")]
 public class SourceProgressTests
@@ -21,15 +21,17 @@ public class SourceProgressTests
         """;
 
     const string Quiet = """
-        {"graph": "quiet", "ontology": "t.quiet", "description": "The warning signal of each instance: on at one window with an event, off after two without, silent when its source has not reported.",
+        {"graph": "quiet", "ontology": "t.quiet", "description": "The warning signal of each instance: on at one window with an event, off after two without, silent after three windows in which its source has not reported.",
          "inputs": [{"name": "master", "ontology": "acme.ops"}], "parameters": [],
          "verbs": [
            {"id": "instances", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "p", "label": "Instance"}]}},
            {"id": "named", "verb": "project", "columns": {"p": {"ref": "p"}, "c": {"ref": "p.name"}}},
            {"id": "warnings", "verb": "series", "graph": "master", "series": {"element": "p", "property": "warnings", "lookback": "10m", "freshness": "3m", "fill": 0.0}},
-           {"id": "signal", "verb": "hysteresis", "hysteresis": {"by": ["c"], "value": "warnings", "above": 1.0, "enterAfter": 1, "below": 0.0, "exitAfter": 2, "high": "on", "low": "off", "initial": "off", "noData": "silent"}},
+           {"id": "signalPolicy", "verb": "extend", "columns": {"above": {"lit": 1}, "below": {"lit": 0}, "enterAfter": {"lit": 1}, "exitAfter": {"lit": 2}, "gap": {"lit": 3}}},
+           {"id": "signalFold", "verb": "fold", "fold": {"by": ["c"], "observe": {"n": {"fn": "count", "args": [{"ref": "warnings"}]}, "v": {"fn": "max", "args": [{"ref": "warnings"}]}}, "policy": ["above", "below", "enterAfter", "exitAfter", "gap"], "state": {"state": {"start": {"lit": "off"}, "next": {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "n"}, {"lit": 0}]}, {"fn": "iff", "args": [{"fn": ">=", "args": [{"fn": "+", "args": [{"ref": "quiet"}, {"lit": 1}]}, {"ref": "gap"}]}, {"lit": "silent"}, {"ref": "state"}]}, {"fn": "iff", "args": [{"fn": "and", "args": [{"fn": "iff", "args": [{"fn": "==", "args": [{"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "state"}, {"lit": "silent"}]}, {"lit": "off"}, {"ref": "state"}]}, {"lit": "off"}]}, {"fn": ">=", "args": [{"fn": "coalesce", "args": [{"ref": "v"}, {"lit": 0}]}, {"ref": "above"}]}, {"fn": "<=", "args": [{"fn": "coalesce", "args": [{"ref": "v"}, {"lit": 0}]}, {"ref": "below"}]}]}, {"fn": "iff", "args": [{"fn": "==", "args": [{"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "state"}, {"lit": "silent"}]}, {"lit": "off"}, {"ref": "state"}]}, {"lit": "off"}]}, {"fn": ">=", "args": [{"fn": "+", "args": [{"ref": "streak"}, {"lit": 1}]}, {"ref": "enterAfter"}]}, {"fn": ">=", "args": [{"fn": "+", "args": [{"ref": "streak"}, {"lit": 1}]}, {"ref": "exitAfter"}]}]}]}, {"fn": "iff", "args": [{"fn": "==", "args": [{"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "state"}, {"lit": "silent"}]}, {"lit": "off"}, {"ref": "state"}]}, {"lit": "off"}]}, {"lit": "on"}, {"lit": "off"}]}, {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "state"}, {"lit": "silent"}]}, {"lit": "off"}, {"ref": "state"}]}]}]}}, "streak": {"start": {"lit": 0}, "next": {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "n"}, {"lit": 0}]}, {"lit": 0}, {"fn": "iff", "args": [{"fn": "iff", "args": [{"fn": "==", "args": [{"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "state"}, {"lit": "silent"}]}, {"lit": "off"}, {"ref": "state"}]}, {"lit": "off"}]}, {"fn": ">=", "args": [{"fn": "coalesce", "args": [{"ref": "v"}, {"lit": 0}]}, {"ref": "above"}]}, {"fn": "<=", "args": [{"fn": "coalesce", "args": [{"ref": "v"}, {"lit": 0}]}, {"ref": "below"}]}]}, {"fn": "iff", "args": [{"fn": "iff", "args": [{"fn": "==", "args": [{"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "state"}, {"lit": "silent"}]}, {"lit": "off"}, {"ref": "state"}]}, {"lit": "off"}]}, {"fn": ">=", "args": [{"fn": "+", "args": [{"ref": "streak"}, {"lit": 1}]}, {"ref": "enterAfter"}]}, {"fn": ">=", "args": [{"fn": "+", "args": [{"ref": "streak"}, {"lit": 1}]}, {"ref": "exitAfter"}]}]}, {"lit": 0}, {"fn": "+", "args": [{"ref": "streak"}, {"lit": 1}]}]}, {"lit": 0}]}]}}, "quiet": {"start": {"lit": 0}, "next": {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "n"}, {"lit": 0}]}, {"fn": "iff", "args": [{"fn": ">=", "args": [{"fn": "+", "args": [{"ref": "quiet"}, {"lit": 1}]}, {"ref": "gap"}]}, {"ref": "gap"}, {"fn": "+", "args": [{"ref": "quiet"}, {"lit": 1}]}]}, {"lit": 0}]}}}, "show": "state"}},
+           {"id": "signal", "verb": "summarize", "by": {"c": {"ref": "c"}}, "aggregates": {"state": {"fn": "arg_max", "args": [{"ref": "windowStart"}, {"ref": "to"}]}}},
            {"id": "emit", "verb": "nodes", "target": {"nodes": [{"var": "sig", "label": "InstanceSignal", "id": {"identity": "instanceSignal", "args": [{"ref": "c"}]}, "props": {"k": {"ref": "c"}, "state": {"ref": "state"}}}]}}],
-         "wires": [{"from": "instances", "to": "named"}, {"from": "named", "to": "warnings"}, {"from": "warnings", "to": "signal"}, {"from": "signal", "to": "emit"}]}
+         "wires": [{"from": "instances", "to": "named"}, {"from": "named", "to": "warnings"}, {"from": "warnings", "to": "signalFold"}, {"from": "named", "to": "signalPolicy"}, {"from": "signalPolicy", "to": "signalFold", "port": "policy"}, {"from": "signalFold", "to": "signal"}, {"from": "signal", "to": "emit"}]}
         """;
 
     static List<SourceFile> Files()
@@ -74,11 +76,13 @@ public class SourceProgressTests
     }
 
     static Dictionary<string, string?> States(SpaceHost h) => h.Entities("quiet", "InstanceSignal").ToDictionary(x => x.Prop("k")!, x => x.Prop("state"));
+    /// <summary>The states of `a` and `b`; an instance without a state has no signal.</summary>
+    static Dictionary<string, string?> Expected(string a, string? b) => b is null ? new() { ["a"] = a } : new() { ["a"] = a, ["b"] = b };
 
     [Theory]
     [InlineData(true, "off", "off")]            // covered silence: the windows after the warning are 0, two of them end the state; the instance without events has windows of 0 too
-    [InlineData(false, "silent", "silent")]     // the source of the events stopped reporting: nothing is filled, and after the time to live both instances are in no data
-    public void A_covered_silence_is_a_record_and_a_silent_source_is_no_data(bool reporting, string a, string b)
+    [InlineData(false, "silent", null)]         // the source of the events stopped reporting: nothing is filled, `a` is silent after three silent windows; `b` never had a window that is not silent, so it never starts and has no state (D3)
+    public void A_covered_silence_is_a_record_and_a_silent_source_is_no_data(bool reporting, string a, string? b)
     {
         var dir = Capture(Lines(reporting));
         try
@@ -89,12 +93,12 @@ public class SourceProgressTests
             using (var host = SpaceHost.OpenDurable(store, Files(), options))
             {
                 new Replay(host, host.Space, host.Adapters, new ReplayOptions { ChunkRows = 2, AdvanceEveryNs = Min, LatenessNs = Min}).Run(dir);
-                Assert.Equal(new Dictionary<string, string?> { ["a"] = a, ["b"] = b }, States(host));
+                Assert.Equal(Expected(a, b), States(host));
                 digest = host.StateDigest();
             }
             using var again = SpaceHost.OpenDurable(store, null, options);       // the progress of the sources is in the journal: a restart is in the same state
             Assert.Equal(digest, again.StateDigest());
-            Assert.Equal(new Dictionary<string, string?> { ["a"] = a, ["b"] = b }, States(again));
+            Assert.Equal(Expected(a, b), States(again));
         }
         finally { Directory.Delete(dir, true); }
     }

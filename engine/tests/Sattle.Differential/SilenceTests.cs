@@ -5,7 +5,7 @@ using static Sattle.Differential.Logs;
 
 namespace Sattle.Differential;
 
-/// <summary>Def. 7.14 to 7.16 on the smallest logs that show them, in the world `fill and no data`: hits filled with 0, a look-back of five minutes, a time to live of three, "on" at one window of 3 or more, "off" after two windows of 1 or less, "silent" for no data. The engine and the reference agree on each, and each gives the state the definitions say.</summary>
+/// <summary>Def. 7.14 and 7.15 and the fold of Def. 6.5 on the smallest logs that show them, in the world `fill and no data`: hits filled with 0, a look-back of five minutes, a time to live of three, "on" at one window of 3 or more, "off" after two windows of 1 or less, "silent" after three silent windows in a row (#151 D3: silence is silent windows, a `quiet` counter and a `gap` of 3 in the policy). A window of 60 s is folded when the clock passes its end plus the late horizon of three windows, so the window from 0 s at 240 s. The engine and the reference agree on each, and each gives the state the definitions say.</summary>
 public class SilenceTests
 {
     static RowInput Item(string k, long weight = 1) => new("a", Logs.Row(("k", Value.Text(k)), ("g", Value.Text("g0")), ("n", Value.Integer(1)), ("d", Value.Null), ("t", Value.Instant(Origin))), weight);
@@ -14,52 +14,53 @@ public class SilenceTests
     static ProgressInput Reported(long seconds) => new("b", Origin + seconds * Second);
     static LossInput Lost(long seconds) => new(Origin + seconds * Second);
 
-    static readonly Input[] On = [Item("k0"), Hits("k0", 5, 10), Advance(60)];       // one window of 5: on. The item has existed since the advance to 60
+    static readonly Input[] On = [Item("k0"), Hits("k0", 5, 10), Advance(60), Advance(240)];       // one window of 5, folded at 240 s: on. The item has existed since the advance to 60
 
     public static TheoryData<string, Input[], string> Cases => new()
     {
         { "one window at or above the threshold", On, "on" },
-        { "the source reported for three more minutes and the item had no hits: the windows are filled with 0 and two of them end the state", [.. On, Reported(240), Advance(240)], "off" },
-        { "the source lost events in one of the two windows: that window is not covered and holds no fill, so one window of 0 does not end the state", [.. On, Lost(70), Reported(180), Advance(180)], "on" },
-        { "the loss mark arrives after the window was filled: the fill is taken back", [.. On, Reported(180), Advance(180), Lost(70)], "on" },
-        { "without the loss the two windows of 0 end the state", [.. On, Reported(180), Advance(180)], "off" },
-        { "the source did not report: nothing is filled, and at exactly the time to live the state still stands", [.. On, Advance(240)], "on" },
-        { "the source did not report for longer than the time to live: no data, and not the state a fill would give", [.. On, Advance(300)], "silent" },
-        { "the report arrives after the advance: the windows are covered from then on", [.. On, Advance(300), Reported(300)], "off" },
-        { "data return after more than the look-back: a new episode, which starts in the initial state", [.. On, Advance(300), Hits("k0", 2, 310), Advance(360)], "off" },
-        { "data return and reach the threshold", [.. On, Advance(300), Hits("k0", 5, 310), Advance(360)], "on" },
-        { "an item that appears is not in no data before its time to live has passed", [Advance(60), Item("k1"), Advance(120), Advance(240)], "" },       // present since 60 s, when it arrived (#159 G3)
-        { "an item that went and returns has existed again only since it returned: its old record does not put it into no data at once", [.. On, Item("k0", -1), Advance(120), Item("k0"), Advance(280)], "on" },
-        { "and it is in no data once it has been back for longer than the time to live", [.. On, Item("k0", -1), Advance(120), Item("k0"), Advance(240), Advance(430)], "silent" },
-        { "an item that has existed for longer than the time to live without a record is in no data", [Advance(60), Item("k1"), Advance(120), Advance(360)], "silent" },
+        { "the source reported for three more minutes and the item had no hits: the windows are filled with 0 and two of them end the state", [.. On, Reported(240), Advance(360)], "off" },
+        { "the source lost events in one of the two windows: that window is not covered and holds no fill, so one window of 0 does not end the state", [.. On, Lost(70), Reported(180), Advance(360)], "on" },
+        { "the loss mark arrives after the window was filled, before it is folded: the fill is taken back", [.. On, Reported(180), Advance(280), Lost(70), Advance(360)], "on" },
+        { "without the loss the two windows of 0 end the state", [.. On, Reported(180), Advance(360)], "off" },
+        { "the source did not report: nothing is filled, and two silent windows, fewer than the gap, leave the state standing (D3)", [.. On, Advance(360)], "on" },
+        { "the source did not report for three windows: they are silent, and the third makes the key silent, not the state a fill would give (D3)", [.. On, Advance(420)], "silent" },
+        { "the report arrives after the advance, before the windows are folded: they are covered and end the state", [.. On, Advance(280), Reported(300), Advance(360)], "off" },
+        { "data return after a silence shorter than the gap: the state is carried over the silent windows (D2)", [.. On, Advance(360), Hits("k0", 2, 190), Advance(420)], "on" },
+        { "data return after the key went silent: it leaves silent from off, and a window of 2 stays there (D2, D3)", [.. On, Advance(420), Hits("k0", 2, 430), Advance(660)], "off" },
+        { "data return after the key went silent and reach the threshold", [.. On, Advance(420), Hits("k0", 5, 430), Advance(660)], "on" },
+        { "an item without a record and without a fill has no window that is not silent: its key never starts, so it has no state, not even silent (D3)", [Advance(60), Item("k1"), Advance(120), Advance(600)], "" },
+        { "an item that went and returned: the window that closed while it was gone has no policy and keeps the state (D4), the next is silent, and the key keeps its state (D2)", [.. On, Item("k0", -1), Advance(300), Item("k0"), Advance(360)], "on" },
+        { "and it is silent once three windows in a row with a policy had no record (D3)", [.. On, Item("k0", -1), Advance(300), Item("k0"), Advance(480)], "silent" },
+        { "an item with one record and none after it is silent three windows later (D3)", [Advance(60), Item("k1"), Hits("k1", 2, 70), Advance(300), Advance(540)], "silent" },
     };
 
     /// <summary>
-    /// Def. 7.16 for a roll-up, as built (world `roll-up in no data when all members are`, time to live two minutes, the key is the group `g0`): a roll-up knows a member only through its records.
-    /// A member that appeared less than the time to live ago and has no record yet (no fill, because its source has not reported) is invisible to it, so a key whose only other member has long been silent is in no data.
-    /// Whether such a member should keep its key out of no data is open with the paper (content review, third pass, point 1); this test pins what is built, in the engine and the reference alike.
+    /// Def. 7.15 and the fold for a roll-up, as built (world `roll-up in no data when all members are`, a gap of two silent windows, the key is the group `g0`): a roll-up knows a member only through its records.
+    /// A member that appeared and has no record yet (no fill, because its source has not reported) is invisible to it, so the windows of a key whose only other member has long been silent stay silent, and the key is silent (#151 D3).
+    /// Whether such a member should keep its key out of silence is open with the paper (content review, third pass, point 1); this test pins what is built, in the engine and the reference alike.
     /// </summary>
     [Fact]
     public void A_roll_up_knows_a_member_only_through_its_records()
     {
         var w = Worlds.RollupAll;
-        Input[] log = [Item("k0"), Hits("k0", 5, 10), Advance(60), Advance(240), Item("k1"), Advance(300)];       // k0 silent since 120, k1 there since 300 without a record
+        Input[] log = [Item("k0"), Hits("k0", 5, 10), Advance(60), Advance(240), Advance(420), Item("k1"), Advance(480)];      // windows from 60 s silent, the key silent at 360 s; k1 there since 420 s without a record
         Assert.Contains(ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), log).Graphs["view"].Lines(), l => l.Contains("state=t:silent", StringComparison.Ordinal));
-        Input[] reported = [.. log, Hits("k1", 0, 300), Advance(360)];                                                // a record of k1: the key is out of no data
+        Input[] reported = [.. log, Hits("k1", 0, 480), Advance(720)];                                                // a record of k1, its window folded at 720 s: the key leaves silent
         Assert.DoesNotContain(ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), reported).Graphs["view"].Lines(), l => l.Contains("state=t:silent", StringComparison.Ordinal));
         Assert.Null(Differential.FirstMismatch(w, [.. reported], 0, reordered: false)?.ToString());
     }
 
-    /// <summary>#111, world `fill and no data over hop windows`: the hits are in windows of 3 minutes every 60 s, so the hit at 10 s is in the windows from -120, -60 and 0 s. A window is covered, and filled, only once the source has reported past its end, not the end of its grid window.</summary>
+    /// <summary>#111, world `fill and no data over hop windows`: the hits are in windows of 3 minutes every 60 s, so the hit at 10 s is in the windows from -120, -60 and 0 s. A window is covered, and filled, only once the source has reported past its end, not the end of its grid window. The fold steps one window per 60 s and folds the window from a at a + 240 s.</summary>
     public static TheoryData<string, Input[], string> HopCases => new()
     {
-        { "reported to 240 s: the window [120 s, 300 s) has not ended, so it is not filled and the state stands", [.. On, Reported(240), Advance(240)], "on" },
+        { "reported to 240 s: the window [120 s, 300 s) has not ended, so it is not filled, is silent, and the state stands", [.. On, Reported(240), Advance(360)], "on" },
         { "reported to 360 s: the windows from 60 and 120 s ended without hits, are filled with 0 and end the state", [.. On, Reported(360), Advance(360)], "off" },
         { "a hit late in a window: the window from 120 s holds it and is not filled with 0", [.. On, Reported(240), Advance(240), Hits("k0", 5, 250), Reported(360), Advance(360)], "on" },
         { "a loss at 250 s: only the window from 120 s reaches it; it is not covered, so one window of 0 does not end the state", [.. On, Lost(250), Reported(360), Advance(360)], "on" },
-        { "the loss mark arrives after the windows were filled: the fill of the window from 120 s is taken back", [.. On, Reported(360), Advance(360), Lost(250)], "on" },
-        { "the windows of 3 left the look-back at 360 s and with them the episode, though the key was in no data: the window from 60 s, filled later, starts a new episode", [Advance(60), Hits("k1", 3, -90), Item("k1"), Advance(360), Reported(240)], "off" },
-        { "and likewise when the item went and returned before", [Advance(60), Hits("k1", 3, -90), Item("k1"), Item("k1", -1), Item("k1"), Advance(360), Reported(240)], "off" },
+        { "the loss mark arrives after the windows were filled, before the window from 120 s is folded: its fill is taken back", [.. On, Reported(360), Advance(300), Lost(250), Advance(360)], "on" },
+        { "the windows of 3, folded at 120 s, left the look-back at 360 s, and the state they set outlives them (D2): the window from 60 s, filled with 0, is one window toward off", [Advance(60), Hits("k1", 3, -90), Item("k1"), Advance(120), Reported(240), Advance(360)], "on" },
+        { "and likewise when the item went and returned before", [Advance(60), Hits("k1", 3, -90), Item("k1"), Item("k1", -1), Item("k1"), Advance(120), Reported(240), Advance(360)], "on" },
     };
 
     [Theory, MemberData(nameof(HopCases))]

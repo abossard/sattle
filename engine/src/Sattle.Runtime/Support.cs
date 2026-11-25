@@ -16,7 +16,7 @@ public static class Support
         ["Group"] = "per-key accumulators with signed weights; closing windows when keyed by windowStart",
         ["Series"] = "bilinear: new rows against seen windows, new windows against all rows",
         ["Rollup"] = "per (key, window) accumulators",
-        ["Threshold"] = "per-key state machine over ordered closed windows",
+        ["Fold"] = "per key a state over its windows in order, silent ones too, stepped when the clock passes a window's close; transitions are never withdrawn",
         ["Values"] = "constant rows, emitted once when the graph first evaluates",
         ["Join"] = "bilinear delta over per-side hash indexes on the equality keys",
         ["Traverse"] = "per start element the depth each element was first reached at; an added edge lowers depths from its far end, a lost edge walks the starts that visited its ends again, an edited entity touches the starts that visited it; emits the difference",
@@ -103,7 +103,7 @@ public static class Support
     };
 
     public static readonly HashSet<string> SinkKinds = ["EmitEntity", "EmitRelationship", "Link"];
-    public static readonly HashSet<string> WindowKinds = ["Series", "Rollup", "Delta", "Threshold"];
+    public static readonly HashSet<string> WindowKinds = ["Series", "Rollup", "Delta", "Fold"];
 }
 
 /// <summary>The editor palette, built from the kernel table (never hard-coded in the UI).</summary>
@@ -115,8 +115,6 @@ public static class Palette
     static readonly Dictionary<string, Quantity> Quantities = new()
     {
         ["width"] = new("duration", "ns"), ["hop"] = new("duration", "ns"), ["within"] = new("duration", "ns"), ["period"] = new("duration", "ns"), ["age"] = new("duration", "ns"), ["lateness"] = new("duration", "ns"), ["ttl"] = new("duration", "ns"), ["fill"] = new("value", "unit of the property read"),
-        ["enterAfter"] = new("count", "windows"), ["exitAfter"] = new("count", "windows"),
-        ["above"] = new("value", "unit of the thresholded value"), ["below"] = new("value", "unit of the thresholded value"),
         ["minDepth"] = new("count", "hops"), ["maxDepth"] = new("count", "hops"), ["minHops"] = new("count", "hops"), ["maxHops"] = new("count", "hops"),
         ["retain"] = new("count", "retained inputs per element"),
         ["min"] = new("value", "unit of the constrained property"), ["max"] = new("value", "unit of the constrained property"),

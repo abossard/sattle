@@ -26,7 +26,7 @@ public sealed record On(string Left, string Right);
 /// summarize (Aggregates, By), join (Kind, On), nodes and edges (Target), retain (Retain), traverse (GraphId, Traverse), fixpoint (Fixpoint), link (Link).</summary>
 public sealed record VerbNode(string Id, string Verb, [property: JsonPropertyName("graph")] string? GraphId, Drawing? Pattern, JsonElement? Condition, Dictionary<string, JsonElement>? Columns,
     Dictionary<string, JsonElement>? Aggregates, Dictionary<string, JsonElement>? By, string? Kind, List<On>? On, Drawing? Target,
-    string? Source = null, WindowSpec? Window = null, SeriesSpec? Series = null, HysteresisSpec? Hysteresis = null, string? Rule = null, ValuesSpec? Values = null,
+    string? Source = null, WindowSpec? Window = null, SeriesSpec? Series = null, FoldSpec? Fold = null, string? Rule = null, ValuesSpec? Values = null,
     RetainSpec? Retain = null, TraverseSpec? Traverse = null, LinkSpec? Link = null, FixpointSpec? Fixpoint = null);
 public sealed record ValuesSpec(Dictionary<string, string> Columns, List<Dictionary<string, JsonElement>> Rows, string? Key = null);
 /// <summary>Windows of the rows' own time: `period` wide, one every `hop` (the period when not given), so a row is in period / hop windows.</summary>
@@ -37,10 +37,12 @@ public sealed record SeriesSpec(string Element, string Lookback, string? Propert
     /// <summary>The metric properties the series reads: `property` names one, `properties` several of the same element.</summary>
     public string[] Read => Properties ?? (Property is { } p ? [p] : []);
 }
-/// <summary>`aboveBy`, `enterBy`, `belowBy`, `exitBy`: a threshold or dwell time read from the row, in place of the constant.</summary>
-public sealed record HysteresisSpec(string[] By, string Value, decimal Above, long EnterAfter, decimal Below, long ExitAfter,
-    string High, string Low, string Initial, string? NoData = null, bool EvidenceWindow = false,
-    JsonElement? AboveBy = null, JsonElement? EnterBy = null, JsonElement? BelowBy = null, JsonElement? ExitBy = null);
+/// <summary>The keyed fold over ordered windows (Ch. 6, Def. 6.5), with two wires in: the window rows on `in` and the policy rows on `policy`, both with the
+/// columns `by`. `observe`: named count, min or max of a value of the window rows, over the distinct values of a window. `policy`: the columns of a policy row
+/// that `start` and `next` read. `state`: per state field its `start` (over the policy) and `next` (over the policy, the state fields and the observed names), in
+/// order. `show`: the state field a transition shows.</summary>
+public sealed record FoldSpec(string[] By, Dictionary<string, JsonElement>? Observe, string[] Policy, Dictionary<string, FoldStateSpec> State, string Show);
+public sealed record FoldStateSpec(JsonElement Start, JsonElement Next);
 /// <summary>The rows whose `time` is within `age` before the clock.</summary>
 public sealed record RetainSpec(string Time, string Age);
 /// <summary>From the element in column `from`, every element reached over `min` to `max` edges of type `edge` (and its sub-types) in `direction` (out, in,
@@ -274,7 +276,7 @@ public static class Lowering
                 "summarize" => Summarize(v, One()),
                 "window" => Window(v, One()),
                 "series" => Series(v, One()),
-                "hysteresis" => Threshold(v, One()),
+                "fold" => Fold(v, ins),
                 "join" => Join(v, ins),
                 "distinct" => Distinct(v, One()),
                 "retain" => Retain(v, One()),
@@ -426,23 +428,48 @@ public static class Lowering
             B.Edge(r.Port, "wire", P(op, "in"));
             for (var i = 0; i < s.Read.Length; i++)
                 B.Contain(op, "read", $"#{i}", "FieldRef", i, [("path", T($"{s.Element}.{s.Read[i]}")), .. s.Fill is { } fill ? new[] { ("fill", Value.Decimal(fill)) } : []]);
-            return r with { Port = P(op, "out"), Cols = [.. r.Cols, "windowStart", "windowEnd", .. s.Read, .. s.Freshness is null ? Array.Empty<string>() : [TThreshold.NoDataColumn]], Windows = true };
+            return r with { Port = P(op, "out"), Cols = [.. r.Cols, "windowStart", "windowEnd", .. s.Read, .. s.Freshness is null ? Array.Empty<string>() : [TSeries.NoDataColumn]], Windows = true };
         }
 
-        Rows Threshold(VerbNode v, Rows r)
+        Rows Fold(VerbNode v, List<(string Port, Rows Rows)> ins)
         {
-            if (v.Hysteresis is not { By.Length: > 0 } h) throw new Refused(v.Id, "hysteresis names the reading, its keys, thresholds, dwell times and states");
-            var op = Op("Threshold", v.Id, [("target", T("state")), ("above", Value.Decimal(h.Above)), ("below", Value.Decimal(h.Below)),
-                ("enterAfter", Value.Integer(h.EnterAfter)), ("exitAfter", Value.Integer(h.ExitAfter)), ("initial", T(h.Initial)), ("high", T(h.High)), ("low", T(h.Low)),
-                .. h.NoData is { } missing ? new[] { ("nodata", T(missing)) } : [],
-                .. h.EvidenceWindow ? new[] { ("evidenceWindow", Value.Boolean(true)) } : []]);
-            B.Edge(r.Port, "wire", P(op, "in"));
-            Write(v.Id, r, new Ref(h.Value), op, "value", 0);
-            foreach (var (slot, x) in new[] { ("aboveBy", h.AboveBy), ("enterBy", h.EnterBy), ("belowBy", h.BelowBy), ("exitBy", h.ExitBy) })
-                if (x is { } e) Write(v.Id, r, Read(v.Id, e), op, slot, 0);
-            foreach (var name in h.By)
+            if (v.Fold is not { By.Length: > 0, Policy: not null, State.Count: > 0, Show: not null } f)
+                throw new Refused(v.Id, "fold names its keys, policy columns, state fields with start and next, and the state it shows");
+            if (ins.Count != 2 || ins.FirstOrDefault(i => i.Port == "in").Rows is not { } r || ins.FirstOrDefault(i => i.Port == "policy").Rows is not { } pol)
+                throw new Refused(v.Id, "a fold has one wire to in and one to policy");
+            if (!r.Windows) throw new Refused(v.Id, "a fold reads windows: a series or a summary of windows on in");
+            var op = Op("Fold", v.Id, ("show", T(f.Show)));
+            B.Edge(r.Port, "wire", P(op, "in")); B.Edge(pol.Port, "wire", P(op, "policy"));
+            foreach (var name in f.By)
+            {
+                if (!pol.Cols.Contains(name)) throw new Refused(v.Id, $"the policy rows have no key column '{name}'");
                 Write(v.Id, r, new Ref(name), B.Contain(op, "key", name, "Assign", null, ("target", T(name))), "value", 0);
-            return new Rows(P(op, "out"), [.. h.By, "state", .. h.EvidenceWindow ? new[] { "windowStart" } : []], r.Types.Where(kv => h.By.Contains(kv.Key)).ToDictionary());
+            }
+            for (var i = 0; i < f.Policy.Length; i++)
+            {
+                if (!pol.Cols.Contains(f.Policy[i]) || pol.Types.ContainsKey(f.Policy[i])) throw new Refused(v.Id, $"the policy rows have no value column '{f.Policy[i]}'");
+                B.Contain(op, "policy", $"#{i}", "FieldRef", i, ("path", T(f.Policy[i])));
+            }
+            var observed = new List<string>();
+            foreach (var (name, x) in f.Observe ?? [])
+            {
+                Column(v.Id, name);
+                if (Read(v.Id, x) is not Fn { Name: "count" or "min" or "max", Args: [var value] } call) throw new Refused(v.Id, "a fold observes count, min or max of one value of the window rows");
+                if (value is Ref { Path: var vp } && r.Types.ContainsKey(vp)) throw new Refused(v.Id, $"{call.Name} observes values, and '{vp}' is an element: read its properties or its id");
+                Write(v.Id, r, value, B.Contain(op, "observe", name, "Aggregate", null, ("target", T(name)), ("fn", T(call.Name))), "value", 0);
+                observed.Add(name);
+            }
+            var zeta = new Rows("", [.. f.Policy], new(StringComparer.Ordinal));
+            var step = zeta with { Cols = [.. f.Policy, .. f.State.Keys, .. observed] };
+            var ordinal = 0;
+            foreach (var (name, st) in f.State)
+            {
+                Column(v.Id, name);
+                var node = B.Contain(op, "state", name, "FoldState", ordinal++, ("target", T(name)));
+                Write(v.Id, zeta, Read(v.Id, st.Start), node, "start", 0);
+                Write(v.Id, step, Read(v.Id, st.Next), node, "next", 0);
+            }
+            return new Rows(P(op, "out"), [.. f.By, "windowStart", "windowEnd", "from", "to", .. observed, .. f.Policy, "since"], r.Types.Where(kv => f.By.Contains(kv.Key)).ToDictionary());
         }
 
         static long Duration(string at, string duration)

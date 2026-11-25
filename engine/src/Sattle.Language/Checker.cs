@@ -348,43 +348,11 @@ public sealed class ProjectionChecker(Graph defs)
                     var aggs = Aggs(op, R, true);
                     var inst = new FType(Ty.Instant, true, Role.Data);
                     var cols = kcols.Concat(carry).Concat([new Col("windowStart", inst), new Col("windowEnd", inst)]).Concat(aggs.Select(a => new Col(a.Target, a.Out))).ToList();
-                    var marked = R.Find(TThreshold.NoDataColumn) is { } nd && nd.T.Ty.Tag == Tag.Boolean && !nd.T.Role.IsData;       // the input comes from a Series with a time to live
-                    if (marked) cols.Add(new Col(TThreshold.NoDataColumn, R.Find(TThreshold.NoDataColumn)!.T));
+                    var marked = R.Find(TSeries.NoDataColumn) is { } nd && nd.T.Ty.Tag == Tag.Boolean && !nd.T.Role.IsData;       // the input comes from a Series with a time to live
+                    if (marked) cols.Add(new Col(TSeries.NoDataColumn, R.Find(TSeries.NoDataColumn)!.T));
                     return new TRollup(name, op, inputs, new Schema(cols, R.Window), keys, aggs, R.Window, marked, [.. R.Cols.Where(c => c.T.Role.IsData && c.Name is not ("windowStart" or "windowEnd")).Select(c => c.Name)]);
                 }
-            case "Threshold":
-                {
-                    if (R is null) return null;
-                    if (R.Window == 0) { Err("Threshold", op, "threshold needs a windowed input"); return null; }
-                    var v = Ex(Child(op, "value"), R);
-                    var keys = Keys(op, R, true, out var kcols, out var carry);
-                    if (v is null) return null;
-                    if (v.Type.Ty.Tag != Tag.Decimal && v.Type.Ty.Tag != Tag.Integer || !v.Type.Req || v.Type.Role.IsData || v.Type.Role.Temporality == "cumulative")
-                    { Err("Threshold", op, $"threshold value must be a required numeric gauge or delta event value, found {v.Type}"); return null; }
-                    var above = d.Dec(op, "above"); var below = d.Dec(op, "below");
-                    TExpr? ParamExpr(string slot)
-                    {
-                        if (d.Children(op, slot) is not { Count: > 0 } c) return null;
-                        var e = Ex(c[0], R);
-                        if (e is not null && (e.Type.Ty.Tag is not (Tag.Decimal or Tag.Integer) || !e.Type.Req || !e.Type.Role.IsData)) { Err("Threshold", op, $"{slot[..^2]} must be a required numeric data value of the row, found {e.Type}"); return null; }
-                        return e;
-                    }
-                    var aboveBy = ParamExpr("aboveBy"); var enterBy = ParamExpr("enterBy"); var belowBy = ParamExpr("belowBy"); var exitBy = ParamExpr("exitBy");
-                    if (aboveBy is null && belowBy is null && above <= below) Err("Threshold", op, "above must be greater than below");
-                    if ((enterBy is null && d.Int(op, "enterAfter") < 1) || (exitBy is null && d.Int(op, "exitAfter") < 1)) Err("Threshold", op, "enterAfter and exitAfter must be at least 1");
-                    var (high, low, init) = (d.Text(op, "high") ?? "", d.Text(op, "low") ?? "", d.Text(op, "initial") ?? "");
-                    if (init != high && init != low) Err("Threshold", op, "initial must be one of the two states");
-                    var (noData, ignore) = (d.Text(op, "nodata"), d.Bool(op, "nodataIgnore"));
-                    var marked = R.Find(TThreshold.NoDataColumn) is { } nd && nd.T.Ty.Tag == Tag.Boolean && !nd.T.Role.IsData;
-                    if (marked && noData is null && !ignore) Err("Threshold", op, "a series with a freshness limit needs hysteresis to specify what no data gives (noData)");
-                    if (!marked && (noData is not null || ignore)) Err("Threshold", op, "a no-data state needs events with a time to live upstream (series.freshness) and the noData column in the row");
-                    if (noData is not null && (noData == high || noData == low)) Err("Threshold", op, "the value for no data must differ from the two states");
-                    var target = d.Text(op, "target") ?? "status";
-                    var cols = kcols.Concat(carry).Append(new Col(target, new FType(Ty.Text, true, Role.Data))).ToList();
-                    var evidenceWindow = d.Bool(op, "evidenceWindow");
-                    if (evidenceWindow) cols.Add(new Col("windowStart", new FType(Ty.Instant, true, Role.Data)));
-                    return new TThreshold(name, op, inputs, new Schema(cols, 0), v, keys, target, above, d.Int(op, "enterAfter"), high, below, d.Int(op, "exitAfter"), low, init, aboveBy, enterBy, belowBy, exitBy, noData, ignore, evidenceWindow);
-                }
+            case "Fold": return TypeFold(op, name, inputs, R, input("policy"));
             case "EmitEntity": return R is null ? null : TypeEmitEntity(op, name, inputs, R, rule);
             case "EmitRelationship": return R is null ? null : TypeEmitRel(op, name, inputs, R, rule);
             case "Link": return R is null ? null : TypeLink(op, name, inputs, R, rule);
@@ -509,6 +477,67 @@ public sealed class ProjectionChecker(Graph defs)
                 foreach (var c in R.Cols.Where(c => c.Name.StartsWith(f.Name + ".", StringComparison.Ordinal))) cols.Add(c with { Name = target + c.Name[f.Name.Length..] });
         }
         else cols.Add(new Col(target, e.Type));
+    }
+
+    /// <summary>The keyed fold (Ch. 6, Def. 6.5): keys of the window rows that the policy rows have by name, observe aggregates over the distinct values of a window,
+    /// policy columns, and state fields whose type `start` gives and `next` keeps. Its transitions are data: the fold is where event values cross to data.</summary>
+    TOp? TypeFold(string op, string name, Dictionary<string, Src> inputs, Schema? R, Schema? P)
+    {
+        if (R is null || P is null) return null;
+        if (R.Window == 0) { Err("Fold", op, "fold reads windowed rows: a series or a summary of windows"); return null; }
+        var keys = Keys(op, R, true, out var kcols, out _);
+        foreach (var (k, e) in keys)
+            if (P.Find(k) is not { } pk || pk.T.Ty != e.Type.Ty || !pk.T.Req || !pk.T.Role.IsData) Err("Fold", op, $"the policy rows have the key '{k}', a required data {e.Type.Ty}");
+        var policy = new List<Col>();
+        foreach (var f in d.Children(op, "policy"))
+        {
+            var path = d.Text(f, "path") ?? "";
+            if (P.Find(path) is not { } c || !c.T.Role.IsData || keys.Any(k => k.Name == path)) { Err("Fold", f, $"'{path}' is no data column of the policy rows besides the keys"); continue; }
+            policy.Add(new Col(path, c.T with { Prov = null }));
+        }
+        var observe = new List<TAgg>();
+        foreach (var a in d.Children(op, "observe"))
+        {
+            var target = d.Text(a, "target") ?? Ids.Name(a); var fn = d.Text(a, "fn") ?? "";
+            var v = d.Children(a, "value").FirstOrDefault() is { } ve ? Ex(ve, R) : null;
+            if (fn is not ("count" or "min" or "max")) { Err("Fold", a, $"a fold observes count, min or max of the values of a window, found {fn}"); continue; }
+            if (v is null) { Err("Fold", a, $"{fn} observes a value of the row"); continue; }
+            if (fn != "count" && !v.Type.Ty.IsNumeric && v.Type.Ty.Tag != Tag.Instant) { Err("Fold", a, $"{fn} needs a numeric or instant value, found {v.Type}"); continue; }
+            if (v.Type.Ty.Tag is Tag.Ent or Tag.Rel or Tag.Null) { Err("Fold", a, "a fold observes values, not elements"); continue; }
+            observe.Add(new TAgg(target, fn, v, null, fn == "count" ? new FType(Ty.Int(), true, Role.Data) : new FType(v.Type.Ty, false, Role.Data)));
+        }
+        Schema Of(IEnumerable<Col> cols)
+        {
+            try { return new Schema([.. cols]); }
+            catch (DuplicateColumnException x) { Err("Fold", op, $"{x.Message}: the policy columns, state fields and observed names are distinct"); return new Schema([]); }
+        }
+        var zeta = Of(policy);
+        var starts = new List<(string Name, string Node, TExpr Start)>();
+        foreach (var st in d.Children(op, "state"))
+        {
+            var field = d.Text(st, "target") ?? Ids.Name(st);
+            if (Ex(Child(st, "start"), zeta) is not { } e) continue;
+            if (!e.Type.Role.IsData || e.Type.Ty.Tag is Tag.Ent or Tag.Rel or Tag.Null) { Err("Fold", st, $"the start of '{field}' is a data value of the policy, found {e.Type}"); continue; }
+            starts.Add((field, st, e));
+        }
+        var step = Of([.. policy, .. starts.Select(x => new Col(x.Name, x.Start.Type)), .. observe.Select(o => new Col(o.Target, o.Out))]);
+        var states = new List<TFoldState>();
+        foreach (var (field, st, start) in starts)
+        {
+            if (Ex(Child(st, "next"), step) is not { } next) continue;
+            if (next.Type.Ty != start.Type.Ty || !next.Type.Role.IsData) { Err("Fold", st, $"the next of '{field}' keeps its type {start.Type.Ty}, found {next.Type}"); continue; }
+            states.Add(new TFoldState(field, start, next));
+        }
+        var show = d.Text(op, "show") ?? "";
+        if (starts.FirstOrDefault(x => x.Name == show) is not { Name: not null } shown) { Err("Fold", op, $"show names a state field, found '{show}'"); return null; }
+        if (states.Count != starts.Count || observe.Count != d.Children(op, "observe").Count || policy.Count != d.Children(op, "policy").Count) return null;
+        var inst = new FType(Ty.Instant, true, Role.Data);
+        var shownType = shown.Start.Type with { Prov = null };
+        var cols = new List<Col>([.. kcols, new Col("windowStart", inst), new Col("windowEnd", inst), new Col("from", shownType), new Col("to", shownType),
+            .. observe.Select(o => new Col(o.Target, o.Out)), .. policy, new Col(TFold.Since, inst with { Req = false })]);
+        var marked = R.Find(TSeries.NoDataColumn) is { } nd && nd.T.Ty.Tag == Tag.Boolean && !nd.T.Role.IsData;
+        try { return new TFold(name, op, inputs, new Schema(cols, 0), keys, observe, policy, states, show, step, marked); }
+        catch (DuplicateColumnException x) { Err("Fold", op, $"{x.Message}: a transition has the keys, windowStart, windowEnd, from, to, the observed names, the policy columns and since"); return null; }
     }
 
     List<(string Name, TExpr Value)> Keys(string op, Schema R, bool requireData, out List<Col> cols, out List<Col> carry)
@@ -688,7 +717,7 @@ public sealed class ProjectionChecker(Graph defs)
         if (ttl is null && reads.Any(r => r.Fill is not null)) Err("Series", op, "a fill needs a time to live, as a series with freshness gives: silence must have a declared outcome");
         // at most `within` less one window: a record that ends within the time to live is then a window of the look-back
         if (ttl is { } life && period > 0 && (life < period || life > within - period)) Err("Series", op, "the series freshness limit must be at least one window and at most the look-back less one window");
-        if (ttl is not null && R.Has(TThreshold.NoDataColumn)) Err("Series", op, $"name '{TThreshold.NoDataColumn}' already exists in the row");
+        if (ttl is not null && R.Has(TSeries.NoDataColumn)) Err("Series", op, $"name '{TSeries.NoDataColumn}' already exists in the row");
         if (reads.Count == 0 || target is null) return null;
         var inst = new FType(Ty.Instant, true, Role.Data);
         var cols = new List<Col> { new("windowStart", inst), new("windowEnd", inst) };
@@ -697,7 +726,7 @@ public sealed class ProjectionChecker(Graph defs)
             var p = view.Props[r.PropId];
             cols.Add(new Col(r.OutName, new FType(KindOfProp(p, view), true, Role.Events(p.Temporality!, p.Period))));
         }
-        if (ttl is not null) cols.Add(new Col(TThreshold.NoDataColumn, new FType(Ty.Boolean, true, Role.Events("gauge", period))));
+        if (ttl is not null) cols.Add(new Col(TSeries.NoDataColumn, new FType(Ty.Boolean, true, Role.Events("gauge", period))));
         return new TSeries(name, op, inputs, R.With(cols, period), gsrc.Name, reads, within, period, target, ttl);
     }
 
@@ -725,7 +754,7 @@ public sealed class ProjectionChecker(Graph defs)
                 if (e.Type.Prov is { } f && pi.Combine is { } c && f != c) { Err("Set", s, $"property {pi.Name} combines with {c}, the value was rolled up with {f}"); continue; }
                 if (isRule) Err("Set", s, $"a step with an editable rule (accept or update) cannot set event property {pi.Name}");
             }
-            else if (!e.Type.Role.IsData) { Err("RoleInterference", s, $"graph data property {pi.Name} cannot take a event value (only Threshold crosses to data)"); continue; }
+            else if (!e.Type.Role.IsData) { Err("RoleInterference", s, $"graph data property {pi.Name} cannot take a event value (only a fold crosses to data)"); continue; }
             res.Add(new TSet(pid, pi.Name, e, tele, pi.Period, pi.Combine));
         }
         if (!update)

@@ -53,8 +53,8 @@ public partial class NeutralityTests
         Assert.Equal(match, Assert.Single(Scan(line)).Match);
 
     [Theory]
-    [InlineData("sealed class ThresholdOp : PhysOp")]
-    [InlineData("case \"hysteresis\" => Threshold(v, One()),")]
+    [InlineData("sealed class FoldOp : PhysOp")]
+    [InlineData("\"fold\" => Fold(v, ins),")]
     [InlineData("sealed class RollupOp : AggregatingOp")]
     [InlineData("new Diagnostic(\"Aggregate\", \"error\", focus, message) { Severity = \"error\" }")]
     [InlineData("var spods = epods + 1; // podium, Podcast")]
