@@ -165,12 +165,12 @@ static readonly World Difference = Rows("difference by tags and a group", "Union
         {
             var log = w.Log(seed, 14);
             var view = ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), log).Graphs["view"];
-            // links are timeless (Theorem 1.5): every instances row ever inserted joins its uid and its name
+            // the links present at the end (Ch. 2, Def. 2.5): every instances row of the integrated input joins its uid and its name
             var parent = new Dictionary<string, string>(StringComparer.Ordinal);
             string Find(string x) => parent.TryGetValue(x, out var p) && p != x ? parent[x] = Find(p) : x;
-            foreach (var r in log.OfType<RowInput>().Where(r => r.Source == "instances" && r.Weight > 0))
+            foreach (var f in Integrated(log, "instances"))
             {
-                var (u, n) = (Find("uid:" + ((TextValue)r.Fields["uid"]).S), Find("name:" + ((TextValue)r.Fields["name"]).S));
+                var (u, n) = (Find("uid:" + ((TextValue)f["uid"]).S), Find("name:" + ((TextValue)f["name"]).S));
                 if (u != n) parent[u] = n;
             }
             var present = Integrated(log, "instances").Select(f => Find("uid:" + ((TextValue)f["uid"]).S)).ToHashSet(StringComparer.Ordinal);

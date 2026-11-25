@@ -52,7 +52,8 @@ public class BatchInvarianceTests
             var first = ReplayTests.Replay(a, chunk, o: opts);
             var second = ReplayTests.Replay(b, chunk, o: opts);
             var i0 = first.Engine.Identities; var i1 = second.Engine.Identities;
-            Assert.True(i1.Merges > i0.Merges, $"the order of the bindings did not change (merged {i0.Merges} against {i1.Merges}): the test would say nothing");
+            static string Order(IdentityCatalog c) => string.Join(" ", c.Bindings().Select(x => x.Domain.Id + ":" + string.Join(",", x.Components)));       // the keys in the order they were first seen
+            Assert.True(Order(i0) != Order(i1), "the keys were first seen in the same order: the test would say nothing");
             Assert.Equal(0, i1.Conflicts);
             Assert.Equal(2, second.Engine.Master.State.EntityCount);
             string Dump(Graph g) => string.Join("\n", g.Elements().OrderBy(e => e.Key.ToString(), StringComparer.Ordinal).Select(ElementJson.Encode));
