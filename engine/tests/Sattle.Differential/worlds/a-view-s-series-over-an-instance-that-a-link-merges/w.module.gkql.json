@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "imports": [],
   "entities": [
-    {"name": "Instance", "properties": [{"name": "uid", "type": "Text", "optional": true}, {"name": "name", "type": "Text", "optional": true}, {"name": "g", "type": "Text", "optional": true}, {"name": "load", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}]}
+    {"name": "Instance", "properties": [{"name": "uid", "type": "Text", "optional": true}, {"name": "name", "type": "Text", "optional": true}, {"name": "g", "type": "Text", "optional": true}, {"name": "load", "type": "Integer", "optional": true, "events": {"temporality": "delta", "combine": "sum", "period": "1m"}}]}
   ],
   "relationships": [{"name": "Calls", "from": "Instance", "to": "Instance"}],
   "identities": [

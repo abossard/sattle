@@ -6,7 +6,7 @@ using Sattle.Cli;
 
 namespace Sattle.Tests;
 
-/// <summary>PROTOCOL.md on a host in process, each test on the answers of one family of endpoints: definitions served as a graph (Theorem 9.1), check, a definition commit with its re-activation, the event stream (Theorem 12.1, Proposition 12.2), telemetry and meters (Theorem 7.1), the hysteresis of a threshold (Theorem 7.4), lineage. A test that only reads shares one host of the class.</summary>
+/// <summary>PROTOCOL.md on a host in process, each test on the answers of one family of endpoints: definitions served as a graph (Theorem 9.1), check, a definition commit with its re-activation, the event stream (Theorem 12.1, Proposition 12.2), windows and meters (Theorem 7.1), the hysteresis of a threshold (Theorem 7.4), lineage. A test that only reads shares one host of the class.</summary>
 public class HostTests
 {
     const long Min = 60_000_000_000;
@@ -280,10 +280,10 @@ public class HostTests
     }
 
     [Fact]
-    public void Telemetry_range_read_and_meters_come_from_the_definitions_and_never_from_revisions()
+    public void Window_range_read_and_meters_come_from_the_definitions_and_never_from_revisions()
     {
         var h = Driven.Value;
-        var tr = h.Telemetry("serviceTree", T0, T0 + 3 * Min, "dropRatio", null, batches: false);
+        var tr = h.Windows("serviceTree", T0, T0 + 3 * Min, "dropRatio", null, batches: false);
         var series = tr["series"]!.AsArray();
         Assert.Single(series);
         var pts = series[0]!["points"]!.AsArray();
@@ -295,7 +295,7 @@ public class HostTests
         Assert.Equal(0.05, drop["warn"]!.GetValue<double>());
         Assert.Equal("gauge", drop["temporality"]!.GetValue<string>());
         Assert.Equal("degraded", meters["thresholds"]![0]!["high"]!.GetValue<string>());
-        var batches = h.Telemetry("master", null, null, null, null, batches: true).AsArray();
+        var batches = h.Windows("master", null, null, null, null, batches: true).AsArray();
         Assert.NotEmpty(batches);
         Assert.All(batches, b => Assert.NotNull(b!["windowStart"]));
     }
@@ -400,9 +400,9 @@ public class HostTests
         Assert.True(!sub.Closed, $"closed after {received} messages, all of them read");
     }
 
-    /// <summary>Review: Output.cs:295-306 with Host.cs:490. A subscriber learns that a telemetry window went, not only that one has a new value.</summary>
+    /// <summary>Review: Output.cs:295-306 with Host.cs:490. A subscriber learns that a window went, not only that one has a new value.</summary>
     [Fact]
-    public void A_subscriber_is_told_when_a_telemetry_window_is_retracted()
+    public void A_subscriber_is_told_when_a_window_is_retracted()
     {
         using var h = NewHost();
         new SyntheticWorld(h, 4, 2).LoadStructure();
@@ -410,13 +410,13 @@ public class HostTests
         Drain(sub);
         h.Ingest("flows", new SyntheticWorld(h, 4, 2).Flows(20, T0, Min / 2), 10);
         h.Advance(T0 + 2 * Min, 11);
-        var published = Drain(sub).Count(m => m["type"]!.GetValue<string>() == "telemetry");
+        var published = Drain(sub).Count(m => m["type"]!.GetValue<string>() == "windows");
         Assert.True(published > 0, "the windows were not published in the first place");
         var retraction = new SyntheticWorld(h, 4, 2).Flows(20, T0, Min / 2);
         retraction.W = [.. Enumerable.Range(0, retraction.N).Select(i => -retraction.Weight(i))];
         h.Ingest("flows", retraction, 12);                                                    // inside the late horizon: every window of these flows is retracted
         var after = Drain(sub);
-        Assert.True(after.Any(m => m["type"]!.GetValue<string>() == "telemetry"), $"{published} telemetry messages announced the windows, none their retraction; received: {string.Join(", ", after.Select(m => m["type"]!.GetValue<string>()))}");
+        Assert.True(after.Any(m => m["type"]!.GetValue<string>() == "windows"), $"{published} window messages announced the windows, none their retraction; received: {string.Join(", ", after.Select(m => m["type"]!.GetValue<string>()))}");
     }
 
     /// <summary>The windows a batch of the feed or of the range read names, by window, property and element; a batch of the feed also removes.</summary>
@@ -428,9 +428,9 @@ public class HostTests
         foreach (var gone in batch["removed"]?.AsArray() ?? []) windows.Remove(key + gone);
     }
 
-    /// <summary>PROTOCOL 3.33, Law 7.5 item 3, on the estate of the tests, where identities merge: a subscriber that applies every telemetry batch of the feed holds at the end exactly the windows the range read answers. The windows a merge moves are in the feed of the step that merged; before, 32 window changes of this estate reached no subscriber (code review 2, defect 22).</summary>
+    /// <summary>PROTOCOL 3.33, Law 7.5 item 3, on the estate of the tests, where identities merge: a subscriber that applies every window batch of the feed holds at the end exactly the windows the range read answers. The windows a merge moves are in the feed of the step that merged; before, 32 window changes of this estate reached no subscriber (code review 2, defect 22).</summary>
     [Fact]
-    public async Task A_subscriber_that_applies_every_telemetry_batch_holds_the_windows_the_range_read_answers()
+    public async Task A_subscriber_that_applies_every_window_batch_holds_the_windows_the_range_read_answers()
     {
         using var h = new SpaceHost(EstateTests.Files(demo: false), new HostOptions { Projections = Repo.Projections, LateHorizonWindows = 3 });
         var sub = h.Subscribe(["master"], false, null);
@@ -438,14 +438,14 @@ public class HostTests
         var reading = Task.Run(async () =>
         {
             await foreach (var text in sub.Messages.Reader.ReadAllAsync())
-                if (JsonNode.Parse(text)! is { } m && m["type"]!.GetValue<string>() == "telemetry") Apply(replica, m["batch"]!);
+                if (JsonNode.Parse(text)! is { } m && m["type"]!.GetValue<string>() == "windows") Apply(replica, m["batch"]!);
         });
         new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 50, AdvanceEveryNs = Min, LatenessNs = Min}).Run(EstateTests.EstateDir);
         h.Unsubscribe(sub);
         await reading;
         Assert.True(long.Parse(h.Liveness()["counters"]!["identity"]!["merged"]!.GetValue<string>()) > 0, "no identity merged on the estate");
         var read = new SortedDictionary<string, double>(StringComparer.Ordinal);
-        foreach (var batch in h.Telemetry("master", null, null, null, null, batches: true).AsArray()) Apply(read, batch!);
+        foreach (var batch in h.Windows("master", null, null, null, null, batches: true).AsArray()) Apply(read, batch!);
         Assert.NotEmpty(read);
         Assert.Equal(read, replica);
     }

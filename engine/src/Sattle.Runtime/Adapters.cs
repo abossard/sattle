@@ -24,7 +24,7 @@ public interface IRowSink
 {
     RowWriter Begin(string rowType);
     void Rejected(string source, string reason);
-    /// <summary>The source lost events at timeNs (count 0 when unknown). reason names the kind of loss; the telemetry windows containing the time become Partial(reason).</summary>
+    /// <summary>The source lost events at timeNs (count 0 when unknown). reason names the kind of loss; the windows containing the time become Partial(reason).</summary>
     void SourceLoss(long timeNs, long count, string reason = "sourceLoss");
 }
 

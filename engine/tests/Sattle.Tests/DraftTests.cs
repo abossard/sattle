@@ -129,12 +129,12 @@ public class DraftTests
         Assert.Equal("ok", Status());
         Assert.True(h.SetDraftText(d, Deps(h), NeverRecovers(h), 0)["ok"]!.GetValue<bool>());
         var digest = h.StateDigest(); var seq = h.Seq; var heads = h.SpaceInfo()["graphs"]!.ToJsonString();
-        var p = h.Preview(d, new JsonObject { ["graphs"] = new JsonArray("serviceTree"), ["include"] = new JsonArray("counts", "diff", "telemetry") });
+        var p = h.Preview(d, new JsonObject { ["graphs"] = new JsonArray("serviceTree"), ["include"] = new JsonArray("counts", "diff", "windows") });
         Assert.True(p["scope"]!["complete"]!.GetValue<bool>());
         var g = p["graphs"]![0]!;
         var changes = g["diff"]!["edits"]!.AsArray();
         Assert.Contains(changes, e => e!["after"]!["properties"]!.AsArray().Any(x => x!["value"]!["value"]!.GetValue<string>() == "degraded"));
-        Assert.NotEmpty(g["telemetry"]!.AsArray());
+        Assert.NotEmpty(g["windows"]!.AsArray());
         Assert.Equal(digest, h.StateDigest());                                  // live state, stores and event log untouched
         Assert.Equal(seq, h.Seq);
         Assert.Equal(heads, h.SpaceInfo()["graphs"]!.ToJsonString());
@@ -177,7 +177,7 @@ public class DraftTests
         Assert.Contains(ops, o => Col(o, "s") is { } s && s["kind"]!.GetValue<string>() == "Entity" && s["type"]!.GetValue<string>().EndsWith("Service", StringComparison.Ordinal) && s["role"]!.GetValue<string>() == "data");
         var node = ops.First(o => o!["columns"]!.AsArray().Select(c => c!["name"]!.GetValue<string>()).SequenceEqual(["service", "instances"]));
         Assert.Equal("Integer", Col(node, "instances")!["kind"]!.GetValue<string>());
-        Assert.Contains(ops, o => Col(o, "flows") is { } flows && flows["role"]!.GetValue<string>() == "telemetry" && flows["period"] is not null);
+        Assert.Contains(ops, o => Col(o, "flows") is { } flows && flows["role"]!.GetValue<string>() == "events" && flows["period"] is not null);
         Assert.All(ops, o => Assert.StartsWith("d:acme.svc/projection:serviceDeps/op:", o!["op"]!.GetValue<string>()));
     }
 
@@ -217,14 +217,14 @@ public class DraftTests
         var p = h.Preview(d, new JsonObject { ["include"] = new JsonArray("counts") });
         Assert.True(p["scope"]!["complete"]!.GetValue<bool>());
         var previewed = p["graphs"]!.AsArray().Where(g => g!["removed"] is null).ToDictionary(g => g!["id"]!.GetValue<string>(), g => g!["digest"]!.GetValue<string>());
-        var windows = p["graphs"]!.AsArray().Where(g => g!["removed"] is null).ToDictionary(g => g!["id"]!.GetValue<string>(), g => g!["counts"]!["telemetryWindows"]!.GetValue<string>());
+        var windows = p["graphs"]!.AsArray().Where(g => g!["removed"] is null).ToDictionary(g => g!["id"]!.GetValue<string>(), g => g!["counts"]!["windows"]!.GetValue<string>());
         Dictionary<string, string> Served() => h.Liveness()["graphs"]!.AsArray().Where(g => g!["name"]!.GetValue<string>() != "catalog").ToDictionary(g => g!["name"]!.GetValue<string>(), g => g!["digest"]!.GetValue<string>());
         var before = Served();
         h.CommitDraft(d, h.CatalogRevision);
         var after = Served();
         Assert.Equal(after.Keys.Order(), previewed.Keys.Order());
         Assert.All(after, kv => Assert.Equal(kv.Value, previewed[kv.Key]));
-        Assert.All(after.Keys, g => Assert.Equal(windows[g], h.Telemetry(g, null, null, null, null, batches: true).AsArray().Sum(b => b!["ids"]!.AsArray().Count).ToString()));          // and as many telemetry windows
+        Assert.All(after.Keys, g => Assert.Equal(windows[g], h.Windows(g, null, null, null, null, batches: true).AsArray().Sum(b => b!["ids"]!.AsArray().Count).ToString()));          // and as many windows
         Assert.Equal(changes, after.Any(kv => kv.Value != before[kv.Key]));
     }
 

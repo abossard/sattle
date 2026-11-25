@@ -94,7 +94,7 @@ public static class EngineRun
         ImmutableSortedDictionary<WindowId, decimal> Windows(GraphKey key)
         {
             var windows = ImmutableSortedDictionary.CreateBuilder<WindowId, decimal>();
-            engine.Telemetry.ScanGraph(key, (e, p, ws, v) => windows.Add(new WindowId(engine.Interner.Get(e), engine.Interner.Get(p), ws), v));
+            engine.Windows.ScanGraph(key, (e, p, ws, v) => windows.Add(new WindowId(engine.Interner.Get(e), engine.Interner.Get(p), ws), v));
             return windows.ToImmutable();
         }
         var graphs = engine.Graphs.ToImmutableSortedDictionary(g => g.Name, g => new GraphFacts(

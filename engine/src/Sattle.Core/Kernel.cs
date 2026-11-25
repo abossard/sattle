@@ -140,7 +140,7 @@ public static class KernelTable
     public static readonly (string Type, string Prop, string[] Values)[] Enums =
     [
         ("Release", "status", ["draft", "active", "deprecated", "withdrawn"]),
-        ("PropertyType", "role", ["graphData", "telemetry"]),
+        ("PropertyType", "role", ["graphData", "events"]),
         ("PropertyType", "temporality", ["gauge", "delta", "cumulative"]),
         ("PropertyType", "combine", ["sum", "min", "max", "mean", "last"]),
         ("Constraint", "kind", ["key", "enum", "range", "pattern", "cardinality", "acyclic"]),
@@ -347,5 +347,5 @@ public static class Kernel
 
     /// <summary>Digest of the kernel graph. The compiled constant is checked by a test (section 2.8, step 2).</summary>
     public static string ComputeDigest() => Graph.Digest();
-    public const string CompiledDigest = "sha256:0a6bae1e59b3a94b86b9f96c67c25ccb143dca4f5d270af3c026bcbefbff7dc6";
+    public const string CompiledDigest = "sha256:e9cf3ac01ab13c2cb233f30c8057553f1a784820f198ee89b679e7acdb97a9bc";
 }

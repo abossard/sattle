@@ -21,18 +21,18 @@ public sealed class Epoch
     public long? Loss;
 }
 
-/// <summary>A committed change of an input graph, as seen by a projection: the patch, the graph after it, and the telemetry windows that changed in the same step.</summary>
-public sealed class GraphDelta(Patch? patch, Graph state, IReadOnlyList<WindowChange> telemetry)
+/// <summary>A committed change of an input graph, as seen by a projection: the patch, the graph after it, and the windows that changed in the same step.</summary>
+public sealed class GraphDelta(Patch? patch, Graph state, IReadOnlyList<WindowChange> windows)
 {
     public Patch? Patch { get; } = patch;
     public Graph State { get; } = state;
-    public IReadOnlyList<WindowChange> Telemetry { get; } = telemetry;
+    public IReadOnlyList<WindowChange> Windows { get; } = windows;
 
     MatchPatch? matchInput;
     internal MatchPatch MatchInput => matchInput ??= new(Patch!);
 
-    /// <summary>The places in `Telemetry` of the changes of one property, in their order. The index is built once per delta, on the first call, so each reader of the graph visits only the changes of the properties it reads.</summary>
-    public ArraySegment<int> ChangesOf(int prop) => (byProp ??= ByProp(Telemetry)).TryGetValue(prop, out var s) ? s : ArraySegment<int>.Empty;
+    /// <summary>The places in `Windows` of the changes of one property, in their order. The index is built once per delta, on the first call, so each reader of the graph visits only the changes of the properties it reads.</summary>
+    public ArraySegment<int> ChangesOf(int prop) => (byProp ??= ByProp(Windows)).TryGetValue(prop, out var s) ? s : ArraySegment<int>.Empty;
     volatile Dictionary<int, ArraySegment<int>>? byProp;          // readers on two threads may both build it: the same index, one kept
 
     static Dictionary<int, ArraySegment<int>> ByProp(IReadOnlyList<WindowChange> changes)
@@ -64,9 +64,9 @@ public sealed class OpContext(Interner it, RuntimeFaults faults, IdentityCatalog
     public GraphKey Graph { get; } = graph;
     public OutputBuilder Out { get; } = output;
     public long LateDropped, SkippedEmits;
-    /// <summary>The late horizon: how many widths after its end a closed window stays revisable. Null is no horizon: the window stays revisable while its telemetry is retained (a recording is finite, so a replay sets none).</summary>
+    /// <summary>The late horizon: how many widths after its end a closed window stays revisable. Null is no horizon: the window stays revisable while it is retained (a recording is finite, so a replay sets none).</summary>
     public long? LateHorizonFactor = 3;
-    /// <summary>The retention of telemetry (Def. 7.13). A window is revisable for the smaller of this and the late horizon: a row for a window that is no longer kept must not write it again.</summary>
+    /// <summary>The retention of windows (Def. 7.13). A window is revisable for the smaller of this and the late horizon: a row for a window that is no longer kept must not write it again.</summary>
     public long RetentionNs = long.MaxValue;
     /// <summary>The late horizon of a window of this width as a time; the greatest time when there is none or the product is beyond it.</summary>
     public long HorizonOf(long width) => LateHorizonFactor is { } n ? Clamp((Int128)width * n) : long.MaxValue;
@@ -645,13 +645,13 @@ abstract class AggregatingOp : PhysOp
         return c > 0;
     }
 
-    /// <summary>Companion columns, when the operator feeds only sinks: per `mean` its sum and count (`{target}#sum`, `{target}#count`), per `last` with a numeric order its order (`{target}#order`). A sink that writes the aggregate to a telemetry property stores the pair, so two windows of one class combine as one (Law 7.5 item 3 (i)).</summary>
+    /// <summary>Companion columns, when the operator feeds only sinks: per `mean` its sum and count (`{target}#sum`, `{target}#count`), per `last` with a numeric order its order (`{target}#order`). A sink that writes the aggregate to a event property stores the pair, so two windows of one class combine as one (Law 7.5 item 3 (i)).</summary>
     readonly (int Agg, int ColA, int ColB)[] companions = [];
 
     /// <summary>The names of the companion columns an aggregate has, if any.</summary>
     public static string[] CompanionNames(TAgg a) => a.Fn switch { "mean" => [a.Target + "#sum", a.Target + "#count"], "last" when a.Order?.Type.Ty.Tag is not (Tag.Text or Tag.Ent) => [a.Target + "#order"], _ => [] };
 
-    protected AggregatingOp(TOp t, IReadOnlyList<(string Name, TExpr Value)> keys, IReadOnlyList<TAgg> aggSpecs, Layout inLayout, OpContext cx, string[] outKeyNames, bool telemetryInput, bool withCompanions = false) : base(t)
+    protected AggregatingOp(TOp t, IReadOnlyList<(string Name, TExpr Value)> keys, IReadOnlyList<TAgg> aggSpecs, Layout inLayout, OpContext cx, string[] outKeyNames, bool windowInput, bool withCompanions = false) : base(t)
     {
         if (withCompanions)
         {
@@ -692,7 +692,7 @@ abstract class AggregatingOp : PhysOp
                 default: throw new NotSupportedException($"aggregate {a.Fn}");
             }
         }
-        _ = telemetryInput; it = cx.It; faults = cx.Faults;
+        _ = windowInput; it = cx.It; faults = cx.Faults;
         aggs = [.. list]; nL = l; nD = d; rowSets = [.. sets.Select(x => x.Members.ToArray())]; rowSetWidths = [.. sets.Select(x => x.Widths.ToArray())];
         keyWidths = [.. keys.Select(k => WidthOf(k.Value) is 8 ? 8 : 4)];      // a decimal key is its number's code
         outKeyCol = [.. outKeyNames.Select(n => OutLayout.Index(n))];
@@ -980,7 +980,7 @@ sealed class WindowedGroupOp : AggregatingOp
     }
 }
 
-/// <summary>Rollup: sums of telemetry rows per key and window. Inputs are already closed windows, so every change is a retraction plus an insertion.</summary>
+/// <summary>Rollup: sums of event rows per key and window. Inputs are already closed windows, so every change is a retraction plus an insertion.</summary>
 sealed class RollupOp : AggregatingOp
 {
     readonly KeyTable table; readonly int inWs, outWs, outWe; readonly long period;
@@ -1089,7 +1089,7 @@ sealed class RollupOp : AggregatingOp
 
 // ---- hysteresis ------------------------------------------------------------------------------------------
 
-/// <summary>Threshold: the only operator whose data output depends on telemetry. Per key, a state machine over the ordered closed windows; the output row changes only on a state change.</summary>
+/// <summary>Threshold: the only operator whose data output depends on windows. Per key, a state machine over the ordered closed windows; the output row changes only on a state change.</summary>
 sealed class ThresholdOp : PhysOp
 {
     /// <summary>Per key with a window in the look-back: those windows, and one carried state: the state machine after the newest window that left the look-back (`State`, `Run`, `Last` its start), so a state never changes because a window grew old (Def. 7.10, D33).</summary>

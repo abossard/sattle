@@ -13,8 +13,8 @@ static partial class Bench
 
     public static void GraphTable(Engine e, TextWriter w)
     {
-        w.WriteLine("graph | entities | relationships | head revision | telemetry windows");
-        foreach (var g in e.Graphs) w.WriteLine($"{g.Name} | {g.State.EntityCount:N0} | {g.State.RelCount:N0} | {g.Head:N0} | {e.Telemetry.ScanGraph(g.Key, null):N0}");
+        w.WriteLine("graph | entities | relationships | head revision | windows");
+        foreach (var g in e.Graphs) w.WriteLine($"{g.Name} | {g.State.EntityCount:N0} | {g.State.RelCount:N0} | {g.Head:N0} | {e.Windows.ScanGraph(g.Key, null):N0}");
     }
     public static void GcAndCensus(Engine e, TextWriter w, params (string Label, object? Root)[] extra)
     {
@@ -46,9 +46,9 @@ static partial class Bench
             files = [.. files.Select(f => f with { Text = f.Text.Replace("24h", lookBack) })];
         var res = cat.Load(files, updatePins: lookBack is not null);
         if (res.HasErrors) throw new InvalidOperationException(string.Join("\n", res.Diagnostics));
-        // the shipped ratio: telemetry is retained for 48 h and read 24 h back, so a shortened look-back comes with twice its length of retention
-        var retention = lookBack is null ? new EngineOptions().TelemetryRetentionNs : 2 * Norm.DurationNs(lookBack);
-        return new Engine(cat, cat.Spaces.Keys.First(), new EngineOptions { StoreFactory = _ => store ?? new HeadOnlyGraphStore(), TelemetryRetentionNs = retention });
+        // the shipped ratio: windows are retained for 48 h and read 24 h back, so a shortened look-back comes with twice its length of retention
+        var retention = lookBack is null ? new EngineOptions().WindowRetentionNs : 2 * Norm.DurationNs(lookBack);
+        return new Engine(cat, cat.Spaces.Keys.First(), new EngineOptions { StoreFactory = _ => store ?? new HeadOnlyGraphStore(), WindowRetentionNs = retention });
     }
 
     static string FindDefs()
@@ -71,9 +71,9 @@ static partial class Bench
         var perWindow = int.TryParse(o.Get("per-window"), out var pw) ? pw : 1_000_000;
         var windows = int.TryParse(o.Get("windows"), out var wn) ? wn : 4;
         var lookBack = o.Get("look-back");
-        // the window from which nothing grows any more: telemetry is retained for twice the look-back, and nothing a window adds stays longer than that
+        // the window from which nothing grows any more: windows are retained for twice the look-back, and nothing a window adds stays longer than that
         var full = lookBack is null ? int.MaxValue : (int)(2 * Norm.DurationNs(lookBack) / Min);
-        Console.WriteLine($"# estate: {pods:N0} pods, {services:N0} services, {resources:N0} Azure resources, {pairs:N0} active pod pairs, {perWindow:N0} flow rows per 60 s window, {windows} windows{(lookBack is null ? "" : $", look-back and evidence retention {lookBack}, telemetry retention twice that (steady after {full} windows)")}");
+        Console.WriteLine($"# estate: {pods:N0} pods, {services:N0} services, {resources:N0} Azure resources, {pairs:N0} active pod pairs, {perWindow:N0} flow rows per 60 s window, {windows} windows{(lookBack is null ? "" : $", look-back and evidence retention {lookBack}, window retention twice that (steady after {full} windows)")}");
         var proc = Process.GetCurrentProcess(); var wall = Stopwatch.StartNew();
         using var e = NewEngine(lookBack: lookBack);
         var world = new SyntheticWorld(e, pods, services);
@@ -163,14 +163,14 @@ static partial class Bench
             if (tree) Console.WriteLine($"  tree: treeStructure {e.Graph("treeStructure").State.EntityCount:N0} elements, {e.Graph("treeStructure").State.RelCount:N0} Contains; treeSignals {e.Graph("treeSignals").State.EntityCount:N0} signals; healthTree {e.Graph("healthTree").State.EntityCount:N0} entities, {e.Graph("healthTree").State.RelCount:N0} relationships; heap {GC.GetTotalMemory(false) / 1e6:F0} MB, working set {WorkingSet(proc) / 1e6:F0} MB");
         }
         GC.Collect(); heap = GC.GetTotalMemory(true);
-        var tel = e.Telemetry.ScanGraph(e.Master.Key, null) + e.Telemetry.ScanGraph(e.Graph("serviceTree").Key, null);
+        var tel = e.Windows.ScanGraph(e.Master.Key, null) + e.Windows.ScanGraph(e.Graph("serviceTree").Key, null);
         Console.WriteLine($"flows: {rows:N0} rows, generation included: {rows / ingestS / 1e6:F2} M rows/s; window close p50 {Pct(close, .5):F0} ms, max {close.Max():F0} ms");
         Console.WriteLine($"dangling relationships of the master at the end: {e.Master.State.Rels.Count(r => !e.Master.State.HasEntity(r.Source) || !e.Master.State.HasEntity(r.Target)):N0} of {e.Master.State.RelCount:N0}");
         var liveAtEnd = Census.LiveBytes();
         Console.WriteLine($"live bytes at the end (promoted): {liveAtEnd / 1e6:F0} MB");
         if (windows > full)
             Console.WriteLine($"steady state (windows {full} to {windows - 1}, look-back and retention full): window close p50 {Pct([.. close.Skip(full)], .5):F0} ms, max {close.Skip(full).Max():F0} ms; live bytes {liveAtFull / 1e6:F0} MB when the retention filled, {liveAtEnd / 1e6:F0} MB at the end ({(liveAtEnd - liveAtFull) * 100.0 / liveAtFull:+0.0;-0.0} %)");
-        Console.WriteLine($"end state: managed heap {heap / 1e6:F0} MB, working set {WorkingSet(proc) / 1e6:F0} MB, telemetry windows {tel:N0}");
+        Console.WriteLine($"end state: managed heap {heap / 1e6:F0} MB, working set {WorkingSet(proc) / 1e6:F0} MB, windows {tel:N0}");
         if (e.TrackAllocations) { Console.WriteLine("flow windows (ingest and closes):"); KindTable(e, Console.Out); }
         GcStats(proc, wall, rows + resources * (tree ? windows : 0), Console.Out);
         if (o.Flags.Contains("census")) GraphTable(e, Console.Out);
@@ -250,14 +250,14 @@ static partial class Bench
         }
         var seconds = ingestTicks / (double)Stopwatch.Frequency;
         Console.WriteLine($"ingest: {ingested:N0} rows in {seconds:F2} s of Ingest calls = {ingested / seconds / 1e6:F2} M rows/s; allocated {alloc / (double)ingested:F3} bytes/row; gen0 collections {GC.CollectionCount(0) - gcBefore}");
-        var storedWindows = e.Telemetry.ScanGraph(e.Master.Key, null);
-        Console.WriteLine($"after the run: master revision {e.Master.Head}, {e.Master.State.RelCount} Calls/Backs relationships, {storedWindows:N0} master telemetry windows, serviceTree revision {e.Graph("serviceTree").Head}, {e.Graph("serviceTree").State.RelCount} relationships");
-        Console.WriteLine($"window close (Advance: group emit, identity lookups, telemetry append, Series, Rollup, Threshold, derived commit): n={closeMs.Count}, p50 {Pct(closeMs, .5):F2} ms, p99 {Pct(closeMs, .99):F2} ms, max {closeMs.Max():F2} ms; allocated per close p50 {Pct(closeAlloc.Select(x => (double)x).ToList(), .5) / 1e6:F2} MB");
+        var storedWindows = e.Windows.ScanGraph(e.Master.Key, null);
+        Console.WriteLine($"after the run: master revision {e.Master.Head}, {e.Master.State.RelCount} Calls/Backs relationships, {storedWindows:N0} master windows, serviceTree revision {e.Graph("serviceTree").Head}, {e.Graph("serviceTree").State.RelCount} relationships");
+        Console.WriteLine($"window close (Advance: group emit, identity lookups, window append, Series, Rollup, Threshold, derived commit): n={closeMs.Count}, p50 {Pct(closeMs, .5):F2} ms, p99 {Pct(closeMs, .99):F2} ms, max {closeMs.Max():F2} ms; allocated per close p50 {Pct(closeAlloc.Select(x => (double)x).ToList(), .5) / 1e6:F2} MB");
 
         if (e.TrackAllocations)
             foreach (var (op, bytes) in ingestOps.OrderByDescending(x => x.Value).Take(6)) Console.WriteLine($"  ingest alloc {op}: {bytes / 1e6:F2} MB ({bytes / (double)ingested:F3} bytes/row)");
         HandFused(pool, layout, pods);
-        TelemetryAppend();
+        WindowAppend();
         Commit(e);
         Reads(e, pods);
         Memory();
@@ -287,9 +287,9 @@ static partial class Bench
     }
 
     /// <summary>H2: Append into the in-memory ring, 1,000 elements x 2 properties x windows.</summary>
-    static void TelemetryAppend()
+    static void WindowAppend()
     {
-        var store = new InMemoryTelemetryStore(); var key = new GraphKey("t", "g");
+        var store = new InMemoryWindowStore(); var key = new GraphKey("t", "g");
         const int per = 20_000; var batch = new Sample[per]; long total = 0;
         var sw = Stopwatch.StartNew();
         for (var w = 0; w < 100; w++)
@@ -297,7 +297,7 @@ static partial class Bench
             for (var i = 0; i < per; i++) batch[i] = new Sample(i / 2 % 10_000, i % 2, w * Min, Min, i, w);
             store.Append(key, batch); total += per;
         }
-        Console.WriteLine($"telemetry append (ring): {total / sw.Elapsed.TotalSeconds / 1e6:F2} M samples/s over {total:N0} samples, 10,000 series x 2 properties x 100 windows");
+        Console.WriteLine($"window append (ring): {total / sw.Elapsed.TotalSeconds / 1e6:F2} M samples/s over {total:N0} samples, 10,000 series x 2 properties x 100 windows");
     }
 
     /// <summary>Commit latency through the port, in memory and on SQLite, with 50 edits per patch.</summary>
@@ -336,7 +336,7 @@ static partial class Bench
         _ = pods;
     }
 
-    /// <summary>H9: managed heap for 750,000 entities and 2.5 M relationships in the hot graph (no telemetry).</summary>
+    /// <summary>H9: managed heap for 750,000 entities and 2.5 M relationships in the hot graph (no windows).</summary>
     static void Memory()
     {
         GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();

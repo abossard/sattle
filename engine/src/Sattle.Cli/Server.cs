@@ -158,8 +158,8 @@ public static class Server
             return Cached(c, host, $"doc-{g}-{doc.Revision}-{format ?? "markdown"}", Rev(revision) is not null ? Cache.Revision : Cache.Head, () => format == "json" ? JsonP(doc.Json) : TextP(doc.Markdown, "text/markdown"));
         }));
         app.MapGet("/graphs/{g}/meters", (HttpContext c, string g) => Guard(() => Cached(c, host, $"meters-{g}", Cache.Head, () => JsonP(host.Meters(g)))));
-        app.MapGet("/graphs/{g}/telemetry", (HttpContext c, string g, string? from, string? to, string? property, string? element, string? format) =>
-            Guard(() => Cached(c, host, $"tele-{g}-{Hash(c.Request.QueryString.Value)}", Cache.Head, () => format == "batches" ? NdjsonP(host.Telemetry(g, Instant(from), Instant(to), property, element, true).AsArray().Select(x => x!)) : JsonP(host.Telemetry(g, Instant(from), Instant(to), property, element, false)))));
+        app.MapGet("/graphs/{g}/windows", (HttpContext c, string g, string? from, string? to, string? property, string? element, string? format) =>
+            Guard(() => Cached(c, host, $"tele-{g}-{Hash(c.Request.QueryString.Value)}", Cache.Head, () => format == "batches" ? NdjsonP(host.Windows(g, Instant(from), Instant(to), property, element, true).AsArray().Select(x => x!)) : JsonP(host.Windows(g, Instant(from), Instant(to), property, element, false)))));
         app.MapGet("/graphs/{g}/lineage", (string g, string element, int? limit, string? after) => Guard(() => Json(host.Lineage(g, element, limit ?? LineageReader.DefaultLimit, after))));
         app.MapGet("/graphs/{g}/lineage/reverse", (string g, string element, int? limit, string? after) => Guard(() => Json(host.LineageReverse(g, element, limit ?? LineageReader.DefaultLimit, after))));
         app.MapGet("/graphs/{g}/editability", (string g) => Guard(() => Json(host.Editability(g))));

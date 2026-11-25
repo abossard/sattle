@@ -5,7 +5,7 @@
     {"module": "w.base", "alias": "base", "version": "1.0.0", "digest": null}
   ],
   "entities": [
-    {"name": "Signal", "properties": [{"name": "k", "type": "Text"}, {"name": "state", "type": "Text", "optional": true}, {"name": "v", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}]}
+    {"name": "Signal", "properties": [{"name": "k", "type": "Text"}, {"name": "state", "type": "Text", "optional": true}, {"name": "v", "type": "Integer", "optional": true, "events": {"temporality": "delta", "combine": "sum", "period": "1m"}}]}
   ],
   "identities": [
     {"name": "signal", "type": "Signal", "components": [{"name": "k", "type": "Text"}]}

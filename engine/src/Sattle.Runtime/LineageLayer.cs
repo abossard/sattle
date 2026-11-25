@@ -11,7 +11,7 @@ sealed record ElementLineage(string? Sink, string? Rule, IReadOnlyList<LineageSo
 /// <summary>Where the elements of a projection come from. The emits tell it per row (`Support`), a `Group` tells it the rows of each of its groups (`Member`), a merge moves what is known about one element to another (`Move`), and `Of` answers for one element. It keeps only the rows that hold something up, as Z-sets of handles (#40): per emit a table of (element, group key, the handle of each element column) arranged by element, per `Group` a table of (group key, member handles) arranged by key. A handle is an interner code in 4 bytes, -1 when its column is absent; a group key part takes 8. A row at weight zero is gone, so nothing outlives what it supports. The sink and rule of an element are read from the element layer when asked. Nothing outside reads its state.</summary>
 sealed class LineageLayer(ElementLayer elements)
 {
-    /// <summary>The support rows of one emit: its origin, its table and the table's arrangement by element (column 0). The last column is the own ids of the row's keys when they differ from what the element implies (packed as a telemetry row's own), else -1: a split moves the rows of the part that leaves by it.</summary>
+    /// <summary>The support rows of one emit: its origin, its table and the table's arrangement by element (column 0). The last column is the own ids of the row's keys when they differ from what the element implies (packed as a event row's own), else -1: a split moves the rows of the part that leaves by it.</summary>
     sealed class SinkRows(LineageOrigin origin)
     {
         public readonly LineageOrigin Origin = origin;

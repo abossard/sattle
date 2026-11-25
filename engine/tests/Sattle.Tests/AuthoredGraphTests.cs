@@ -140,7 +140,7 @@ public class AuthoredGraphTests
         Assert.True(h.Lineage("authored", item)["complete"]!.GetValue<bool>());
     }
 
-    /// <summary>What a graph other than the master that ingests may not do: share a source, link identities, write telemetry.</summary>
+    /// <summary>What a graph other than the master that ingests may not do: share a source, link identities, write windows.</summary>
     [Theory]
     [InlineData("a source bound twice", "{}", "{}", "bound by more than one graph")]
     [InlineData("a link in authored", """
@@ -151,8 +151,8 @@ public class AuthoredGraphTests
          "wires": [{"from": "items", "to": "linked"}],
          "rules": [{"name": "linked", "description": "names"}]}
         """, "links no identities")]
-    [InlineData("telemetry in authored", """
-        {"entities": [{"name": "Level", "properties": [{"name": "k", "type": "Text"}, {"name": "level", "type": "Decimal", "optional": true, "telemetry": {"temporality": "gauge", "combine": "max", "period": "60s"}}]}],
+    [InlineData("windows in authored", """
+        {"entities": [{"name": "Level", "properties": [{"name": "k", "type": "Text"}, {"name": "level", "type": "Decimal", "optional": true, "events": {"temporality": "gauge", "combine": "max", "period": "60s"}}]}],
          "identities": [{"name": "level", "type": "Level", "components": [{"name": "k", "type": "Text"}]}],
          "rows": [{"name": "LevelRow", "fields": [{"name": "k", "type": "Text"}, {"name": "time", "type": "Instant"}, {"name": "v", "type": "Decimal"}]}]}
         """, """
@@ -163,14 +163,14 @@ public class AuthoredGraphTests
                    {"id": "levels", "verb": "nodes", "rule": "levels", "target": {"nodes": [{"var": "l", "label": "Level", "id": {"identity": "level", "args": [{"ref": "k"}]}, "props": {"k": {"ref": "k"}, "level": {"ref": "level"}}}]}}],
          "wires": [{"from": "levelRows", "to": "minutes"}, {"from": "minutes", "to": "highest"}, {"from": "highest", "to": "levels"}],
          "rules": [{"name": "levels", "description": "levels"}]}
-        """, "writes no telemetry")]
+        """, "writes no windows")]
     public void A_graph_other_than_the_master_that_ingests_is_refused_what_belongs_to_the_master(string what, string types, string written, string message)
     {
         var (graphs, sources) = what switch
         {
             "a source bound twice" => (Graphs + """, {"name": "again", "projection": "base.authored", "inputs": {"items": "items"}}""", ""),
             // these rows come from no adapter: the space is only loaded, never run
-            "telemetry in authored" => (Graphs.Replace("""{"items": "items"}""", """{"items": "items", "levels": "levels"}"""), """, {"name": "levels", "adapter": "test", "rows": "base.LevelRow"}"""),
+            "windows in authored" => (Graphs.Replace("""{"items": "items"}""", """{"items": "items", "levels": "levels"}"""), """, {"name": "levels", "adapter": "test", "rows": "base.LevelRow"}"""),
             _ => (Graphs, ""),
         };
         var e = Assert.Throws<InvalidOperationException>(() => SpaceHost.LoadDefinitions(Files(types, written: written, graphs: graphs, sources: sources), Repo.Projections));

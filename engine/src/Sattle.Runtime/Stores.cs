@@ -521,9 +521,9 @@ public sealed class SqliteGraphStore : IDurableStore
     public void Dispose() { db.Dispose(); }
 }
 
-// ---- telemetry port --------------------------------------------------------------------------------------
+// ---- window port --------------------------------------------------------------------------------------
 
-/// <summary>One telemetry sample or closed-window aggregate: element and property handles are interned by the engine. Deleted samples retract a window (the engine's window retention and revision, an extension of Append).</summary>
+/// <summary>One event sample or closed-window aggregate: element and property handles are interned by the engine. Deleted samples retract a window (the engine's window retention and revision, an extension of Append).</summary>
 /// <summary>`AuxA`, `AuxB`: the pair a window of a `mean` or `last` property carries next to its value (Law 7.5 item 3 (i)): for `mean` the sum and the count it is the quotient of, for `last` the order value of the row it took (B unused). Null for every other window.</summary>
 public readonly record struct Sample(int Element, int Prop, long WindowStart, long WidthNs, decimal Value, long InputId, bool Deleted = false, decimal? AuxA = null, decimal? AuxB = null);
 public readonly record struct WindowKey(int Element, int Prop, long WindowStart);
@@ -532,8 +532,8 @@ public readonly record struct SeriesPoint(long WindowStart, decimal Value);
 public delegate void WindowVisitor(int element, int prop, long windowStart, decimal value);
 public sealed record SeriesRead(int Element, int Prop, IReadOnlyList<SeriesPoint> Points, string Completeness);
 
-/// <summary>The three-operation telemetry port of research 02 section 3.2: Append, ReadWindow, ClosedWindows. No revisions, no commit promise.</summary>
-public interface ITelemetryStore
+/// <summary>The three-operation window port of research 02 section 3.2: Append, ReadWindow, ClosedWindows. No revisions, no commit promise.</summary>
+public interface IWindowStore
 {
     /// <summary>At-least-once: a sample with the value its window has already is no change (a duplicate delivery, or a rewrite with the same value); another value replaces it. Returns the position after the batch.</summary>
     long Append(GraphKey g, ReadOnlySpan<Sample> samples);
@@ -550,7 +550,7 @@ public interface ITelemetryStore
     IReadOnlyDictionary<long, (string Reason, long Count)> PartialWindows(GraphKey g);
     /// <summary>Windows that a merge left without a value (`MoveElement`), counted once each.</summary>
     long MergeConflicts(GraphKey g);
-    /// <summary>Window changes after a position, in order. Each change is emitted once; this stream is the only telemetry an engine input may carry (L12). A plane has one reader, its graph, which reads right after its step: what is returned is released.</summary>
+    /// <summary>Window changes after a position, in order. Each change is emitted once; this stream is the only window data an engine input may carry (L12). A plane has one reader, its graph, which reads right after its step: what is returned is released.</summary>
     IReadOnlyList<WindowChange> ClosedWindows(GraphKey g, long afterPosition, out long newPosition);
     /// <summary>A source reported lost events (a loss mark): the window becomes Partial(sourceLoss) (Def. 7.7). Part of the ingest side of the port.</summary>
     void MarkPartial(GraphKey g, long windowStart, string reason, long count);
@@ -566,7 +566,7 @@ public interface ITelemetryStore
     long? RetainedFrom(GraphKey g);
 }
 
-public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelemetryStore
+public sealed class InMemoryWindowStore(int logCapacity = 4_000_000) : IWindowStore
 {
     /// <summary>
     /// The windows of one series in start order, the first `Count` slots used, and the width of its windows (to know where they end). Compact: a

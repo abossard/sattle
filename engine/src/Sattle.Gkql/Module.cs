@@ -89,7 +89,7 @@ public sealed partial class GkqlSource
 
     static List<Member> Members(List<PropertyDocument>? properties) => (properties ?? []).Select(p =>
         new Member(p.Name, null, p.Optional, ValueType(p.Type), false, p.Unit,
-            p.Telemetry is { } t ? new TeleMod(t.Temporality, t.Combine, Norm.DurationNs(t.Period)) : null, null, At,
+            p.Events is { } t ? new EventsMod(t.Temporality, t.Combine, Norm.DurationNs(t.Period)) : null, null, At,
             p.Roles?.Select(kv => (Value.Text(kv.Key), kv.Value)).ToList(), PropertyTreeRole(p), p.Label)).ToList();
 
     static string? PropertyTreeRole(PropertyDocument p)
@@ -105,9 +105,9 @@ public sealed partial class GkqlSource
         List<ConstraintDocument>? Constraints, SpaceDocument? Space, List<EquivalenceDocument>? Equivalences = null);
     sealed record ImportDocument(string Module, string Alias, string Version, string? Digest);
     sealed record EntityDocument(string Name, List<PropertyDocument>? Properties);
-    sealed record PropertyDocument(string Name, string Type, bool Optional, bool Label, TelemetryDocument? Telemetry,
+    sealed record PropertyDocument(string Name, string Type, bool Optional, bool Label, EventsDocument? Events,
         string? TreeRole, string? TreeCount, Dictionary<string, string>? Roles, string? Unit = null);
-    sealed record TelemetryDocument(string Temporality, string Combine, string Period);
+    sealed record EventsDocument(string Temporality, string Combine, string Period);
     /// <summary>`Super`: the relationship type this one is a sub-type of, so a pattern or a traverse over the super-type also follows it.</summary>
     sealed record RelationshipDocument(string Name, string From, string To, string? Kind, bool Hierarchy, bool Rollup, List<PropertyDocument>? Properties, string? Super = null);
     /// <summary>Two identity domains whose keys may name the same element, when a link says so: `assert` merges on a link, `review` waits for a decision.</summary>

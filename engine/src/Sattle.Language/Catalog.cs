@@ -288,7 +288,7 @@ public sealed class Catalog
             foreach (var grp in view.PropsOf(t.Id).Keys.Where(view.Props.ContainsKey).GroupBy(p => view.Props[p].Name).Where(g => g.Count() > 1))
                 Err("PropertyClash", t.Id, $"{t.Name} has several properties named '{grp.Key}': {string.Join(", ", grp.Select(x => Ids.ModuleOf(x)))}");
             foreach (var (p, req) in t.OwnProps)
-                if (req && view.Props.TryGetValue(p, out var pi) && pi.Role == "telemetry") Err("K10", t.Id, $"telemetry property {pi.Name} is never required");
+                if (req && view.Props.TryGetValue(p, out var pi) && pi.Role == "events") Err("K10", t.Id, $"event property {pi.Name} is never required");
         }
         foreach (var c in view.Constraints.Where(c => Ids.ModuleOf(c.Id) == module))
         {

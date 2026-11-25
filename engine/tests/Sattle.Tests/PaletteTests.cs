@@ -43,7 +43,7 @@ public class PaletteTests
         Assert.Contains(p["projectionPorts"]!.AsArray(), x => x!["kind"]!.GetValue<string>() == "param");
     }
 
-    // ---- aggregates: where each may be used (`Group` over data, `Rollup` over telemetry) ----
+    // ---- aggregates: where each may be used (`Group` over data, `Rollup` over windows) ----
 
     static readonly string[] All = ["count", "countDistinct", "sum", "min", "max", "mean", "last"];
 

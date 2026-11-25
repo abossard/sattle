@@ -11,7 +11,7 @@
   ],
   "entities": [
     {"name": "Capability", "properties": [{"name": "capId", "type": "Text"}, {"name": "name", "type": "Text", "label": true}, {"name": "owner", "type": "Text"}, {"name": "status", "type": "Text"}]},
-    {"name": "Meter", "properties": [{"name": "meterKey", "type": "Text"}, {"name": "meter", "type": "Text", "label": true}, {"name": "reading", "type": "Decimal", "optional": true, "telemetry": {"temporality": "gauge", "combine": "max", "period": "1m"}}]}
+    {"name": "Meter", "properties": [{"name": "meterKey", "type": "Text"}, {"name": "meter", "type": "Text", "label": true}, {"name": "reading", "type": "Decimal", "optional": true, "events": {"temporality": "gauge", "combine": "max", "period": "1m"}}]}
   ],
   "relationships": [
     {"name": "PartOf", "from": "Capability", "to": "Capability", "kind": "composition"},

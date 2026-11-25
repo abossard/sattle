@@ -8,10 +8,10 @@ Measured, not claimed. Each section names the command that produces its numbers;
 - Run: `dotnet src/Sattle.Cli/bin/Release/net11.0/sattle.dll bench` (defaults: 10 M rows, 1,000 pods, 100 services). `--trace-alloc` adds bytes per operator.
 
 ## Method (Q14)
-- Workload: Example 1 `observedCalls` (filter on present endpoints, 60 s window, group by pod pair with `count` and `sum(if(...))`, emit `Calls` with telemetry) plus the whole Example 2 chain (`Match`, `Series`, `Rollup`, `Map`, `Threshold`, emits) on the derived graph. Synthetic flows, 1,000 pods with 5 peers each (5,000 pod pairs), 2 percent dropped.
+- Workload: Example 1 `observedCalls` (filter on present endpoints, 60 s window, group by pod pair with `count` and `sum(if(...))`, emit `Calls` with windows) plus the whole Example 2 chain (`Match`, `Series`, `Rollup`, `Map`, `Threshold`, emits) on the derived graph. Synthetic flows, 1,000 pods with 5 peers each (5,000 pod pairs), 2 percent dropped.
 - Rows are built once as columnar batches of 50,000 rows with interned codes. Only the `Engine.Ingest` calls are timed (Stopwatch), so adapter JSON parsing and row generation are excluded. Rows per second is rows divided by the summed time of those calls.
 - Allocation: `GC.GetAllocatedBytesForCurrentThread` around the same calls, divided by rows.
-- Window close: one `Engine.Advance` per 60 s window (100 windows, 100,000 rows each). The call includes emitting the closed groups, identity lookups, telemetry append, the derived graph's `Series`, `Rollup`, `Threshold` and its commit. p50, p99 and max over the 100 calls.
+- Window close: one `Engine.Advance` per 60 s window (100 windows, 100,000 rows each). The call includes emitting the closed groups, identity lookups, window append, the derived graph's `Series`, `Rollup`, `Threshold` and its commit. p50, p99 and max over the 100 calls.
 - Reference loop: a hand-written fused loop for the same query over the same batches with a `Dictionary` accumulator (40 passes over the 4 pooled batches). It stands in for what compiled delegates could reach on this layout.
 - Commit: 2,000 patches of 50 entity creations through the storage port, in memory and on a SQLite file (WAL, `synchronous=NORMAL`).
 - Reads: 5 M point reads and 1 M one-hop scans on the hot `Graph` after the run.
@@ -27,28 +27,28 @@ Measured, not claimed. Each section names the command that produces its numbers;
 | Q14 window close | p99 latency | p50 29 ms, p99 62 ms, max 156 ms per close of 5,000 pairs (master and derived graph together) | fine for 60 s windows; the allocation is 17.8 MB per close |
 | Q14 interpreter vs compiled | does the vectorized interpreter suffice | interpreter 17.0 M rows/s, hand-fused loop 47.5 M rows/s (2.8 times). No IL or delegate compiler was built, so no third number | interpreter suffices at this scale; the gap is the headroom for a compiler |
 | H1 structural ingest | at least 5,000 accepted records/s | 243,457 capture records in 3.6 s end to end including JSON parsing = 67,000 records/s on the real capture (flows, pods, resources, metrics); structural revisions: 146 in that run | met |
-| H2 telemetry ingest | at least 200,000 samples/s into the ring | 7.8 M samples/s `Append` into the in-memory ring | met |
+| H2 event ingest | at least 200,000 samples/s into the ring | 7.8 M samples/s `Append` into the in-memory ring | met |
 | H3 commit latency | p99 at most 20 ms (Cosmos target) | in memory p99 0.08 ms, SQLite p99 4.3 ms, max 8.5 ms for 50-edit patches | met locally; Cosmos not built |
 | H4 projection latency | p99 at most 1 s master commit to derived commit | covered by the window-close figure: master and derived graph in one call, p99 62 ms | met |
 | H6 point read | at most 1 us | 250 to 410 ns in two runs (was 20 ns on the first layout: an element is now materialized from columns on every read) | met |
 | H6 one-hop scan | at most 0.5 us plus 5 ns per neighbour | 230 to 270 ns for 6 neighbours (was 109 ns) | met |
-| H9 memory | at most 400 MB for 750,000 entities and 2.5 M relationships (hot graph, no telemetry) | 337 MB in the hot layout (was 2,395 MB in the reference layout, kept as `ReferenceGraph` in the tests) | met for the graph structure; see the estate run for the whole engine |
+| H9 memory | at most 400 MB for 750,000 entities and 2.5 M relationships (hot graph, no windows) | 337 MB in the hot layout (was 2,395 MB in the reference layout, kept as `ReferenceGraph` in the tests) | met for the graph structure; see the estate run for the whole engine |
 | H5, H7, H8, H10 | latency from receipt, durable read, element view, cold start | see "H5, H7, H8, H10" below (each with its command) | see below |
 
 ## Reading the numbers
 - The hot path is a vectorized interpreter over interned columns with selection vectors. Linear operators share column arrays and allocate nothing per row. The group table is open addressing over fixed-width long keys, allocation free once sized and recycled across windows.
-- Window close is the expensive step, not ingest: it creates relationship elements, resolves identities, appends telemetry and runs the derived graph. It scales with groups closed, not rows ingested.
+- Window close is the expensive step, not ingest: it creates relationship elements, resolves identities, appends windows and runs the derived graph. It scales with groups closed, not rows ingested.
 - H9 is met by the second layout of `Graph` (`Graph.cs`): ids interned once into a UTF-8 byte pool with an open-addressing index, one column per attribute (type, props reference, endpoints), properties as compact bytes with in-place update, intrusive singly linked adjacency lists per endpoint, and an open-addressing uniqueness index over (source, target, type) that stores only handles. 337 MB for 750,000 entities and 2.5 M relationships, about 100 bytes per element. The API still takes and returns string ids and records; elements are materialized on read, which is why reads cost 250 to 410 ns instead of 20 ns.
 - Deviation from research 02 section 5.2: adjacency is a linked list per endpoint, not a CSR with a per-vertex delta log. Removal is O(degree). The reference layout is kept as `ReferenceGraph` and a differential test (`HotGraphTests`) compares every operation on random edit sequences.
 - The synthetic workload has 5,000 pair series. A 240,000-edge estate (research 02 section 2.3) was not run. Window close time grows with the number of pairs closed per window.
-- Real capture: `sattle replay CAPTURE` prints the telemetry sample counts of the master graph and the Hubble flow count; the `flows` and `drops` summed in the master graph equal an independent count of the capture with `jq` (the flows of the capture between two named pods, and the `DROPPED` verdicts).
+- Real capture: `sattle replay CAPTURE` prints the event sample counts of the master graph and the Hubble flow count; the `flows` and `drops` summed in the master graph equal an independent count of the capture with `jq` (the flows of the capture between two named pods, and the `DROPPED` verdicts).
 
 ## Large estate (research 02 section 2.3)
 `sattle bench estate`: 150,000 pods, 30,000 services, 300,000 Azure resources (480,000 master entities after structure), 240,000 active pod pairs, 1 M flow rows per 60 s window, 4 windows. One run.
 - Structure load 6.7 s (pods, services, endpoints), resources 4.0 s.
-- Window 0 closes in 9.0 s (creates about 200,000 `Calls` relationships, resolves their identities and derives the service tree: 149,000 `DependsOn` relationships). Windows 1 to 3 close in 1.5 to 1.7 s each (240,000 pair groups, telemetry append, `Series`, `Rollup`, `Threshold`, derived commit).
+- Window 0 closes in 9.0 s (creates about 200,000 `Calls` relationships, resolves their identities and derives the service tree: 149,000 `DependsOn` relationships). Windows 1 to 3 close in 1.5 to 1.7 s each (240,000 pair groups, window append, `Series`, `Rollup`, `Threshold`, derived commit).
 - Flow ingest including row generation 3.6 M rows/s.
-- Whole-engine memory is **not** at the 400 MB target: managed heap 2.5 GB after structure and 5.4 GB at the end (3.6 M telemetry windows). The hot graphs are a small part. The rest is the in-memory store (element versions, adjacency versions, every patch kept for `Follow`), the support-count layers of the emit sinks, lineage records, the identity catalog and the interner. Moving those off the object heap (SQLite store, compact layers) is not done.
+- Whole-engine memory is **not** at the 400 MB target: managed heap 2.5 GB after structure and 5.4 GB at the end (3.6 M windows). The hot graphs are a small part. The rest is the in-memory store (element versions, adjacency versions, every patch kept for `Follow`), the support-count layers of the emit sinks, lineage records, the identity catalog and the interner. Moving those off the object heap (SQLite store, compact layers) is not done.
 - A window close at this size is 1.5 s against a 60 s window, so the plan keeps up with the estate on one thread; the first window and memory are the open problems.
 
 ## Large estate with the health tree (engine turn 14)
@@ -56,7 +56,7 @@ Measured, not claimed. Each section names the command that produces its numbers;
 - Two quadratic costs found and fixed by this run: the touch check of `Traverse` (6.8 s of 8.8 s at 10,000 resources, now 0.1 s; it walked the patch for every start) and the identity merge of the output layers (`Remap` scanned every element per merge, 66 s for 20,000 pods, now 0.3 s; it keeps an index from an endpoint identity to its relationships).
 - Structure (pods, services, endpoints) 50 s with the tree (36 s with `--no-tree`), resources 90 s (49 s).
 - Window close with the readings: window 0 97 s (everything is derived once: 952,724 master relationships, the service tree, the tree), windows 1 and 2 10.3 s and 9.6 s against a 60 s window. Without the readings: 10.8 s, 2.5 s, 2.3 s. So the readings (300,000 meter rows per window through `Meter`, `MeterOf`, `treeSignals`, the roll-up and the tree) cost about 7.5 s per window, the flows and the rest 2.3 s. The plan keeps up on one thread; window 0 does not (it is a load, not a steady window).
-- Memory is the limit: managed heap 15.4 GB after the structure and the resources (15.6 GB with `--no-tree`: the readings are not what holds it), 32.8 GB at the end with the readings (3.6 M telemetry windows), 19.8 GB without. At 24,000 master entities the tree graphs (`treeStructure`, `treeRollup`, `healthTree`) add 0.9 GB to a base of 0.38 GB (measured by taking graphs out of a copy of the space), about 45 KB per tree element against about 15 KB per master entity. What holds it is the per-element state of the engine, not a column store: the in-memory store (versions of every element and adjacency, every patch kept for `Follow`), the contribution layers of the emit sinks, lineage records, the identity catalog, and the operator state of `Traverse` (reach and its signature strings per start). Not profiled further (no heap profiler on the machine); moving the store and the layers off the object heap is the open work, as in the section above.
+- Memory is the limit: managed heap 15.4 GB after the structure and the resources (15.6 GB with `--no-tree`: the readings are not what holds it), 32.8 GB at the end with the readings (3.6 M windows), 19.8 GB without. At 24,000 master entities the tree graphs (`treeStructure`, `treeRollup`, `healthTree`) add 0.9 GB to a base of 0.38 GB (measured by taking graphs out of a copy of the space), about 45 KB per tree element against about 15 KB per master entity. What holds it is the per-element state of the engine, not a column store: the in-memory store (versions of every element and adjacency, every patch kept for `Follow`), the contribution layers of the emit sinks, lineage records, the identity catalog, and the operator state of `Traverse` (reach and its signature strings per start). Not profiled further (no heap profiler on the machine); moving the store and the layers off the object heap is the open work, as in the section above.
 
 ## Baseline for the efficiency concept
 Measured, not optimized: the code is the working tree at the end of engine turn 14 plus the measurement code (`Census.cs`, `Bench.Phases.cs`, `--census`, `--trace-alloc` on `replay` and `bench estate`, live-bytes lines). Raw outputs are in `engine/out/` (gitignored), file names below. Machine: Apple M1 Max, 10 cores, 64 GB, .NET 10, Release build, **shared with other sessions: load average 15 to 225 during these runs**, so every time is pessimistic and noisy (the first window of the same 100,000 run took 11.3 s, 19.1 s and 12.8 s in three runs). Byte figures do not depend on the load. One run per figure unless stated. Cosmos is not involved anywhere in this section (no emulator was started; every test time below is without it).
@@ -96,21 +96,21 @@ Measured, not optimized: the code is the working tree at the end of engine turn 
 | sink: lineage records | 43 | 160 | 209 | 2,090 |
 | sink: support counts and group members of group emits | 34 | 197 | 254 | 2,540 |
 | sink: endpoint index `relsAt` (turn 14, a cache) | 19 | 86 | 129 | 1,290 |
-| sink: other (touched sets, telemetry buffer) | 17 | 26 | 46 | 460 |
+| sink: other (touched sets, window buffer) | 17 | 26 | 46 | 460 |
 | operator state `JoinOp` (hash indexes) | 106 | 553 | 674 | 6,740 |
 | operator state `GroupOp` (accumulators, ordered sets) | 3 | 343 | 514 | 5,140 |
 | operator state `TraverseOp` (reach, signature strings) | 0 | 359 | 359 | 3,590 |
 | operator state `SeriesOp` | 93 | 93 | 283 | 2,830 |
 | operator state, all others (Emit*, Filter, Map, Threshold, WindowedGroup, Rollup, Match, Union) | 130 | 210 | 327 | 3,270 |
-| telemetry windows (ring in the in-memory telemetry store) | 111 | 111 | 216 | 2,160 |
+| windows (ring in the in-memory window store) | 111 | 111 | 216 | 2,160 |
 | interner | 85 | 130 | 159 | 1,590 |
 | identity catalog | 11 | 21 | 42 | 420 |
 | engine rest, statics | 14 | 14 | 14 | 140 |
 | **live bytes** | **1,038** | **3,552** | **5,188** | **51,880** |
 Source: `out/estate-100k-notree.txt`, `out/estate-100k-treegraphs-noreadings.txt`, `out/estate-100k-tree.txt` (each also has the top 40 types by size and the table per graph). The journal and the served-history buffers are not in memory in these runs (`bench estate` has no host; the `replay` run attaches the canvas export, 18 MB on the capture).
-- What holds the memory (tree and readings, 100,000): the store's copies are 1.29 GB (25 %), the operator state 2.16 GB (42 %), the sink layers 1.02 GB (20 %), the hot graph itself 0.27 GB (5 %), telemetry 0.22 GB, interner 0.16 GB. Per element of its graph (state, store, sink layers, operators of that graph): master 2.2 KB (362,000 entities and relationships), `serviceTree` 7.9 KB (37,300), `treeSignals` 5.4 KB (62,500), `treeStructure` 2.5 KB (189,400), `treeRollup` 3.4 KB (189,400), `healthTree` 6.6 KB (314,400); shared lookups (interner, identities, telemetry, statics) 0.43 GB.
+- What holds the memory (tree and readings, 100,000): the store's copies are 1.29 GB (25 %), the operator state 2.16 GB (42 %), the sink layers 1.02 GB (20 %), the hot graph itself 0.27 GB (5 %), windows 0.22 GB, interner 0.16 GB. Per element of its graph (state, store, sink layers, operators of that graph): master 2.2 KB (362,000 entities and relationships), `serviceTree` 7.9 KB (37,300), `treeSignals` 5.4 KB (62,500), `treeStructure` 2.5 KB (189,400), `treeRollup` 3.4 KB (189,400), `healthTree` 6.6 KB (314,400); shared lookups (interner, identities, windows, statics) 0.43 GB.
 - Typical objects: `String` 1.2 M objects and 150 MB in the store alone (ids and property texts as separate objects), `KeyValuePair<String,Value>[]` and `TextValue` (every property of every version is an object), `Edit` and `Version` per element version, `Contribution` and `LineageInfo` with a `List<LineageSource>` per element, one `Dictionary<String,Int64>` per support-count group (541,162 of them at 100,000).
-- Telemetry: 755,548 windows at the end of the 100,000 run; bytes per window: the telemetry store 290 B, plus `SeriesOp` and `ThresholdOp` state of about 1 KB per series window and 0.5 KB per threshold key.
+- Windows: 755,548 windows at the end of the 100,000 run; bytes per window: the window store 290 B, plus `SeriesOp` and `ThresholdOp` state of about 1 KB per series window and 0.5 KB per threshold key.
 - Object counts (census): 63.8 M objects with the tree and readings (638 per master node), 11.0 M without (110 per node). The capture has 2.7 M objects for 50,266 master entities (54 per entity).
 
 ### Allocation and GC on the hot path
@@ -123,7 +123,7 @@ Source: `out/estate-100k-notree.txt`, `out/estate-100k-treegraphs-noreadings.txt
 - Capture replay (phases above), operator kinds in ms of the 3.0 s of engine time: `MatchOp` 751 (145,267 calls), flush, apply and store commit 387, `EmitEntityOp` 335 (233,000 calls), `TraverseOp` 181, `WindowedGroupOp` 122, `EmitRelOp` 109, `FilterOp` 87, `MapOp` 80, `SeriesOp` 75, `UnionOp` 74, `JoinOp` 73, `RetainOp` 68. By graph: master operators 563 and commit 297; `healthTree` 360 + 40; `treeStructure` 186; every other graph under 150 each.
 - Window 0 against the later windows (100,000, `out/estate-100k-tree.txt`): window 0 is the initial derivation of 1.4 M elements in 14 graphs: flush, apply and store commit 6.4 s (32 patches, every derived graph applies and stores its first patch of 100,000 to 300,000 edits), `MatchOp` 3.5 s (every `match` of every projection scans its input once), `EmitEntityOp` 0.6 s, `EmitRelOp` 0.6 s, `GroupOp` 0.6 s, `SeriesOp` 0.4 s. Windows 1 and 2: flush, apply and commit 0.36 s, `SeriesOp` 0.22 s, the rest under 0.07 s each. At 480,000 nodes (older runs, without this table) the first window was 9 s and the later ones 1.5 s on the same pattern; with the tree and readings 97 s and 10 s.
 - Structure load at 100,000 (`out/estate-100k-tree.txt`, "structure load" and "resources load" tables): `MatchOp` 2.5 s, store commit 2.3 s, `TraverseOp` 0.6 s, `EmitRelOp` 0.5 s, `EmitEntityOp` 0.4 s; the resources load: store commit 3.5 s, `MatchOp` 2.4 s, `EmitEntityOp` 1.3 s, `TraverseOp` 1.0 s. A third of every load is committing patches into the in-memory store and applying them to the hot graph.
-- Inherently parallel (by the structure of the plan, not measured): the 14 derived graphs read only the master and each other along `in` ports, so graphs that do not depend on one another (the five tree graphs, `serviceTree`, `deploymentHealth`, the health chain) can evaluate in parallel after each master commit; `Group`, `WindowedGroup`, `Series`, `Rollup`, `Threshold` and `Join` are keyed and partition by key; parsing and the adapters (67 % of the capture replay) are per record and parallel across files; the telemetry append is per graph. Not parallel: the master commit (one revision order), the identity catalog (one writer), the interner, window closes in epoch order.
+- Inherently parallel (by the structure of the plan, not measured): the 14 derived graphs read only the master and each other along `in` ports, so graphs that do not depend on one another (the five tree graphs, `serviceTree`, `deploymentHealth`, the health chain) can evaluate in parallel after each master commit; `Group`, `WindowedGroup`, `Series`, `Rollup`, `Threshold` and `Join` are keyed and partition by key; parsing and the adapters (67 % of the capture replay) are per record and parallel across files; the window append is per graph. Not parallel: the master commit (one revision order), the identity catalog (one writer), the interner, window closes in epoch order.
 
 ### State required by the semantics, caches, and state kept for a feature (judgment from the code and the census; nothing was dropped to test it)
 | state | MB at 100,000 with tree | class | reason |
@@ -131,7 +131,7 @@ Source: `out/estate-100k-notree.txt`, `out/estate-100k-treegraphs-noreadings.txt
 | hot graph state (arrays) | 267 | required | the current result |
 | sink contribution layers and support counts | 640 | required | a retraction needs the contributions an element is made of; without them an element cannot be removed or merged correctly |
 | operator state: Join, Group, Series, Rollup, Threshold, Retain, Traverse reach | 2,160 | required in principle, rebuildable from the inputs | incremental maintenance; the signature strings of `TraverseOp` and the `Dictionary` per group are representation, not semantics |
-| telemetry windows | 216 | required while inside the retention (`retain`, late horizon) | revisable windows; beyond the horizon they are history |
+| windows | 216 | required while inside the retention (`retain`, late horizon) | revisable windows; beyond the horizon they are history |
 | identity catalog | 42 | required | ids must be stable across restarts (it is in the journal) |
 | interner | 159 | a lookup | strings to codes; could be partial or per graph |
 | store `Head` | 282 | duplicate | a second copy of the hot graph for reads through the store port |
@@ -141,7 +141,7 @@ Source: `out/estate-100k-notree.txt`, `out/estate-100k-treegraphs-noreadings.txt
 | lineage records | 209 | feature | the backward and forward lineage routes; could be computed on demand by replaying the element's derivation |
 | `relsAt` index | 129 | cache | exists to make an identity merge cheap (turn 14 fix) |
 | canvas export, served history, event ring, drafts, preview inputs | 18 on the capture | feature | not measured at estate size (no host in `bench estate`) |
-Required by the semantics (hot graph, layers, operator state, telemetry inside retention, identities): about 3.3 GB of the 5.2 GB; duplicates and features: about 1.9 GB (37 %), of which the store alone is 1.29 GB.
+Required by the semantics (hot graph, layers, operator state, windows inside retention, identities): about 3.3 GB of the 5.2 GB; duplicates and features: about 1.9 GB (37 %), of which the store alone is 1.29 GB.
 
 ### Persistence on SQLite (`sattle bench b10 --hours 1 --seal-every 2000 --runs 3 --db out/p-1h.db`, `out/persist-1h.txt`; the newest capture repeated four times shifted in time to 1.23 h of logical time, load average 45 to 120)
 - File 751 MB for 2,422,295 input rows, 5,435 journal entries, 3,093 revisions in 14 graphs, 2 seals. Pages by table (`sqlite3 out/p-1h.db "select name, sum(pgsize) from dbstat group by name"`): journal 580 MB (77 %), seal 56 MB, element_version 44 MB, commit 41 MB, identity_binding 11 MB (+7 MB index), adjacency 3 MB, other indexes 13 MB.
@@ -175,17 +175,17 @@ The reason, from the measurements above: every test builds a `SpaceHost` or an `
 
 ### Validity of the baseline (code review 06 and 07, checked by running)
 - Phantom relationships (`experiments/V1-phantom`, `out/V1-phantom-*.txt`): `bench estate` builds 62,500 relationships at 100,000 nodes that point to entities that do not exist (31,250 `RunsOn` to 1 absent target, 31,250 `ControlledBy` to 5 absent targets) and sets `ready` = false on every pod, because the row builder marks unset optional pod columns present with code 0 (`Operators.cs:58`, `Columnar.cs:59`, `Synthetic.cs:22`). With those columns marked absent: master relationships 199,021 to 136,521; live bytes with the tree graphs and readings 5,188 to 5,086 MB (-2 %), after the structure 3,096 to 3,002 MB; without the tree graphs 582 to 483 MB after the structure (-17 %) and 1,409 to 1,286 MB at the end (-9 %); window closes unchanged. So the ladder rows with the tree are about 2 to 3 % too high and the rows without the tree graphs 10 to 17 %; the master-side per-structure rows of `estate-100k-notree` carry the phantom share (46 % of its master relationships).
-- `bench b10 --hours` above the capture span (`experiments/V2-b10-passes`, `out/V2-b10-passes.txt`): only `CapturedNs` is shifted, event times are not; from pass 2 on 349,961 rows per pass (flows, flow logs, metrics, resource metrics) are dropped as late (late horizon 3), resources, pods and endpoints repeat as updates of the same ids, and the master telemetry holds the same 16 window starts after pass 4 as after pass 1. The "1 h" and "4 h" restart times and the per-hour file sizes of H10 and of the persistence section measure a journal of repeated rows, not hours of history; the 240 bytes per input row stays valid per row.
-- Look-back (`out/estate-100k-lookback30m-40w.txt`: 100,000 nodes, 40 windows, every `24h` of the definitions replaced by `30m`): the window close grows from about 1.2 s (windows 1 to 10) to about 2.4 s once the look-back is full (windows 31 to 39) and stays there; live bytes 3.1 GB after the structure, 5.2 GB at 3 windows, 8.2 GB at 40 (about 80 MB per window, 10.1 M telemetry windows). The 3-window figures above therefore understate the steady state about two-fold in close time and, extrapolated linearly, a 24 h look-back at 100,000 nodes would need about 115 GB for the windows alone (not runnable on 64 GB; extrapolation, not measured).
+- `bench b10 --hours` above the capture span (`experiments/V2-b10-passes`, `out/V2-b10-passes.txt`): only `CapturedNs` is shifted, event times are not; from pass 2 on 349,961 rows per pass (flows, flow logs, metrics, resource metrics) are dropped as late (late horizon 3), resources, pods and endpoints repeat as updates of the same ids, and the master windows hold the same 16 window starts after pass 4 as after pass 1. The "1 h" and "4 h" restart times and the per-hour file sizes of H10 and of the persistence section measure a journal of repeated rows, not hours of history; the 240 bytes per input row stays valid per row.
+- Look-back (`out/estate-100k-lookback30m-40w.txt`: 100,000 nodes, 40 windows, every `24h` of the definitions replaced by `30m`): the window close grows from about 1.2 s (windows 1 to 10) to about 2.4 s once the look-back is full (windows 31 to 39) and stays there; live bytes 3.1 GB after the structure, 5.2 GB at 3 windows, 8.2 GB at 40 (about 80 MB per window, 10.1 M windows). The 3-window figures above therefore understate the steady state about two-fold in close time and, extrapolated linearly, a 24 h look-back at 100,000 nodes would need about 115 GB for the windows alone (not runnable on 64 GB; extrapolation, not measured).
 
 ### Validity re-measured on the fixed engine (Release built 2026-11-11 20:12 from 9a6533b plus the bench changes; commands in the file names under `out/`)
-Changes of the engine since the baseline that bear on these numbers (from engine-core): every first write of a telemetry window reads the store once (support counting), Threshold keeps one carried state per key instead of replaying the look-back, Retain holds a weighted multiset; the row builder marks unwritten columns absent and `bench estate` marks the flow columns it does not write absent.
-- V1, estate without phantoms (`out/estate-100k-tree-v1.txt`, 100,000 nodes, tree graphs and readings, 3 windows, `--census`): dangling relationships of the master 0 after the structure and at the end of 136,521 (old tree 199,021 relationships, 62,500 phantom); live bytes after the structure 2,977 MB (old 3,096), at the end **5,097 MB** (old 5,188, -1.8 %); census coverage 100 %, 62.6 M objects (old 63.8 M). Per structure the differences are in the master-side rows: `JoinOp` 674 to 640, store `Commits` 480 to 467, `Versions` 226 to 204, `Adjacency` 162 to 151, lineage 209 to 194, interner 159 to 152; `GroupOp`, `TraverseOp`, `SeriesOp`, telemetry, supports unchanged. Window closes 9.4, 0.9, 1.3 s (old 11.4 to 12.8, 0.8 to 0.9, 1.5 to 1.9 s). The ladder in the baseline section stays valid within 2 to 3 % with the tree and readings; the rows without the tree graphs are about 10 to 17 % too high.
+Changes of the engine since the baseline that bear on these numbers (from engine-core): every first write of a window reads the store once (support counting), Threshold keeps one carried state per key instead of replaying the look-back, Retain holds a weighted multiset; the row builder marks unwritten columns absent and `bench estate` marks the flow columns it does not write absent.
+- V1, estate without phantoms (`out/estate-100k-tree-v1.txt`, 100,000 nodes, tree graphs and readings, 3 windows, `--census`): dangling relationships of the master 0 after the structure and at the end of 136,521 (old tree 199,021 relationships, 62,500 phantom); live bytes after the structure 2,977 MB (old 3,096), at the end **5,097 MB** (old 5,188, -1.8 %); census coverage 100 %, 62.6 M objects (old 63.8 M). Per structure the differences are in the master-side rows: `JoinOp` 674 to 640, store `Commits` 480 to 467, `Versions` 226 to 204, `Adjacency` 162 to 151, lineage 209 to 194, interner 159 to 152; `GroupOp`, `TraverseOp`, `SeriesOp`, windows, supports unchanged. Window closes 9.4, 0.9, 1.3 s (old 11.4 to 12.8, 0.8 to 0.9, 1.5 to 1.9 s). The ladder in the baseline section stays valid within 2 to 3 % with the tree and readings; the rows without the tree graphs are about 10 to 17 % too high.
 - V2, steady state (`out/estate-100k-lookback30m-45w-v2.txt`, `--look-back 30m --windows 45 --census`; 30 windows fill the look-back, 15 run full; the definitions load without error): **window close p50 2,037 ms, max 2,283 ms** with the look-back full (windows 30 to 44; 0.9 to 1.4 s in windows 1 to 2, 1.9 s in window 29, window 0 9.8 s); live bytes 7,463 MB when the look-back filled, 8,040 MB at the end: **+7.7 % in 15 windows, about 38 MB (0.5 %) per window**, so not flat within 5 %; census at the end 8,040 MB, coverage 100 %, 94.1 M objects. Close time stops growing after the fill (it doubled from 1.2 s to 2.0 s while filling); memory keeps growing at about 38 MB per window (the baseline run with phantoms and a 40-window run: 80 MB per window while filling, 8.2 GB at the end).
-- V3, restart with real history (`out/persist-v3-*.txt`; `bench b10 --hours H --seal-every 2000 --runs 3`, later passes now replay only the telemetry sources with event times shifted; SQLite files `out/p3-1h.db` 760 MB, `out/p3-4h.db` 2,033 MB): restart with a seal **8.0 s at 1 h (7.9 to 8.3), 9.7 s at 4 h (9.7 to 10.0)**; without a seal **7.5 s at 1 h (7.5 to 11.3), 15.8 s at 4 h (15.7 to 19.2)**, load average 11 to 34; state load 2.7 to 3.0 s, tail replay 2.8 s (871 entries) and 4.4 s (1,346 entries). Journal entries 4,871 (4 passes, 1.23 h) and 7,346 (13 passes, 4.08 h): later passes add 275 entries instead of 4,045. File growth from 1 h to 4 h about 450 MB per logical hour (10.7 GB a day), against about 610 MB per logical hour in the old repeated-rows run. The two checks first set for this run (late rows constant and the master constant) were mis-specified, see below: late rows dropped still grow by about 227,900 per pass (230,888 in pass 1, 914,570 after 4 passes, 2,965,616 after 13), and the master is not constant: 48,104 entities and 5,731 relationships after pass 1, 48,025 and 5,652 after pass 4, 47,761 and 5,388 after pass 13 (about 26 entities fewer per pass). Both are explained, not defects of the run (engine-core, confirmed by a rerun with evidence counts, `out/persist-v3b-1h.txt`): pass 1 itself drops about 230,000 rows (history older than the late horizon of 3 windows) and every later pass drops the same rows again because their times move with the pass; the master shrinks because `retain on time for 24h` withdraws Activity Log events as the passes move the frontier: entities 48,104, 48,092, 48,055, 48,025 per pass (-12, -37, -30) and ActivityEvent 5,181, 5,169, 5,132, 5,102 (-12, -37, -30); AuditEvent (42,244) and WarningEvent (173) constant, relationships fall by the same 79 (their `Concerns` edges). So the V3 figures stand as measured.
+- V3, restart with real history (`out/persist-v3-*.txt`; `bench b10 --hours H --seal-every 2000 --runs 3`, later passes now replay only the event sources with event times shifted; SQLite files `out/p3-1h.db` 760 MB, `out/p3-4h.db` 2,033 MB): restart with a seal **8.0 s at 1 h (7.9 to 8.3), 9.7 s at 4 h (9.7 to 10.0)**; without a seal **7.5 s at 1 h (7.5 to 11.3), 15.8 s at 4 h (15.7 to 19.2)**, load average 11 to 34; state load 2.7 to 3.0 s, tail replay 2.8 s (871 entries) and 4.4 s (1,346 entries). Journal entries 4,871 (4 passes, 1.23 h) and 7,346 (13 passes, 4.08 h): later passes add 275 entries instead of 4,045. File growth from 1 h to 4 h about 450 MB per logical hour (10.7 GB a day), against about 610 MB per logical hour in the old repeated-rows run. The two checks first set for this run (late rows constant and the master constant) were mis-specified, see below: late rows dropped still grow by about 227,900 per pass (230,888 in pass 1, 914,570 after 4 passes, 2,965,616 after 13), and the master is not constant: 48,104 entities and 5,731 relationships after pass 1, 48,025 and 5,652 after pass 4, 47,761 and 5,388 after pass 13 (about 26 entities fewer per pass). Both are explained, not defects of the run (engine-core, confirmed by a rerun with evidence counts, `out/persist-v3b-1h.txt`): pass 1 itself drops about 230,000 rows (history older than the late horizon of 3 windows) and every later pass drops the same rows again because their times move with the pass; the master shrinks because `retain on time for 24h` withdraws Activity Log events as the passes move the frontier: entities 48,104, 48,092, 48,055, 48,025 per pass (-12, -37, -30) and ActivityEvent 5,181, 5,169, 5,132, 5,102 (-12, -37, -30); AuditEvent (42,244) and WarningEvent (173) constant, relationships fall by the same 79 (their `Concerns` edges). So the V3 figures stand as measured.
 
-### V2 again on the committed head (5c1450c; telemetry retained by the logical frontier, `--look-back D` sets the telemetry retention to 2 D; `out/estate-100k-lookback30m-75w-v4.txt`)
-`--look-back 30m --windows 75 --census`, 100,000 nodes, tree graphs and readings (60 windows fill the retention, 15 steady), load average about 130 during the run (times pessimistic): steady state (windows 60 to 74): **window close p50 2,380 ms, max 3,848 ms; live bytes 6,838 MB when the retention filled, 6,841 MB at the end (+0.04 %, flat)**; before the fix the same measurement grew 7,463 to 8,040 MB (+7.7 % in 15 windows, 38 MB per window). The two censuses (window 59 and the end) differ by 3 MB. Against the old run's census at the end (`estate-100k-lookback30m-45w-v2.txt`): telemetry 1,726 to 684 MB, `RollupOp` 325 to 163 MB, everything else equal within 3 MB (`SeriesOp` 1,249 MB, `JoinOp` 640, `GroupOp` 514, store `Commits` 475, contributions 395, `TraverseOp` 359). `GC.GetTotalMemory` at the end 7,351 MB (old run 14,082 MB), so the garbage in the heap is gone as well. Allocation is higher: 341.7 GB over the 75 windows (about 4.6 GB per window against 2.2 GB per window in the old 45-window run), 2,417 gen0 collections, GC pause 7 % of 327 s. The live bytes at window 30 were not printed by this run.
+### V2 again on the committed head (5c1450c; windows retained by the logical frontier, `--look-back D` sets the window retention to 2 D; `out/estate-100k-lookback30m-75w-v4.txt`)
+`--look-back 30m --windows 75 --census`, 100,000 nodes, tree graphs and readings (60 windows fill the retention, 15 steady), load average about 130 during the run (times pessimistic): steady state (windows 60 to 74): **window close p50 2,380 ms, max 3,848 ms; live bytes 6,838 MB when the retention filled, 6,841 MB at the end (+0.04 %, flat)**; before the fix the same measurement grew 7,463 to 8,040 MB (+7.7 % in 15 windows, 38 MB per window). The two censuses (window 59 and the end) differ by 3 MB. Against the old run's census at the end (`estate-100k-lookback30m-45w-v2.txt`): windows 1,726 to 684 MB, `RollupOp` 325 to 163 MB, everything else equal within 3 MB (`SeriesOp` 1,249 MB, `JoinOp` 640, `GroupOp` 514, store `Commits` 475, contributions 395, `TraverseOp` 359). `GC.GetTotalMemory` at the end 7,351 MB (old run 14,082 MB), so the garbage in the heap is gone as well. Allocation is higher: 341.7 GB over the 75 windows (about 4.6 GB per window against 2.2 GB per window in the old 45-window run), 2,417 gen0 collections, GC pause 7 % of 327 s. The live bytes at window 30 were not printed by this run.
 
 ## S0 experiments
 Measurements for the efficiency concept (`paper/research/04-compute-and-memory-efficiency.md`, Appendix A); programs in `engine/experiments/<ID>-<name>/` (outside `Sattle.slnx`), raw results in `engine/out/experiments/<ID>.txt` (gitignored). Nothing in `src/` changes behaviour. Machine and conditions as in the baseline section (shared, load average 15 to 225).
@@ -202,7 +202,7 @@ Evidence rules (`observedActivityEvents`, `observedWarningEvents`, `observedAudi
 
 ### X11: flow pre-aggregation (PASS)
 Program `experiments/X11-flow-aggregator` (reads `hubble/flows.ndjson` of the newest capture, aggregates as `observedCalls` does, compares with `replay latest --out`). Command and full output: `out/experiments/X11.txt`.
-- Configuration 1 (the engine rule: all four names present, 60 s windows on flow time, key pod pair, `flows` and `drops`) equals the engine's `Calls` telemetry: 466 of 466 pair-windows of the 137 relationships whose pods resolve, and the per-window totals of all 245 `Calls` relationships in 8 of 8 windows (117,931 flows, 322 drops). 662 pair-windows, 107 pairs per window median (133 max).
+- Configuration 1 (the engine rule: all four names present, 60 s windows on flow time, key pod pair, `flows` and `drops`) equals the engine's `Calls` windows: 466 of 466 pair-windows of the 137 relationships whose pods resolve, and the per-window totals of all 245 `Calls` relationships in 8 of 8 windows (117,931 flows, 322 drops). 662 pair-windows, 107 pairs per window median (133 max).
 - Aggregation without parsing: 17 ns per flow for configuration 1, 11 ns for configuration 2 (median of 5, struct array, `Dictionary` of tuples; limit 50). Parsing the JSON lines: 2.8 s for 146,759 records (19 microseconds per record, `System.Text.Json`).
 - Configuration 2 (requests only, workload pair, destination port): 284 keys for 117,931 flows with names, 415 times fewer (limit 100); 82 workload pairs, per window median 50 (max 52). The concept's figure of 220 workload pairs is not reproduced with the known-name filter of `observedCalls`; 60,924 request flows have all four names (the concept counts 82,893 without that filter).
 - Finding for the definitions: `observedCalls` does not drop replies. 57,007 of the 117,931 flows are replies, and 118 of the 245 pod pairs exist only as replies (an edge from the callee to the caller). Whether the rule should drop them is a question for the definitions and the user, not changed here.
@@ -219,8 +219,8 @@ Program `experiments/P1-journal` (one paced producer, one writer thread, frames 
 - Throughput is not the limit: 100,000 records/s acknowledged in every cell with 95 to 190 flushes per second (at 100,000 records/s a group at T = 5 ms is about 500 records).
 - Crash: 20 of 20 `SIGKILL` runs (30,000 records/s, T = 5 ms, killed after 2 to 8 s) recovered with every acknowledged record present, none duplicated, no gaps; a process kill leaves no torn tail (the page cache survives it), so power-loss torn writes are not exercised by this test.
 
-### X4: fixed-point and compressed telemetry (PASS, with a caveat on series length)
-Program `experiments/X4-telemetry-blocks` (in-process replay of the newest capture and an estate workload of 100,000 master nodes with 3 windows, every closed window read from `InMemoryTelemetryStore.Dump`; 1,140,251 values in 379,979 series). Command, per-property tables and result: `out/experiments/X4.txt`.
+### X4: fixed-point and compressed windows (PASS, with a caveat on series length)
+Program `experiments/X4-window-blocks` (in-process replay of the newest capture and an estate workload of 100,000 master nodes with 3 windows, every closed window read from `InMemoryWindowStore.Dump`; 1,140,251 values in 379,979 series). Command, per-property tables and result: `out/experiments/X4.txt`.
 - Exactness: every input aggregate (`flows`, `drops`, `changes`, `warnings`, `newFlows`, `deniedFlows`, `flowsOut`) is an exact integer (scale 0) in every graph on both sources; no value fits no scale. Derived values are not: means, rates and ratios are repeating decimals of 28 digits (`dropRate`, `reading` on the capture: 264 of 4,629 values; `dropRatio` 7,401 of 74,048 and `flowRate` 49,576 of 74,048 on the estate service tree). The rule that follows: store sum and count, derive means, rates and ratios at read time.
 - Size per window (input aggregates, weighted): zigzag-varint deltas of the fixed-point values 1.70 B on the capture, 1.01 B on the estate (limit 2 B per value); Gorilla XOR 4.5 and 4.9 B; `decimal` 16 B. Delta varint is the better encoding here, XOR is worse because the series are short and the first value costs 64 bits.
 - Append: 1.6 ns per value for delta varint, 10 ns for Gorilla (limit 30 ns), single thread.
@@ -324,7 +324,7 @@ Code review 2 found two defects in the values a sink keeps (what a rule says abo
 - Proofs: `A_sink_cancels_a_contribution_with_its_retraction_written_at_another_decimal_scale` (5 cases) and `Rows_that_differ_only_in_decimal_scale_leave_nothing_when_they_are_retracted` (plain, distinct and join, in one chunk and row by row; all 6 fail on step 1); `Values_are_kept_once_while_they_are_held_and_gone_when_released` against a model. `Sattle.Differential` every category 312 of 312; the default run 715 passed, 2 skipped; the KQL tests 138 of 138. Seal format 4 (a seal of another build is refused by its build id).
 
 ## Results table, step 3: the results of a projection in three modules (2026-11-13)
-What a projection contributes to its graph was one class with 23 public members and four public dictionaries that the lineage reader and the census read. It is now three modules that each own their state: which elements exist (`ElementLayer`), where they come from (`LineageLayer`, asked through `Of(element)`), and which rows support each telemetry window (`WindowSupport`). `OutputBuilder` stays as the one thing an operator holds, with 13 members that pass on. The code moved as it was; the state kept is the same.
+What a projection contributes to its graph was one class with 23 public members and four public dictionaries that the lineage reader and the census read. It is now three modules that each own their state: which elements exist (`ElementLayer`), where they come from (`LineageLayer`, asked through `Of(element)`), and which rows support each window (`WindowSupport`). `OutputBuilder` stays as the one thing an operator holds, with 13 members that pass on. The code moved as it was; the state kept is the same.
 
 One behaviour changes (code review 2, defect 22, the part in the results): on a merge of two identities the lineage of the id that lost moves to the survivor, as its rows do. Before, an entity that a link forwarded to another id had no lineage: 1 pod in 5 on the estate.
 
@@ -492,7 +492,7 @@ Release build of 1b89b48 plus the harness, in a clone. Load average 140 to 300 (
 | `TraverseOp` | 6,179 | 5,835 | the reach of every start as a `List<Entity>`, a copy of each reached entity with its properties as strings and `TextValue`s |
 | `JoinOp` | 3,596 | 2,925 | the tables of both sides |
 | `GroupOp` | 2,836 | 2,578 | accumulator tables |
-| telemetry store | 1,854 | 1,828 | a `(decimal, long)[]` per series, and the change log |
+| window store | 1,854 | 1,828 | a `(decimal, long)[]` per series, and the change log |
 | interner | 1,771 | 1,643 | 1.24 M strings at 10^5, 12 per master node |
 | `WindowedGroupOp` | 1,742 | 1,346 | |
 | hot graph byte pool | 1,386 | 1,180 | |
@@ -503,7 +503,7 @@ Release build of 1b89b48 plus the harness, in a clone. Load average 140 to 300 (
 | identity catalog | 570 | 507 | |
 | engine rest, statics | 2,170 | 217 | fixed (21.7 MB) |
 
-Per graph at 10^5, MB: `healthTree` 1,031; shared (interner, telemetry, identities, statics) 420; `workloadStructure` 375; `master` 307; `workload` 264; `treeStructure` 191; `treeSignals` 183; `serviceTree` 170; `treeRollup` 160. `workloadStructure` and `workload` produce 86 elements (the namespace `shop`) and hold 639 MB, 6.4 KB per master node.
+Per graph at 10^5, MB: `healthTree` 1,031; shared (interner, windows, identities, statics) 420; `workloadStructure` 375; `master` 307; `workload` 264; `treeStructure` 191; `treeSignals` 183; `serviceTree` 170; `treeRollup` 160. `workloadStructure` and `workload` produce 86 elements (the namespace `shop`) and hold 639 MB, 6.4 KB per master node.
 
 **Work by operator, 10^4 and 10^5** (ms and MB allocated; the growth for ten times the nodes):
 | operator | 10^4 | 10^5 | growth of the allocation |
@@ -524,7 +524,7 @@ Theory. A view of one namespace should keep state for that namespace. Two reads 
 | per master node | 42.2 / 40.3 KB | 31.9 / 30.3 KB |
 | `workload` | 36.7 / 24.3 MB | 264.2 / 149.8 MB |
 | `workloadStructure` | 53.1 / 51.3 MB | 374.9 / 350.8 MB |
-| telemetry store | 18.5 / 16.5 MB | 182.9 / 162.9 MB |
+| window store | 18.5 / 16.5 MB | 182.9 / 162.9 MB |
 | allocated | 47,588 / 47,496 MB | 571,251 / 570,471 MB |
 
 - Times are not comparable: load average 128 to 300 during all four runs, and another project was rendering during the after-runs. Bytes are valid under load.
@@ -532,11 +532,11 @@ Theory. A view of one namespace should keep state for that namespace. Two reads 
 - Digests:
   - estate unchanged (`sha256:32bcad1f...a422`), deploy-health unchanged;
   - estate-wide moves from `sha256:825fead7...a533` to `sha256:debc3276...8cc`.
-- Why estate-wide moves: its graphs are identical (`workload` 20 entities, 20 relationships). Its `workload` telemetry falls from 146 to 56 windows, and 9 fewer identities are minted (246 to 237). Before, `extend nodes ComponentSignal` wrote reading windows for the signals of meters outside the workload. Those signal elements are never created, so the windows had no element. The estate has no such meters.
+- Why estate-wide moves: its graphs are identical (`workload` 20 entities, 20 relationships). Its `workload` windows fall from 146 to 56 windows, and 9 fewer identities are minted (246 to 237). Before, `extend nodes ComponentSignal` wrote reading windows for the signals of meters outside the workload. Those signal elements are never created, so the windows had no element. The estate has no such meters.
 - The `acme.workload` pin in `acme.space` moves.
 
 ### Hog 4: a `Series` keeps the windows of the elements it joined (#49, 2026-11-17)
-Theory. A `Series` joins the structural rows with the closed windows of the read graph, keyed by element. The telemetry store already indexes those windows by element. The `Series` kept the windows of every element of the read graph, whether or not a row joined it. Now it keeps the windows of the elements with a row only, as emitted, so it can retract them at the look-back edge after the store has dropped them by retention. When an element gets its first row, its windows of the look-back are read from the store. The read graph runs earlier in the same step, so the store holds exactly the window changes the `Series` has received. When the last row goes, the windows go. Per joined element the windows are a `SortedList<long, decimal?[]>`: about 72 B per window (the values array, 8 B start, 8 B reference) instead of about 116 B (tree node and array). Seal format 6.
+Theory. A `Series` joins the structural rows with the closed windows of the read graph, keyed by element. The window store already indexes those windows by element. The `Series` kept the windows of every element of the read graph, whether or not a row joined it. Now it keeps the windows of the elements with a row only, as emitted, so it can retract them at the look-back edge after the store has dropped them by retention. When an element gets its first row, its windows of the look-back are read from the store. The read graph runs earlier in the same step, so the store holds exactly the window changes the `Series` has received. When the last row goes, the windows go. Per joined element the windows are a `SortedList<long, decimal?[]>`: about 72 B per window (the values array, 8 B start, 8 B reference) instead of about 116 B (tree node and array). Seal format 6.
 
 | | 10^4 before / after | 10^5 before / after |
 |---|---|---|
@@ -553,7 +553,7 @@ Theory. A `Series` joins the structural rows with the closed windows of the read
 - Before is hog 5's after-run. Both runs have hog 5's definitions.
 - Times are not comparable: the load average at the start was 128 and 72 before, and 609 and 568 after. Bytes and allocations are valid under load. The `Series` operators' own time still fell (10^5: 2,658 to 2,188 ms), the store reads included.
 - What the `Series` still holds at 10^5: the windows of the views that join the whole estate, and its structural rows (the `Int64[]` and `Decimal[]` per row).
-- The telemetry store grows by 2.3 MB at 10^5: two 24 B wrappers (`Keys`, `Values`) that a `SortedList` caches once its scan touches a series. That is about one object per master node.
+- The window store grows by 2.3 MB at 10^5: two 24 B wrappers (`Keys`, `Values`) that a `SortedList` caches once its scan touches a series. That is about one object per master node.
 - Digests: unchanged. estate, deploy-health, estate-wide and the lab fixtures equal the pins with hog 5.
 
 ### The run at 10^6 (#49, 2026-11-17)
@@ -575,7 +575,7 @@ Release build of f9e3121, which includes hogs 1 to 5, in a clone. Input from `sa
 - From 10^5 to 10^6, live bytes per master node fell from 26.0 KB to 19.95 KB, and the replay grows about linearly with the input: 55 s at 10^5 (hogs 1 to 3) against 590 to 677 s at 10^6. Before the hogs, 10^6 was estimated at about 13 h and 32 GB.
 - The gap to the budget is about 9 times for memory and 59 times for allocation per record.
 - The allocation per record includes about 11 KB of the bench's own measurement: two string keys per operator call, made while `TrackAllocations` is on (found 2026-11-18, see "allocation per record: the step"). The engine's own figure was measured at 10^4 and 10^5 only: 47.0 and 46.1 KB per record.
-- Retained bytes per master node by structure (census, 42.7 M objects, coverage 100 %, walk 30 s): `JoinOp` 2,585; `GroupOp` 2,311; interner 1,863 (12.1 M strings); telemetry store 1,657; hot graph byte pool 1,485; `SeriesOp` 1,307; `WindowedGroupOp` 1,099; `TraverseOp` 987; sink contributions 772; sink values 629; identities 452; lineage sinks 422; entity and relationship tables 410 and 386; sink ends 386; `MatchOp` 329; `ThresholdOp` 325 (2.9 M tree nodes); telemetry windows of the sinks 302; `EmitRelOp` 279; `MapOp` 244.
+- Retained bytes per master node by structure (census, 42.7 M objects, coverage 100 %, walk 30 s): `JoinOp` 2,585; `GroupOp` 2,311; interner 1,863 (12.1 M strings); window store 1,657; hot graph byte pool 1,485; `SeriesOp` 1,307; `WindowedGroupOp` 1,099; `TraverseOp` 987; sink contributions 772; sink values 629; identities 452; lineage sinks 422; entity and relationship tables 410 and 386; sink ends 386; `MatchOp` 329; `ThresholdOp` 325 (2.9 M tree nodes); windows of the sinks 302; `EmitRelOp` 279; `MapOp` 244.
 - Work by operator, run 1 (ms, MB allocated): flush, apply and store commit 131,907 ms; `TraverseOp` 92,663, 9,204; `MatchOp` 88,271, 40,257; `EmitRelOp` 44,067, 14,147; `EmitEntityOp` 40,843, 18,901; `SeriesOp` 19,881, 12,072; `GroupOp` 18,315, 3,274; `JoinOp` 16,668, 3,714; `LinkOp` 3,577, 3,525. By graph, `healthTree` costs most (operators 134 s, commit 21 s), then `master` (49 s, 65 s) and `workloadStructure` (53 s).
 - Raw outputs: `tmp/orchestrator/n1m-phases.txt` and `n1m-census.txt` (not in git).
 
@@ -610,7 +610,7 @@ Theory. A group keeps per key a row of accumulators and, for `arg_max` and `arg_
 - Digests unchanged, as for the joins.
 
 ### Efficiency stage 2, interner: a text is its bytes, not a string object (#115, 2026-11-17)
-Theory. At 10^4 the interner holds 127,466 texts: 89,074 element ids (`e:` and `r:` with 26 base32 characters), 19,553 paths, the rest names, numbers and labels; at 10^6 about 12 per master node. Every one is live: an element id lives as long as its element, and its code is the handle in sinks, lineage, telemetry and operator tables. So the texts stay and their form changes. A text cost a .NET string (80 B for an id), a dictionary entry with its bucket, a list slot and a young flag, about 134 to 154 B. A lookup needs a hash and a comparison with the stored text; `Get` needs the characters. Now the texts are bytes in pages of 64 KB (one byte per character when every character is below 256, else two), and per code its place (8 B), its length with the young mark (4 B) and its hash (4 B); one open-addressing index at a load of at most 3/4. Freed texts leave dead bytes, and the pages are copied together when more bytes are dead than live, as `Values` does. Codes, young and old, the reuse of the smallest free code and the seal are unchanged.
+Theory. At 10^4 the interner holds 127,466 texts: 89,074 element ids (`e:` and `r:` with 26 base32 characters), 19,553 paths, the rest names, numbers and labels; at 10^6 about 12 per master node. Every one is live: an element id lives as long as its element, and its code is the handle in sinks, lineage, windows and operator tables. So the texts stay and their form changes. A text cost a .NET string (80 B for an id), a dictionary entry with its bucket, a list slot and a young flag, about 134 to 154 B. A lookup needs a hash and a comparison with the stored text; `Get` needs the characters. Now the texts are bytes in pages of 64 KB (one byte per character when every character is below 256, else two), and per code its place (8 B), its length with the young mark (4 B) and its hash (4 B); one open-addressing index at a load of at most 3/4. Freed texts leave dead bytes, and the pages are copied together when more bytes are dead than live, as `Values` does. Codes, young and old, the reuse of the smallest free code and the seal are unchanged.
 
 | | 10^4 before / after | 10^5 before / after |
 |---|---|---|
@@ -627,14 +627,14 @@ Theory. At 10^4 the interner holds 127,466 texts: 89,074 element ids (`e:` and `
 - Before is the groups patch. Times are measured under load and not comparable; bytes are.
 - Digests unchanged, as for the joins.
 
-### Efficiency stage 2, telemetry store and Series: one copy of a window (#115, 2026-11-17)
+### Efficiency stage 2, window store and Series: one copy of a window (#115, 2026-11-17)
 Theory. A Series kept, per element with a row, the windows of its look-back with the values of its reads: a copy of what the store holds, kept to retract a window when it leaves the look-back. Now the store is the one copy. A window change needs the record before and after: after is the store now (the read graph steps first), before is the store with the first old value of each changed read put back, which the change carries. Changed windows join the rows before the step, then changed rows join the windows after it (`Δ(R ⋈ W) = R_old ⋈ ΔW + ΔR ⋈ W_new`), so an element's first row needs no special case. At an advance the windows that leave the look-back are read from the store, so retention now runs after every graph of the epoch stepped, not after each graph: before, the read graph could drop a window before the Series retracted it. Every window a Series can need starts at or after `frontier - within`, and `within <= retention`, so the store holds it; the store after the epoch is the same as before. The store keeps a series as its starts and values in two arrays and its width (it was a `SortedList` with two wrappers and a second dictionary for the width). The input id of a window goes: it was compared only together with an equal value, and then no change is logged either way. The change log is released as it is read (one reader per plane, its graph, right after its step); it held the last step's changes and handed out a copy. A Series row stores each column once, in `long` or `decimal` by its type (it held both arrays at full width). Seal format 8 to 9.
 
 | | 10^4 before / after | 10^5 before / after |
 |---|---|---|
 | live bytes | 278 / 263 MB | 1,786 / 1,636 MB |
 | per master node | 27.8 / 26.3 KB | 17.9 / 16.4 KB |
-| telemetry store per master node | 1,674 / 1,041 B | 1,652 / 1,030 B |
+| window store per master node | 1,674 / 1,041 B | 1,652 / 1,030 B |
 | Series per master node | 1,420 / 538 B | 1,348 / 473 B |
 | store bytes per window | 84 / 52 | 83 / 52 |
 | allocated per input record | 60.5 / 60.2 KB | 59.3 / 59.1 KB |
@@ -662,9 +662,9 @@ Theory. Per graph, the properties of every element are a block in one byte array
 - Before is the interner patch. Times are measured under load and not comparable; bytes are. Digests unchanged at 10^4 and 10^5 and on the lab fixtures. The seal format is unchanged: a seal writes a graph as its elements.
 
 ### Efficiency stage 2, allocation per record: the step (#115, 2026-11-18)
-Where the 57.5 KB per record at 10^5 went, measured part by part the way operators are (`GC.GetAllocatedBytesForCurrentThread` around each, KB per record, 10^4 in brackets): a dictionary of inputs per operator call 11.3 (11.4); the bench's own keys, two string concatenations per operator call 11.4 (11.5); a dictionary of outputs per graph step 2.9 (3.0); operators 13.6 (14.2); flush of the elements 8.2 (7.8); flush of the telemetry 6.6 (6.9); patch, apply, store commit, telemetry append and read, commit event 2.0 (2.1); epochs and the interner's collect 0.5 (0.4); reading the capture and the adapters 0.9 (1.0).
+Where the 57.5 KB per record at 10^5 went, measured part by part the way operators are (`GC.GetAllocatedBytesForCurrentThread` around each, KB per record, 10^4 in brackets): a dictionary of inputs per operator call 11.3 (11.4); the bench's own keys, two string concatenations per operator call 11.4 (11.5); a dictionary of outputs per graph step 2.9 (3.0); operators 13.6 (14.2); flush of the elements 8.2 (7.8); flush of the windows 6.6 (6.9); patch, apply, store commit, window append and read, commit event 2.0 (2.1); epochs and the interner's collect 0.5 (0.4); reading the capture and the adapters 0.9 (1.0).
 
-Theory. A step of a graph runs its operators in plan order. Each operator needs the batch on each of its ports, and the step needs each operator's output until its last reader ran. Both are fixed by the plan, so they need no new object per call: one view of inputs per operator and one table of outputs per graph, made once from the plan and refilled by every step. The views hold batches only while the step runs and let go of them at its end, so no batch lives longer than before (an operator's output batch belongs to it until it runs again, #39). The ports are walked as an array: an enumerator through `IReadOnlyDictionary` is an object. The keys of the measurement are a function of the plan too and are made once per graph; until now every figure of allocation per record in this file held 11.4 KB of the harness, which a run without `TrackAllocations` never paid. The parts after the operators have a row each in `bench phases` (flush elements, flush telemetry, patch and apply, store commit, telemetry append and read, commit event, step dispatch); the row `(flush, apply, store commit)`, which measured time only, goes.
+Theory. A step of a graph runs its operators in plan order. Each operator needs the batch on each of its ports, and the step needs each operator's output until its last reader ran. Both are fixed by the plan, so they need no new object per call: one view of inputs per operator and one table of outputs per graph, made once from the plan and refilled by every step. The views hold batches only while the step runs and let go of them at its end, so no batch lives longer than before (an operator's output batch belongs to it until it runs again, #39). The ports are walked as an array: an enumerator through `IReadOnlyDictionary` is an object. The keys of the measurement are a function of the plan too and are made once per graph; until now every figure of allocation per record in this file held 11.4 KB of the harness, which a run without `TrackAllocations` never paid. The parts after the operators have a row each in `bench phases` (flush elements, flush windows, patch and apply, store commit, window append and read, commit event, step dispatch); the row `(flush, apply, store commit)`, which measured time only, goes.
 
 | | 10^4 before / after | 10^5 before / after |
 |---|---|---|
@@ -674,21 +674,21 @@ Theory. A step of a graph runs its operators in plan order. Each operator needs 
 | step dispatch | 14.4 / 0.0 KB | 14.2 / 0.0 KB |
 | live bytes | 252 / 252 MB | 1,546 / 1,546 MB |
 
-- What remains at 10^5, KB per record: operators 13.6 (`MatchOp` 4.5, `EmitEntityOp` 2.6, `EmitRelOp` 1.9, `SeriesOp` 1.4, `TraverseOp` 0.9), flush of the elements 8.2, flush of the telemetry 6.6, patch and apply 1.1, telemetry append and read 0.7, reading and adapters 0.9.
-- Before is the stack of joins, groups, interner, telemetry and pool. Times are measured under load and not comparable; bytes are. Digests unchanged at 10^4 (`sha256:2654c25f...bfbc3`) and 10^5 (`sha256:0ab80689...1140`). The seal format is unchanged: the working state of a step is not state of the engine between steps.
+- What remains at 10^5, KB per record: operators 13.6 (`MatchOp` 4.5, `EmitEntityOp` 2.6, `EmitRelOp` 1.9, `SeriesOp` 1.4, `TraverseOp` 0.9), flush of the elements 8.2, flush of the windows 6.6, patch and apply 1.1, window append and read 0.7, reading and adapters 0.9.
+- Before is the stack of joins, groups, interner, windows and pool. Times are measured under load and not comparable; bytes are. Digests unchanged at 10^4 (`sha256:2654c25f...bfbc3`) and 10^5 (`sha256:0ab80689...1140`). The seal format is unchanged: the working state of a step is not state of the engine between steps.
 
-### Efficiency stage 2, allocation per record: the flush of the telemetry (#115, 2026-11-18)
-Theory. Premise B1: a window is written by exactly one row, and then the store's value is its whole support, so nothing is kept for it in the sink. A step's rows for one window are few: one, or one out and one in for a revision. A window needs its rows of the step netted by own id and value, and its stored value; a short list held for the whole flush serves both. The rows of a window are chained in arrival order (first, last, and the next of each row, in one pooled array), so the windows settle in the order their first row came, as before. The stored value is one lookup: the telemetry port gets `ValueOf(g, window)`, the twin of `AuxOf`, where a `ReadWindow` of one window made two arrays, a list and a record. A dictionary is made only for a support the sink keeps, one that is not one row of weight one. The text of a conflict subject (`window e p ws`) was made for every window; a window has a conflict only while its support is kept (a conflict needs two values, and a support of two values is kept, and the settle that drops the support clears the conflict), so the subject is made only for a kept support, a conflict, or a window a merge moved. Windows written under two own ids keep their path. The samples reach `Append` as a span of the list, not as a copy.
+### Efficiency stage 2, allocation per record: the flush of the windows (#115, 2026-11-18)
+Theory. Premise B1: a window is written by exactly one row, and then the store's value is its whole support, so nothing is kept for it in the sink. A step's rows for one window are few: one, or one out and one in for a revision. A window needs its rows of the step netted by own id and value, and its stored value; a short list held for the whole flush serves both. The rows of a window are chained in arrival order (first, last, and the next of each row, in one pooled array), so the windows settle in the order their first row came, as before. The stored value is one lookup: the window port gets `ValueOf(g, window)`, the twin of `AuxOf`, where a `ReadWindow` of one window made two arrays, a list and a record. A dictionary is made only for a support the sink keeps, one that is not one row of weight one. The text of a conflict subject (`window e p ws`) was made for every window; a window has a conflict only while its support is kept (a conflict needs two values, and a support of two values is kept, and the settle that drops the support clears the conflict), so the subject is made only for a kept support, a conflict, or a window a merge moved. Windows written under two own ids keep their path. The samples reach `Append` as a span of the list, not as a copy.
 
 | | 10^4 before / after | 10^5 before / after |
 |---|---|---|
 | allocated per input record | 32.6 / 26.7 KB | 31.8 / 26.2 KB |
-| flush of the telemetry | 575 / 113 MB | 5,402 / 1,038 MB |
-| telemetry append and read | 61 / 41 MB | 608 / 401 MB |
+| flush of the windows | 575 / 113 MB | 5,402 / 1,038 MB |
+| window append and read | 61 / 41 MB | 608 / 401 MB |
 | live bytes | 252 / 252 MB | 1,546 / 1,547 MB |
 
-- What remains in the flush of the telemetry, 1.3 KB per record at 10^5: the step's dictionary of windows, the samples list and the working lists, made per flush.
-- Before is the step patch. Times are measured under load and not comparable; bytes are. Digests unchanged at 10^4 and 10^5. No state is added, the seal format is unchanged. One new method on the telemetry port.
+- What remains in the flush of the windows, 1.3 KB per record at 10^5: the step's dictionary of windows, the samples list and the working lists, made per flush.
+- Before is the step patch. Times are measured under load and not comparable; bytes are. Digests unchanged at 10^4 and 10^5. No state is added, the seal format is unchanged. One new method on the window port.
 
 ### Efficiency stage 2, allocation per record: the operators (#115, 2026-11-18)
 Where the operators allocated at 10^4, measured part by part inside them: `MatchOp` 372 MB (an array of (state, sign) per edit and seed 122, the candidate edges 81, entity reads 73, the old view's dictionaries per call 50); `EmitEntityOp` 207 MB, of which minting identities 167 (about 4 KB per new key); `EmitRelOp` 157 MB, of which relationship ids 108 (1.8 KB per new pair); `SeriesOp` 122 MB, of which grouping the step's window changes into a new dictionary of lists per call 60.
@@ -708,7 +708,7 @@ Theory. An id is the hash of a canonical text; the text is a function of the key
 
 - Cost moved: the Series working state stays between calls, 6.6 MB at 10^5 (66 B per master node). Letting it go after a large step made the next large step grow it again: 830 MB more allocation at 10^5.
 - What remains in the operators at 10^5, KB per record: `MatchOp` 2.9 and `TraverseOp` 0.9 (elements read from the graph as objects: an id string and decoded properties per read), `EmitEntityOp` 1.1 and `EmitRelOp` 0.6 (mostly the element and lineage layers), `SeriesOp` 0.5, `MapOp` 0.3 (expression scratch).
-- Before is the telemetry flush patch. Times are measured under load and not comparable; bytes are. Digests unchanged at 10^4 and 10^5. No state is added, the seal format is unchanged.
+- Before is the window flush patch. Times are measured under load and not comparable; bytes are. Digests unchanged at 10^4 and 10^5. No state is added, the seal format is unchanged.
 
 ### Efficiency stage 2, hot graph id tables: an element's id is a code (#115, 2026-11-18)
 Theory. Per graph, two id tables (entities, relationships) gave each id a dense handle, by which the columns and adjacency lists are kept. A table held every id the graph had as UTF-8 bytes (28 B for an id), its offset, length and hash (12 B) and an index at a load of at most 1/2 (8 B): about 72 B per id with slack, 426 and 447 B per master node at 10^4. A put needs the handle of an id and of a relationship's endpoints, a read by id the same lookup, a read of an element its id back. None needs the bytes in the graph: every element id of an engine's graph is an old code of the engine's interner, which never frees it, and the pool already keeps its texts there. Now a table keeps per handle the id's code in the graph's text table (4 B) and an index from code to handle at a load of at most 1/2 (8 B). A lookup by id finds the text's code without adding it (`TryFind`, the one method the text table gains), then probes an integer. Handles are still kept for the life of the graph; the churn of ids is small (at 10^4, 640 of 11,281 relationship ids of treeStructure are not live).
@@ -723,7 +723,7 @@ Theory. Per graph, two id tables (entities, relationships) gave each id a dense 
 
 - Cost moved: a read by id asks the interner first (a hash of the characters and a compare with its bytes), and the id of a handle is the interner's string (from its cache, else made once), where the id table decoded UTF-8 on every read: allocation per record falls by 1.2 KB at 10^4 and 1.1 KB at 10^5. The thread's CPU time at 10^5 rises by about 2 % (main 60.9 and 62.0 s, after 62.9 and 63.5 s, two runs each, alternated, load 49 to 133), most of it in the advance (window closes, derived commits), where reads by id now go through the engine-wide interner instead of a table per graph.
 - The interner's live texts do not change (127,466 at 10^4, 1,212,925 at 10^5).
-- Before is main at 4c58129 (with the interner, telemetry and pool patches). Times are measured under load and not comparable; bytes are. Digests unchanged. The seal format is unchanged: a seal writes a graph as its elements.
+- Before is main at 4c58129 (with the interner, windows and pool patches). Times are measured under load and not comparable; bytes are. Digests unchanged. The seal format is unchanged: a seal writes a graph as its elements.
 
 ### Efficiency stage 2, a graph compares an element in codes (#115, 2026-11-18)
 `Graph.Holds(id, type, source, target, props)` says whether the graph has exactly this element, all given as interner codes and the props as a block from `PropBlockWriter` (the one writer of the pool's encoding). True means equal; false means different or not decidable in codes (a decimal of another scale), and the caller compares elements as before. It makes no string and no element, so the element flush can skip the elements a flush does not change (at 10^4, 130,482 of 262,881 touched elements). For this, an element's type and its property keys are interner codes too, as its texts already were; the two string tables per graph go. Cost: a key is a 2 to 3 byte code instead of a 1 byte number of the graph's own, so the pool grows from 240 to 276 B per master node at 10^4 (live 246 to 247 MB). Digest and the interner's live texts unchanged at 10^4. The flush itself is changed in its own patch.
@@ -825,15 +825,15 @@ Theory. A walk from a bound entity takes the relationships at it whose type is a
 - `OutEdges` and `InEdges` take the type test (Match is their only caller).
 - Before is main 9f822ab with the sink and element flush patches. Times are measured under load and not comparable; bytes are. Digests unchanged at 10^4 and 10^5. No state is added (the working state is per thread, not sealed); the seal format is unchanged.
 
-### Efficiency stage 2, allocation per record: the flush of the telemetry, its working state (#115, 2026-11-18)
-At 10^4 a flush of the telemetry (44,666 of them) made a dictionary of the step's windows, a list of them and a list of samples each time: 40.5 MB for the windows and 59.8 MB for the growth of the sample list, of 113 MB. A step writes about one row per window (199,232 rows, 199,082 windows).
+### Efficiency stage 2, allocation per record: the flush of the windows, its working state (#115, 2026-11-18)
+At 10^4 a flush of the windows (44,666 of them) made a dictionary of the step's windows, a list of them and a list of samples each time: 40.5 MB for the windows and 59.8 MB for the growth of the sample list, of 113 MB. A step writes about one row per window (199,232 rows, 199,082 windows).
 
 Theory. The windows of a step and its samples are needed only while the step is flushed and until its caller has appended the samples to the store, which it does before the next flush on the thread. Flushes do not overlap, so one working state per thread serves every flush: the windows by key, their rows as a chain, the samples. It is cleared, not made, at each flush, and keeps the size of the largest step. Same windows in the same order, same samples.
 
 | | 10^4 before / after | 10^5 before / after |
 |---|---|---|
 | allocated per input record | 12.9 / 11.7 KB | 12.4 / 11.4 KB |
-| flush of the telemetry | 113 / 18 MB | 1,038 / 173 MB |
+| flush of the windows | 113 / 18 MB | 1,038 / 173 MB |
 | live bytes | 242 / 245 MB | 1,449 / 1,473 MB |
 
 - Cost moved: the working state stays between flushes, 23 MB at 10^5 (235 B per master node: the samples 13.6 MB, the windows 9.2 MB), sized by the largest steps (the advances). Letting it go after a flush of more than 16,384 windows gave back the allocation: 1,024 MB at 10^5.
@@ -884,7 +884,7 @@ Theory. A traverse stores its input rows as a join does: a column of codes (a te
 
 - Cost moved: a step that walks from the root again allocates its working state again, 10 MB more at 10^5 (0.1 %).
 - What remains at 10^5: the reach table, 55 B per row for 12 B of data (the weight, the index on the whole key, the arrangements by start and by element), and the operator's output batch, kept at the size of its largest step (the census's 8-byte arrays less the tables' weights: about 22 MB).
-- Before is main 7ab0046 with the ends, ones, joins, Match, telemetry flush state and Traverse allocation patches. Digests and the interner's live texts unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`; 127,466 and 1,212,925). Times are measured under load (load average 80 to 150) and not comparable; bytes are.
+- Before is main 7ab0046 with the ends, ones, joins, Match, window flush state and Traverse allocation patches. Digests and the interner's live texts unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`; 127,466 and 1,212,925). Times are measured under load (load average 80 to 150) and not comparable; bytes are.
 
 ### Efficiency stage 2, segments: a column grows in 4,096 entries, not 65,536 (#115, 2026-11-18)
 At 10^5 the operators' tables and the sinks' tables hold about 10^5 rows each, and every column of a table grew in segments of 65,536 entries: a table of 135,051 rows (the row set of the health tree's rolled-up state) held room for 196,608 in every column, its arrangements and its weights. (Footprints from a temporary diagnostic of the group operators, not in the patch.)
@@ -918,7 +918,7 @@ Theory. The working arrays live for one step. One that grows past its first size
 - The allocation falls because operators share the pool: a step whose batches are larger than those of the step before takes arrays another operator let go instead of growing its own. Bounds tried at 10^4 (live, allocated): a cut past 4,096 rows without a pool 224 and 826 MB; past 1,024 rows without a pool 199 and 975 MB; with the pool, a cut past 64 to 1,024 rows and a drop after 16 to 256 steps 200 to 201 and 778 to 866 MB, after 512 steps 208 and 787 MB, after 1,024 steps 213 and 822 MB. 64 rows and 256 steps was the lowest allocation.
 - What the pool holds after the replay is not attributed by the census (coverage 99 to 96 % at 10^5, about 44 MB): the arrays the last 256 steps let go.
 - Cost: a cut column is given a new array of 64 rows (24 MB at 10^5 in the step dispatch).
-- Before is main fa0be02 with the ones, joins, Match, telemetry flush state, mint, traverse and traverse rows patches. Digests unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`). Times are measured under load (load average 30 to 60) and not comparable; bytes are.
+- Before is main fa0be02 with the ones, joins, Match, window flush state, mint, traverse and traverse rows patches. Digests unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`). Times are measured under load (load average 30 to 60) and not comparable; bytes are.
 
 ### Efficiency stage 2, binding records: the store receives a binding as codes and makes its texts only if it persists it (#115, 2026-11-18)
 Every key the identity catalog binds made its record as text when it was minted: the key's SHA-256 as 64 hex characters, the id as a string before it was interned, the components as JSON, and a record object. At 10^5 that is 371,730 records (330,480 minted keys, 27,525 aliased, 13,725 merges). The default store keeps only the head and dropped them unread; the engine also copied the pending list per master commit.
@@ -958,7 +958,7 @@ Theory. A table column that may need 8 bytes, and the weight of a row, take 4 by
 - The row sets' remaining cost is their structure, not their values: per row a whole-row index entry (8 to 16 B), the arrangement by key (8 B and its index), the key slot and the bits of which values are present. Not changed here.
 
 ### Efficiency stage 2, identities: a key holds its component codes in 4 bytes (#115, 2026-11-18)
-The identity catalog keeps two maps from a key to an id: the bindings (358,005 keys at 10^5) and the own ids (one per key the telemetry sinks read). A key was its domain's index and four components in 8 bytes each, 40 bytes; an entry of the map 56 bytes.
+The identity catalog keeps two maps from a key to an id: the bindings (358,005 keys at 10^5) and the own ids (one per key the window sinks read). A key was its domain's index and four components in 8 bytes each, 40 bytes; an entry of the map 56 bytes.
 
 Theory. A canonical component is a text code of the interner, which is 4 bytes, as the id it maps to is. So a key holds its components in 4 bytes: 20 bytes, 32 bytes per entry. Same keys, same hash and equality over the same codes, same ids; the catalog is not sealed, so no seal change.
 
@@ -1016,14 +1016,14 @@ Theory. A group's key row held a flag of whether the key has a row in the output
 - Before is the row sets patch. Digests unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`).
 
 ### Efficiency stage 2, allocation per record: the window changes of a step and its commit report (#115, 2026-11-18)
-At 10^4 reading what a step changed in the telemetry allocated 41 MB in 44,666 steps, and the commit report 12 MB, 270 B per step, nearly all of them steps without a changed conflict. A window change was an object of 80 B behind a reference in a list that grew by doubling, each step started a new log, and each step ordered its empty set of changed conflicts into a new list.
+At 10^4 reading what a step changed in the windows allocated 41 MB in 44,666 steps, and the commit report 12 MB, 270 B per step, nearly all of them steps without a changed conflict. A window change was an object of 80 B behind a reference in a list that grew by doubling, each step started a new log, and each step ordered its empty set of changed conflicts into a new list.
 
 Theory. A window change is a value (a key and two optional numbers), so it is a struct of 64 B held in the log itself. An append makes room for its whole batch at once, so a step's log is made at its size, not grown by doubling. The plane's one reader keeps what it reads (the graph delta, the commit event, an export), so a read takes the log; a step with no change reads the shared empty list and leaves the log in place. A step with no changed conflict reports the shared empty list. Same changes in the same order.
 
 | | 10^4 before / after | 10^5 before / after |
 |---|---|---|
 | allocated per input record | 8.27 / 8.02 KB | 8.24 / 8.00 KB |
-| telemetry append and read | 41 / 32 MB | 401 / 313 MB |
+| window append and read | 41 / 32 MB | 401 / 313 MB |
 | commit event | 12 / 2 MB | 120 / 18 MB |
 | live bytes | 179 / 179 MB | 937 / 937 MB |
 
@@ -1061,11 +1061,11 @@ Release build of fd42618, the same input as the first run (8,159,533 records, 1,
 | 12 window advances | 219 / 170 s | 190 s | 177 s | 5 s each (p99), #119 |
 
 - Live memory is 13 % over the limit; peak, GC pause and allocation are within; CPU per record is about 1.8 times the limit. A Graph names memo (a CPU regression of 12 to 15 % from 9f822ab) and the choice of GC mode (server GC took about twice the CPU of workstation GC on a smaller run) are the next steps for CPU.
-- Retained bytes per master node by structure (census, 15.8 M objects, coverage 100 %, walk 11 s): telemetry store 1,031; joins 937; interner 781; traverse 600; groups 548; sink contributions 480; statics 390 (a 218 MB sample array); windowed groups 364; sink values 325; thresholds 311 (4.7 M tree nodes); graph byte pool 302.
+- Retained bytes per master node by structure (census, 15.8 M objects, coverage 100 %, walk 11 s): window store 1,031; joins 937; interner 781; traverse 600; groups 548; sink contributions 480; statics 390 (a 218 MB sample array); windowed groups 364; sink values 325; thresholds 311 (4.7 M tree nodes); graph byte pool 302.
 - Raw outputs: `tmp/orchestrator/n1m-b-phases.txt` and `n1m-b-census.txt` (not in git).
 
 ### Window close: the time from a window's close to committed health state (#119, 2026-11-18)
-`sattle bench phases --capture DIR` now times each window close: from the first progress record the replay sends before an advance to the end of the advance, when every graph has committed (the replay sends progress only there). Per close it prints the frontier, wall, thread CPU, allocation, collection pauses, the telemetry window changes the graphs committed, the series held after it and the four graphs that took longest; then p50, p99 and max over all closes and over the closes after the first. It also prints the graph table and the state digest on every run, not only with `--census`. The generated estates (`bench gen-estate`) run 12 closes: two before any telemetry, the first close with telemetry, nine steady.
+`sattle bench phases --capture DIR` now times each window close: from the first progress record the replay sends before an advance to the end of the advance, when every graph has committed (the replay sends progress only there). Per close it prints the frontier, wall, thread CPU, allocation, collection pauses, the window changes the graphs committed, the series held after it and the four graphs that took longest; then p50, p99 and max over all closes and over the closes after the first. It also prints the graph table and the state digest on every run, not only with `--census`. The generated estates (`bench gen-estate`) run 12 closes: two before any windows, the first close with windows, nine steady.
 
 | | 10^4 | 10^5 |
 |---|---|---|
@@ -1073,9 +1073,9 @@ Release build of fd42618, the same input as the first run (8,159,533 records, 1,
 | window changes per steady close | 19,878 to 19,914 | 198,623 to 198,960 |
 | steady close, wall p50 / max | 73 / 95 ms | 668 / 900 ms |
 | steady close, thread CPU median | 70 ms | 622 ms |
-| first close with telemetry, wall (thread CPU) | 564 (462) ms | 7,841 (6,390) ms |
+| first close with windows, wall (thread CPU) | 564 (462) ms | 7,841 (6,390) ms |
 
-- The first close with telemetry is a load: the derived graphs create their structure from the first windows (at 10^5 workloadStructure 1.7 s, master 1.5 s, healthTree 1.3 s, treeSignals 0.9 s) and it allocates 1.2 GB. A live space has it once; a restart from a seal does not repeat it. The steady closes are what the limit of 13.1 reads.
+- The first close with windows is a load: the derived graphs create their structure from the first windows (at 10^5 workloadStructure 1.7 s, master 1.5 s, healthTree 1.3 s, treeSignals 0.9 s) and it allocates 1.2 GB. A live space has it once; a restart from a seal does not repeat it. The steady closes are what the limit of 13.1 reads.
 - Linear in the series: about 6.2 s per steady close at 10^6 from these figures, over the 5 s limit.
 - Load average 75 to 90 on 10 cores during these runs; wall is noisy, thread CPU less so. Digests `sha256:2654c25f...bfbc3` (10^4), `sha256:0ab80689...41140` (10^5).
 
@@ -1086,7 +1086,7 @@ Theory. A windowed group never retracts a closed window: its state goes when the
 |---|---|---|
 | steady close, thread CPU median | 70 / 55 ms | 622 / 445 ms |
 | steady close, wall p50 / max | 73 / 95, 56 / 91 ms | 668 / 900, 506 / 591 ms |
-| first close with telemetry, wall (thread CPU) | 564 (462) / 473 (433) ms | 7,841 (6,390) / 7,105 (6,161) ms |
+| first close with windows, wall (thread CPU) | 564 (462) / 473 (433) ms | 7,841 (6,390) / 7,105 (6,161) ms |
 | this thread, whole replay | | 43.0 / 39.5 s |
 | allocated per input record | 7.87 / 7.84 KB | 7.72 / 7.69 KB |
 
@@ -1094,8 +1094,8 @@ Theory. A windowed group never retracts a closed window: its state goes when the
 - Linear to 10^6: about 4.5 s per steady close, under the 5 s limit with little room.
 - Before is the previous section. Digests unchanged (`sha256:2654c25f...bfbc3`, `sha256:0ab80689...41140`). Load 75 to 90.
 
-### Efficiency stage 2, statics: a large flush's telemetry working state does not stay (#115, 2026-11-18)
-At 10^6 the statics held 390 B per master node, 218 MB of it one `Sample[]`: the working state of the telemetry flush on the engine's thread (the windows of the step by key, their order, and the samples) was kept at the size of the largest step, the first window close of the run. At 10^5 it was 23 of the 30 MB of statics.
+### Efficiency stage 2, statics: a large flush's window working state does not stay (#115, 2026-11-18)
+At 10^6 the statics held 390 B per master node, 218 MB of it one `Sample[]`: the working state of the window flush on the engine's thread (the windows of the step by key, their order, and the samples) was kept at the size of the largest step, the first window close of the run. At 10^5 it was 23 of the 30 MB of statics.
 
 Theory. A flush past 4,096 windows or samples lets the thread's working state go; the step that called it still holds the samples until it has appended them, and the next flush starts small. A flush of a large step sizes its working state once from its row count instead of growing it by doubling. Same samples in the same order. The seal format is unchanged (the state is the thread's, not the engine's).
 
@@ -1104,20 +1104,20 @@ Theory. A flush past 4,096 windows or samples lets the thread's working state go
 | live bytes | 179 / 177 MB | 934 / 910 MB |
 | statics per master node | 409 / 193 B | 303 / 69 B |
 | allocated per input record | 7.73 / 8.07 KB | 7.70 / 8.07 KB |
-| flush telemetry, MB allocated | 18 / 47 | 173 / 475 |
+| flush windows, MB allocated | 18 / 47 | 173 / 475 |
 
 - Cost moved: every window close of a large estate allocates its flush state again, 4.5 % (10^4) and 4.8 % (10^5) more allocation per record; GC pause 0.59 / 0.49 s at 10^5. Without the sizing once it was 13.5 % (8.75 KB per record at 10^5).
 - Before is main c57264e. Digests unchanged (estate `sha256:32bcad1f...a422`, lab fixtures `sha256:4a1560a5...ffd0`, 10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`). Times are measured under load (load average 100 to 300) and not comparable; bytes are.
 
-### Efficiency stage 2, telemetry store: a window's start in 4 bytes and its value in 8 (#115, 2026-11-18)
-At 10^5 the telemetry store held 1,030 B per master node: 199,964 series of about 16 windows each, every start a long (8 B) and every value a decimal (16 B), in arrays grown by doubling.
+### Efficiency stage 2, window store: a window's start in 4 bytes and its value in 8 (#115, 2026-11-18)
+At 10^5 the window store held 1,030 B per master node: 199,964 series of about 16 windows each, every start a long (8 B) and every value a decimal (16 B), in arrays grown by doubling.
 
 Theory. A series keeps a window start as an int number of window widths from the first start the series had, and a value as its mantissa and scale in one long (the mantissa below 2^58). A start off that grid or more than 2^31 widths away turns the series' starts to longs once, a value that does not pack (a wider mantissa, a negative zero) its values to decimals once, so every start and value reads back exactly as written, sign and scale too. Nothing a caller reads changes: the same windows in the same order. Seal format 20 to 21 (a snapshot writes the series in the form it has).
 
 | | 10^4 before / after | 10^5 before / after |
 |---|---|---|
 | live bytes | 177 / 174 MB | 910 / 878 MB |
-| telemetry per master node | 1,041 / 714 B | 1,030 / 703 B |
+| windows per master node | 1,041 / 714 B | 1,030 / 703 B |
 | allocated per input record | 8.07 / 8.01 KB | 8.07 / 8.00 KB |
 | peak resident set | 515 / 455 MB | 1,880 / 1,798 MB |
 
@@ -1162,7 +1162,7 @@ The three changes of this day together, against the previous section's after (th
 | steady close, thread CPU median | 60 / 56 ms | 462 / 334 ms, 549 / 425 ms |
 | steady close, wall p50 / max | 62 / 70, 57 / 77 ms | 570 / 1,694, 364 / 511 ms |
 | allocated per steady close | 8.2 / 6.0 MB | 98.1 / 61.4 MB |
-| first close with telemetry, thread CPU | 469 / 468 ms | 6,697 / 6,341 ms |
+| first close with windows, thread CPU | 469 / 468 ms | 6,697 / 6,341 ms |
 
 - Thread CPU falls 23 to 28 % at 10^5. Linear to 10^6 from 334 to 425 ms: 4.6 to 5.9 s per steady close. The machine ran at load 250 to 460 on 10 cores (other sessions' test runs), so the figures are pessimistic; a quiet run decides it.
 - Before is the previous section. Digests unchanged (`sha256:2654c25f...bfbc3`, `sha256:0ab80689...41140`).
@@ -1180,7 +1180,7 @@ Theory. A text with the shape of an id as `KeyText.Id` mints it (a letter, a col
 
 - Cost moved: an intern packs an id before it hashes, and `Get` of a packed id builds its 28 characters from the three words. On the 10^5 replay with workstation GC (instruction counts stable to about 2 %) the process ran 427 and 442 G instructions against 418 to 437 G before, 2 to 6 % more. A first version that packed bit by bit cost 17 %. Thread CPU is not separable from the load (300 to 560 on 10 cores).
 - Limit: 65,536 pages of 64 KB, 4 GB of stored text; a text of 64 KB or more is a page of its own, and the interner throws past the last page. At 10^5 the texts take 509 pages (33 MB); linear to 10^6 about 5,100, 8 % of the limit. One text is at most 256 MB (the length word holds its bytes shifted by 3).
-- Before is main 5e86f36; the interner is the same in the statics, telemetry and #119 changes this applies on. Digests unchanged (estate, lab fixtures, 10^4, 10^5 `sha256:0ab80689...41140`). Times are measured under load and not comparable; bytes are.
+- Before is main 5e86f36; the interner is the same in the statics, windows and #119 changes this applies on. Digests unchanged (estate, lab fixtures, 10^4, 10^5 `sha256:0ab80689...41140`). Times are measured under load and not comparable; bytes are.
 
 ### Efficiency stage 2, plan: a join on the start of a traverse runs below it (#115, 2026-11-18)
 At 10^5 the hidden rows of the health tree walked from every one of its 106,437 elements over `Contains` (256 B per master node in that traverse), and a join then kept the walks from the few roots a "hide" curation names (143 B per master node in that join).
@@ -1215,7 +1215,7 @@ Theory. A link that was never written reads 0 (none): a new segment is zero, and
 - Before is main 4afb044 with the interner and the join below a traverse. Digests unchanged (estate `sha256:32bcad1f...a422`, lab fixtures `sha256:4a1560a5...ffd0`, 10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...41140`). Times are measured under load (load average 250 to 380) and not comparable; bytes are.
 
 ### Window close: one catalog lookup per row gives the identity and the key's own id (#119, 2026-11-18)
-Theory. An emit that writes telemetry evaluates the identity of every row twice in the catalog: the identity through the bindings (then `Rep` through the forwarding records), and the key's own id through a second table by the same key. Both tables hold an entry per key, so each row paid two lookups in a large table (1,965,821 rows in the twelve closes at 10^5; 491 ms for both under load 460, by the sub-timers of the previous section). A binding now holds both: the identity and the key's own id, filled on first use; a key that `Resolve` mints has its own id as its identity. One lookup per row, and `Rep` returns at once while no identities merged. The second table goes: a bound key holds 4 bytes more, a key whose own id is read holds about 36 bytes less.
+Theory. An emit that writes windows evaluates the identity of every row twice in the catalog: the identity through the bindings (then `Rep` through the forwarding records), and the key's own id through a second table by the same key. Both tables hold an entry per key, so each row paid two lookups in a large table (1,965,821 rows in the twelve closes at 10^5; 491 ms for both under load 460, by the sub-timers of the previous section). A binding now holds both: the identity and the key's own id, filled on first use; a key that `Resolve` mints has its own id as its identity. One lookup per row, and `Rep` returns at once while no identities merged. The second table goes: a bound key holds 4 bytes more, a key whose own id is read holds about 36 bytes less.
 
 | | 10^4 before / after | 10^5 before / after |
 |---|---|---|
@@ -1252,13 +1252,13 @@ The three changes of this section and the two before it together, against the ad
 | steady close, thread CPU least | 33 / 44 ms | 407, 346, 336, 330, 364 / 335, 331, 338, 335 ms |
 | steady close, wall p50 / max | 151 / 229, 58 / 63 ms | 726 / 1,020, 440 / 687, 510 / 691 against 540 / 582, 396 / 433, 470 / 584 ms |
 | allocated per steady close | 8.9 / 9.0 MB | 90.2 / 91.6 MB |
-| first close with telemetry, thread CPU | 681 / 455 ms | 6,336 to 7,565 / 6,084 to 6,600 ms |
+| first close with windows, thread CPU | 681 / 455 ms | 6,336 to 7,565 / 6,084 to 6,600 ms |
 
 - Thread CPU at 10^5: median of the medians 366 to 353 ms (4 %), the least close 330 to 407 against 331 to 338 ms. That is within the noise of this load; the sub-timers put the removed work at about 6 % of the thread CPU of the twelve closes. Linear to 10^6 from 353 ms: about 4.9 s. A quiet run decides it.
 - The figures of this section (one pair, before without the shared delta) are at load 525 to 690. Before is the previous section. Digests unchanged (`sha256:2654c25f...bfbc3`, `sha256:0ab80689...41140`). Nothing sealed changes.
 
 ### Window close: a new window is learned and written with one store lookup (#119, 2026-11-18)
-Theory. Each series gets one new window per close, written by one row. The flush of the telemetry settled it by reading the store (the series, then the window, under the store's lock), found nothing, made a sample and kept it in a list as long as the step's windows; after the graph's commit the engine appended the list, and the append looked up the series and the window again. Split by sub-timers at 10^5 (nine steady closes, wall at load 137, 1.59 M windows): flush 928 ms, of which the index of the step's windows 151 and settling 677, the store read in it 379; then append and read 382 ms. The telemetry path was 27 % of the steady close, the largest part of it.
+Theory. Each series gets one new window per close, written by one row. The flush of the windows settled it by reading the store (the series, then the window, under the store's lock), found nothing, made a sample and kept it in a list as long as the step's windows; after the graph's commit the engine appended the list, and the append looked up the series and the window again. Split by sub-timers at 10^5 (nine steady closes, wall at load 137, 1.59 M windows): flush 928 ms, of which the index of the step's windows 151 and settling 677, the store read in it 379; then append and read 382 ms. The window path was 27 % of the steady close, the largest part of it.
 
 Now a window that one row of weight one writes, with no support kept, goes to the store in one call that inserts it when the store does not hold it and says so (`AppendNew`); only when the store holds it does the flush read the value and settle as before. The flush writes the samples of each window as it settles, so the plane's change log holds the same changes in the same order; they are now written before the graph's commit instead of after it, and nothing reads the plane in between. The list of samples is gone. A log that fills one window at a time is made at the size of the last read, so a steady close does not grow it by doubling.
 
@@ -1267,7 +1267,7 @@ Now a window that one row of weight one writes, with no support kept, goes to th
 | steady close, thread CPU median | 47 / 33 ms | 368, 389 / 371, 344 ms |
 | steady close, thread CPU least | 42 / 29 ms | 335, 370 / 347, 330 ms |
 | allocated per steady close | 9.0 / 7.2 MB | 91.7 / 73.4 MB |
-| telemetry flush and append, MB allocated in twelve closes | 72 / 56 | 728 / 563 |
+| window flush and append, MB allocated in twelve closes | 72 / 56 | 728 / 563 |
 
 - Allocation per steady close at 10^5 drops by 18.3 MB (20 %): the samples list (about 105 bytes per window) and the log's growth. Exact, the same in every run.
 - Thread CPU is within the noise of load 230 to 330 on 10 cores (one pair at 10^4, two at 10^5, interleaved). Instructions retired of the whole process vary by 4 % between runs of one binary at 10^4, too much to see this. The removed work is one series lookup and one search of its windows per window: at 10^6 about 2 M per close, where those lookups miss the caches.
@@ -1336,7 +1336,7 @@ Theory. The component fixes the type it asks about, so the cache moves into the 
 - Before is the verification clone of main 5deb56f with the join below a traverse, the Ch. 6 paragraph and the arrangement links. Digests unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...41140`). Load average 80 to 140; thread CPU is comparable within a pair, wall time is not.
 
 ### Efficiency stage 2, digests: a graph's digest and the state digest are hashed in pieces (#115, 2026-11-18)
-The run at 10^6 replayed in full and then failed at its last line: the digest of a graph wrote enc(G) (Def. 3.5) into one string, and the master graph's passed 2^31 characters, the most one string can hold. The state digest wrote every graph's digest and every telemetry window into one string as well.
+The run at 10^6 replayed in full and then failed at its last line: the digest of a graph wrote enc(G) (Def. 3.5) into one string, and the master graph's passed 2^31 characters, the most one string can hold. The state digest wrote every graph's digest and every window into one string as well.
 
 Theory. SHA-256 reads its input in order and needs none of it twice, so the text can be hashed as it is written. Both digests write the same characters in the same order into a buffer. Once the buffer passes 64 Ki characters it is encoded to UTF-8 through one stateful encoder, which carries a surrogate pair split across a cut, and appended to an incremental hash. The bytes hashed are the bytes of the whole text, so every digest is unchanged. `Encode` stays for the tests that compare encodings and writes through the same code.
 
@@ -1345,13 +1345,13 @@ Theory. SHA-256 reads its input in order and needs none of it twice, so the text
 | allocated by the state digest | 4,286 / 1,160 MB |
 | time of the state digest (thread, under load) | 4.9 / 3.8 s |
 
-- What is left is the order. A graph's elements are made and sorted by key string, and a graph's telemetry windows are sorted by element and property text, each held whole while its graph is hashed. That's 1,160 MB allocated at 10^5, so about 10 times that at 10^6. It runs once, at the end of a replay.
+- What is left is the order. A graph's elements are made and sorted by key string, and a graph's windows are sorted by element and property text, each held whole while its graph is hashed. That's 1,160 MB allocated at 10^5, so about 10 times that at 10^6. It runs once, at the end of a replay.
 - Before is main f87f1ba. Digests unchanged (estate `sha256:32bcad1f...a422`, lab fixtures `sha256:4a1560a5...ffd0`, 10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...41140`).
 
 ### Efficiency stage 2, digests: a set digest beside the digest of the written form (#115, 2026-11-18)
 Research note 15: two graphs are equal when they hold the same set of written pairs (key text, canonical JSON of the state), so a digest that needs no order can replace the sort. This step adds that digest beside today's one and checks that the two agree; the printed digest does not change yet.
 
-Theory. AdHash (Bellare and Micciancio 1997): the digest of a set of items is the sum, mod 2^256, of their SHA-256 values, in four lanes of 64 bits. A graph's set digest sums its written pairs in storage order, one element at a time, and hashes the sum once with SHA-256. The state's set digest sums, per graph, its pairs and its telemetry windows (the lines of the state digest after `w|`), tags each graph's sum with the graph's name, and sums the graphs' digests. Removing an item subtracts what adding it added, so a graph's digest can later be kept per change. That step is deferred while time per record is over the limit. Against chance, two different sets collide with negligible probability. The known weakness of AdHash at 256 bits needs inputs chosen by an attacker, and our use has none.
+Theory. AdHash (Bellare and Micciancio 1997): the digest of a set of items is the sum, mod 2^256, of their SHA-256 values, in four lanes of 64 bits. A graph's set digest sums its written pairs in storage order, one element at a time, and hashes the sum once with SHA-256. The state's set digest sums, per graph, its pairs and its windows (the lines of the state digest after `w|`), tags each graph's sum with the graph's name, and sums the graphs' digests. Removing an item subtracts what adding it added, so a graph's digest can later be kept per change. That step is deferred while time per record is over the limit. Against chance, two different sets collide with negligible probability. The known weakness of AdHash at 256 bits needs inputs chosen by an attacker, and our use has none.
 
 Agreement on equal versus not equal, old against new:
 - random graphs, their clones, the states of chains, and patches applied in two orders (`Def_3_5_set_digest_agrees_with_the_digest_of_the_written_form`);
@@ -1377,9 +1377,9 @@ Agreement on equal versus not equal, old against new:
 - Measured on main f87f1ba with the streamed digests; on main 8ae372a both digests of every saved state are the same. Digests of the written form unchanged.
 
 ### Efficiency stage 2, digests: the set digest is the digest (#115, 2026-11-18)
-Research note 15, step 3. The digest of a graph and the state digest are now the set digests of the step before: AdHash of the written pairs, and for the state, per graph, of its pairs and telemetry windows under the graph's name. The written form `Encode` stays as the export and reading form and is no longer hashed. The streamed digest of the written form, the side-by-side set digest and the agreement tests are gone: they compared the old digest with the new one, and the old one no longer exists. `replay` and `bench phases` print one `state digest` again.
+Research note 15, step 3. The digest of a graph and the state digest are now the set digests of the step before: AdHash of the written pairs, and for the state, per graph, of its pairs and windows under the graph's name. The written form `Encode` stays as the export and reading form and is no longer hashed. The streamed digest of the written form, the side-by-side set digest and the agreement tests are gone: they compared the old digest with the new one, and the old one no longer exists. `replay` and `bench phases` print one `state digest` again.
 
-Theory. Two graphs are equal when they hold the same set of written pairs (Def. 3.4), so a digest that adds up one hash per pair decides equality without an order. The digest no longer sorts the elements and holds one pair at a time; what remains whole is the store's list of a graph's telemetry windows. A graph's digest could be kept per change; that is deferred while time per record is over the limit.
+Theory. Two graphs are equal when they hold the same set of written pairs (Def. 3.4), so a digest that adds up one hash per pair decides equality without an order. The digest no longer sorts the elements and holds one pair at a time; what remains whole is the store's list of a graph's windows. A graph's digest could be kept per change; that is deferred while time per record is over the limit.
 
 Every recorded digest changes once (old is the digest of the written form, new the set digest):
 
@@ -1406,9 +1406,9 @@ Every recorded digest changes once (old is the digest of the written form, new t
 
 ## First populated window and steady closes on the scale ladder (2026-11-19)
 
-The capped run of `a5ca9da` on November 18 advanced twice with zero telemetry series. Advance 2 then created 1,985,732 series in 62.282 s, including 1.368 s of GC pauses. The previous summary skipped only advance 0 and included this initial population in its steady sample. Across the nine closes that followed, the median was 3.750 s and the maximum was 4.356 s. The all-advance median was 3.721 s and the maximum was 62.282 s. These measurements start with an empty engine. Restart from a stored seal and journal has a separate benchmark.
+The capped run of `a5ca9da` on November 18 advanced twice with zero series. Advance 2 then created 1,985,732 series in 62.282 s, including 1.368 s of GC pauses. The previous summary skipped only advance 0 and included this initial population in its steady sample. Across the nine closes that followed, the median was 3.750 s and the maximum was 4.356 s. The all-advance median was 3.721 s and the maximum was 62.282 s. These measurements start with an empty engine. Restart from a stored seal and journal has a separate benchmark.
 
-`bench phases` now reports all advances, those before telemetry, the first close with changed windows or resident series, and those after that first populated close. Regular source-driven closes with no changes still count. The final synthetic advance counts toward the steady sample when it commits a change. An empty synthetic advance appears in its own group. Percentiles use nearest rank. With nine steady observations, the observed p99 equals the sample maximum.
+`bench phases` now reports all advances, those before windows, the first close with changed windows or resident series, and those after that first populated close. Regular source-driven closes with no changes still count. The final synthetic advance counts toward the steady sample when it commits a change. An empty synthetic advance appears in its own group. Percentiles use nearest rank. With nine steady observations, the observed p99 equals the sample maximum.
 
 Use `bench phases --timing-only` to bypass the per-record, per-ingest and per-operator diagnostic counters. The replay still measures each close from the first source progress record through the window advance and downstream commits. The report gives writer CPU, whole-process CPU, all-thread allocation, GC pauses and the peak resident set through replay. The process CPU includes garbage collection and any worker threads. Graph reporting, the final state digest and the forced compaction used to measure live bytes happen outside the replay timing.
 
@@ -1439,7 +1439,7 @@ The million-node end state matched the November 18 digest. It held 7,691,409,016
 
 The million-node run started at a one-minute system load average of 62.76. Both CPU measures exceed 37 µs per record. The November 18 run enabled detailed counters and reported about 44 µs of writer CPU per record. These runs differ in instrumentation and machine load. The first populated close still cost 69.819 s with the counters off, including 1.427 s of GC pauses. Nine later observations within 5 s leave the long-run p99 open.
 
-To check a longer series of closes, `bench gen-estate --nodes 10000 --minutes 110 --out DIR` produced 9,995 master nodes, initialized once, and 762,998 records. One capped `bench phases --timing-only --capture DIR` replay of that input took 13.43 s, with a one-minute load average of 106.96 at the start on the shared host. Two advances preceded telemetry. Initial population took 518 ms. Across 109 consecutive later closes the median was 36 ms, the observed p99 was 117 ms and the maximum was 208 ms. This is evidence at 9,995 nodes. The local report is `engine/out/20261119-n10k-110min-timing-only.txt`.
+To check a longer series of closes, `bench gen-estate --nodes 10000 --minutes 110 --out DIR` produced 9,995 master nodes, initialized once, and 762,998 records. One capped `bench phases --timing-only --capture DIR` replay of that input took 13.43 s, with a one-minute load average of 106.96 at the start on the shared host. Two advances preceded windows. Initial population took 518 ms. Across 109 consecutive later closes the median was 36 ms, the observed p99 was 117 ms and the maximum was 208 ms. This is evidence at 9,995 nodes. The local report is `engine/out/20261119-n10k-110min-timing-only.txt`.
 
 ### Commit visibility in the parallel graph prototype
 
@@ -1449,7 +1449,7 @@ The parallel-waves patch for #119 passed 19 ordering and restart cases and 394 d
 
 The engine evaluates graphs and operators in order. Inside a `MatchOp`, workers can scan ranges of a committed upstream patch. The writer holds the graph and its text codes fixed until the workers join. Each range owns its bindings, decoding cache and output rows. Workers share a read-only index of old relationship endpoints when a match needs the graph before the patch.
 
-The writer consumes ranges in pattern-component order, then canonical edit order. Each range visits an edit's old value before its new one. The writer copies the signed rows and their presence bits into the operator's output before running the next operator. Only the writer applies downstream graph edits, writes telemetry and revisions, and calls commit subscribers. It rethrows worker failures in range order before committing this graph. Earlier graph commits remain visible. Range buffers and worker counters are transient. Seals and journal restart use the published engine state.
+The writer consumes ranges in pattern-component order, then canonical edit order. Each range visits an edit's old value before its new one. The writer copies the signed rows and their presence bits into the operator's output before running the next operator. Only the writer applies downstream graph edits, writes windows and revisions, and calls commit subscribers. It rethrows worker failures in range order before committing this graph. Earlier graph commits remain visible. Range buffers and worker counters are transient. Seals and journal restart use the published engine state.
 
 Workers can prepare a patch from an engine graph that uses its interner. A progress record or window advance needs at least 1,024 edits to qualify. An ingest needs 8,192. Both serial and parallel matches check which types occur before and after the edits. Each pattern component scans only its kind of element and skips the scan if none of those types can match.
 
@@ -1508,11 +1508,11 @@ Four workers shortened this close by 21.4% against one worker, with similar proc
 
 A 110-minute replay at 9,995 nodes had 109 steady closes. With four workers, the first populated close took 264 ms and the steady median, p99 and maximum were 22, 46 and 78 ms. With one worker, those values were 364 ms and 22, 53 and 55 ms. All 88 ranges in the four-worker replay occurred on the first populated close. Both runs matched the recorded `a67711e7…26cd` digest. At one million nodes only nine steady closes were observed per full run, and both new runs exceeded 5 s. The 5 s p99 in #119 remains open.
 
-### Counting stored telemetry windows
+### Counting stored windows
 
 The graph summary and draft preview used `Dump(graph).Count`, which sorted the series and materialized every window. `WindowCount` sums the per-series counts under the existing store lock into a 64-bit integer. A .NET 11.0.100 Release measurement populated 100,000 series with ten consecutive 60-second windows per series. Both methods returned 1,000,000. Each was warmed on a separate one-window graph, followed by a forced GC before each measured read. In ABBA order, the two `WindowCount` reads allocated zero bytes on the calling thread and took 1.06 and 0.83 ms. The two `Dump(graph).Count` reads each allocated 89,909,792 bytes and took 172.93 and 69.12 ms. These are timings for the count operation.
 
-Repeated after the count became the telemetry port's range read without a visitor (`ScanGraph(g, null)`, #120), with the same population and order on .NET 11.0 Release: the count read 1,000,000 windows in 3.59 and 2.68 ms with zero bytes allocated on the calling thread; reading the windows into a list through the same read took 36.93 and 64.93 ms and allocated 67,109,304 bytes each time. A store test asserts that a count allocates nothing.
+Repeated after the count became the window port's range read without a visitor (`ScanGraph(g, null)`, #120), with the same population and order on .NET 11.0 Release: the count read 1,000,000 windows in 3.59 and 2.68 ms with zero bytes allocated on the calling thread; reading the windows into a list through the same read took 36.93 and 64.93 ms and allocated 67,109,304 bytes each time. A store test asserts that a count allocates nothing.
 
 ### Testing a type index for graph matching
 
@@ -1553,7 +1553,7 @@ Against a 2 s target for the p99 both are supported. The largest single record i
 
 The emulator medians are under the targets and its worst run is not (31 ms), so by the rule the emulator result is inconclusive; and the emulator is not the target (a container on the same machine, no RU accounting: a charge of 1 per request). A point read is one request; a one-hop scan is a query. A real account in the engine's region and steady load are needed for a p99 that means something.
 
-**H8 element view**: `sattle bench b8 --runs 30`. The structure of 10,000 entities at the head joined with 60 windows of 4 series (2.4 million points) from the telemetry ring, one call. Median 17.5 ms (15.6 to 49.4), every run under the 100 ms target: supported. History: the old read path allocated 148 MB per view (2.4 million `SeriesPoint` objects); one run in ten took 300 ms or more because the garbage collector ran in it (gen0 and gen1 collections with 200 to 440 ms pauses, in the same run numbers in three sessions). `ITelemetryStore.ScanWindow` visits windows without allocating (3 MB per view, no collection in any run) and the outliers are gone (`bench b8` prints allocation, collections and pause per run).
+**H8 element view**: `sattle bench b8 --runs 30`. The structure of 10,000 entities at the head joined with 60 windows of 4 series (2.4 million points) from the windows ring, one call. Median 17.5 ms (15.6 to 49.4), every run under the 100 ms target: supported. History: the old read path allocated 148 MB per view (2.4 million `SeriesPoint` objects); one run in ten took 300 ms or more because the garbage collector ran in it (gen0 and gen1 collections with 200 to 440 ms pauses, in the same run numbers in three sessions). `IWindowStore.ScanWindow` visits windows without allocating (3 MB per view, no collection in any run) and the outliers are gone (`bench b8` prints allocation, collections and pause per run).
 
 **H10 cold start by restart**: `sattle bench b10 --hours N --seal-every 2000 --runs 10` builds a SQLite journal and log of the newest capture repeated with shifted time until the logical span reaches N hours (the Activity Log and Event Hubs records carry absolute event times and are not repeated: repeating them would add the same events again), takes seals, then restarts ten times; `--no-seal` restarts the same file replaying the whole journal (3 runs). A restart loads the latest seal, checks its state and catalog digests, replays the entries after it and compares every recomputed commit with the stored one.
 

@@ -4,7 +4,7 @@ using Sattle.Runtime;
 
 namespace Sattle.Differential;
 
-/// <summary>A populated window creates items, their self-edges and their telemetry in one master patch.
+/// <summary>A populated window creates items, their self-edges and their windows in one master patch.
 /// Two views read that same patch and publish in order. A late sample revises it, then signed rows withdraw it.</summary>
 public class PreparationTests
 {
@@ -41,9 +41,9 @@ public class PreparationTests
         e.Committed += c =>
         {
             Assert.Equal(writer, Environment.CurrentManagedThreadId);
-            var windows = string.Join("\n", c.Telemetry.Select(w => $"{e.Interner.Get(w.Key.Element)}|{e.Interner.Get(w.Key.Prop)}|{w.Key.WindowStart}|{w.Old}|{w.New}"));
+            var windows = string.Join("\n", c.Windows.Select(w => $"{e.Interner.Get(w.Key.Element)}|{e.Interner.Get(w.Key.Prop)}|{w.Key.WindowStart}|{w.Old}|{w.New}"));
             events.Add(new(c.GraphId, c.Seq, c.Lambda, c.Patch, c.Patch is { } patch ? string.Join(",", patch.Cause.Inputs) : null, c.Patch?.Cause.Configuration,
-                windows, string.Join("\n", c.Conflicts.Select(x => x.Text)), string.Join(",", e.Graphs.Select(g => $"{g.Name}/{g.Head}/{g.TelemetryPosition}")), e.StateDigest()));
+                windows, string.Join("\n", c.Conflicts.Select(x => x.Text)), string.Join(",", e.Graphs.Select(g => $"{g.Name}/{g.Head}/{g.WindowPosition}")), e.StateDigest()));
         };
         return events;
     }
@@ -70,9 +70,9 @@ public class PreparationTests
         foreach (var e in new[] { serial, prepared })
         {
             Samples(e, Keys, 1, 3, 10, reverse);
-            Assert.Equal(0, e.Telemetry.ScanGraph(e.Master.Key, null));
+            Assert.Equal(0, e.Windows.ScanGraph(e.Master.Key, null));
             e.Advance(Minute, 11);
-            Assert.All(e.Graphs, g => Assert.Equal(Keys, e.Telemetry.ScanGraph(g.Key, null)));
+            Assert.All(e.Graphs, g => Assert.Equal(Keys, e.Windows.ScanGraph(g.Key, null)));
         }
         Assert.Equal(new[] { "master", "first", "second" }, before.Select(x => x.Graph));
         Assert.Equal(Keys * 2, before[0].Patch!.Edits.Length);
@@ -102,7 +102,7 @@ public class PreparationTests
         Assert.All(continuing.Graphs, g =>
         {
             Assert.Equal(0, g.State.EntityCount + g.State.RelCount);
-            Assert.Equal(0, continuing.Telemetry.ScanGraph(g.Key, null));
+            Assert.Equal(0, continuing.Windows.ScanGraph(g.Key, null));
         });
     }
 
@@ -121,7 +121,7 @@ public class PreparationTests
             var unpublished = e.Graph("second");
             Assert.Equal(0, unpublished.Head);
             Assert.Equal(0, unpublished.State.EntityCount);
-            Assert.Equal(0, e.Telemetry.ScanGraph(unpublished.Key, null));
+            Assert.Equal(0, e.Windows.ScanGraph(unpublished.Key, null));
             return (seen, e.StateDigest());
         }
         var serial = UntilFailure(1);

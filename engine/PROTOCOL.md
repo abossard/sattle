@@ -5,7 +5,7 @@ The contract between `sattle serve` and the canvas. Everything is JSON over HTTP
 ## Conventions
 - Base URL `http://127.0.0.1:5080` (`--port`). All bodies UTF-8 JSON. Errors are `{ "error": { "code", "message", ... } }` with an HTTP status.
 - **Revisions** are positions in a per-graph log. On the wire they are decimal strings (`"17"`), never JSON numbers. `"0"` is the empty genesis state.
-- **Instants** are RFC 3339 UTC strings with 0 to 9 fractional digits (`"2026-11-10T10:41:00Z"`). **Durations and counts that can exceed 2^53** are decimal strings. Telemetry values are JSON numbers (doubles) for display; exact decimals are in `valueText`.
+- **Instants** are RFC 3339 UTC strings with 0 to 9 fractional digits (`"2026-11-10T10:41:00Z"`). **Durations and counts that can exceed 2^53** are decimal strings. Window values are JSON numbers (doubles) for display; exact decimals are in `valueText`.
 - **Graph ids**: `catalog` (the definitions), plus the graphs of the active space (`master`, `serviceTree`, `capabilities`, ...). One tenant per server.
 - **Element ids** of data graphs are opaque. Element ids of `catalog` are definition ids (`d:acme.svc/projection:serviceDeps/op:deps#0`).
 - **Shapes** of snapshots, patches, ontologies, descriptors and graph values are the shapes in `brainstorm/contracts/schemas` (`EntityState`, `RelationshipState`, `GraphPatch`, `GraphDescriptor`, `OntologyDefinition`) with revisions as strings in `{ "value": "17" }`. They are what the canvas `StaticSource` reads today. The kernel ontology exports its `Any` value kind (`Literal.value`) as `text`. Type and property ids in them are names (`Pod`, `flows`), qualified `module.name` when two modules use the same name.
@@ -41,7 +41,7 @@ The contract between `sattle serve` and the canvas. Everything is JSON over HTTP
 ## Reads
 - `GET /graphs/{g}/snapshot[?revision=r]` returns `{ "descriptor", "extent": { "entities": [], "relationships": [] } }` at `r` (default head). Older than the retained patches (Version 3.8) answers `410 Gap`; clients must handle it. Revisions older than the retained history answer `410 { "error": { "code": "Gap", "lastAvailable": "5" } }`.
 - `GET /graphs/{g}/ontology`, `GET /graphs/{g}/patches?after=r[&limit=n]` (NDJSON, one `GraphPatch` per line, `to` = `after+1 ...`).
-- `GET /graphs/{g}/meters` returns the telemetry declarations the definitions imply, for the canvas channel mapping:
+- `GET /graphs/{g}/meters` returns the event property declarations the definitions imply, for the canvas channel mapping:
 ```json
 { "meters": [ { "id": "flows", "target": "edge", "label": "flows", "unit": "", "temporality": "delta",
                 "combine": "sum", "periodSeconds": 60, "min": 0, "max": 812.0, "scale": "sqrt", "warn": null } ],
@@ -50,9 +50,9 @@ The contract between `sattle serve` and the canvas. Everything is JSON over HTTP
 ```
 `warn` is the `above` threshold of a `Threshold` on that meter, from the definitions. `min`/`max` are observed over the retained windows.
 
-## Telemetry
-Telemetry is keyed by **graph, element id, property id, window start instant**. It never creates revisions and is never indexed by revision. Derived graphs carry their own telemetry.
-- Range read: `GET /graphs/{g}/telemetry?from=<instant>&to=<instant>[&property=<id>][&element=<id>][&format=series|batches]`. `from` inclusive, `to` exclusive, on window starts. Defaults: all retained.
+## Windows
+Windows are keyed by **graph, element id, property id, window start instant**. They never create revisions and are never indexed by revision. Derived graphs carry their own windows.
+- Range read: `GET /graphs/{g}/windows?from=<instant>&to=<instant>[&property=<id>][&element=<id>][&format=series|batches]`. `from` inclusive, `to` exclusive, on window starts. Defaults: all retained.
   - `format=series` (default):
 ```json
 { "graph": "master", "from": "...", "to": "...",
@@ -61,8 +61,8 @@ Telemetry is keyed by **graph, element id, property id, window start instant**. 
                 "points": [ { "windowStart": "2026-11-10T10:41:00Z", "value": 7, "valueText": "7" } ] } ] }
 ```
   `completeness` is `Complete` or `Partial(<reason>)` (`sourceLoss` after a Hubble `LostEvent`). Per window partial marks are in `partialWindows: [{windowStart, reason, count}]`.
-  - `format=batches` returns NDJSON of the canvas `TelemetryBatch` shape, sparse (`ids` present), one line per (window, property): `{ "graph", "tick", "t", "windowStart", "target", "property", "ids", "values" }`. `tick` is the ordinal of the window among retained windows. **Ticks are not revisions.**
-- Live push: see WebSocket `telemetry` messages. A message carries one window of one property and the changed elements only. A revised (late) window is pushed again with the new values. A window that was retracted (its last supporting row went: a late retraction inside the horizon, a rule change, an identity move) is pushed with the element under `removed: [ids]` of the batch, next to `ids` and `values` (which may then be empty); a client drops the value of that element, property and window.
+  - `format=batches` returns NDJSON of the canvas `WindowBatch` shape, sparse (`ids` present), one line per (window, property): `{ "graph", "tick", "t", "windowStart", "target", "property", "ids", "values" }`. `tick` is the ordinal of the window among retained windows. **Ticks are not revisions.**
+- Live push: see WebSocket `windows` messages. A message carries one window of one property and the changed elements only. A revised (late) window is pushed again with the new values. A window that was retracted (its last supporting row went: a late retraction inside the horizon, a rule change, an identity move) is pushed with the element under `removed: [ids]` of the batch, next to `ids` and `values` (which may then be empty); a client drops the value of that element, property and window.
 
 ## Lineage
 `GET /graphs/{g}/lineage?element=<id>` for a derived or master element:
@@ -90,7 +90,7 @@ No state changes. Response `200`:
 ```json
 { "ok": false, "baseRevision": "10",
   "diagnostics": [ { "code": "UnknownField", "severity": "error", "message": "...", "line": 31, "column": 14,
-                     "element": "d:acme.svc/projection:serviceDeps/op:depTelemetry/assign:dropRatio" } ],
+                     "element": "d:acme.svc/projection:serviceDeps/op:depWindows/assign:dropRatio" } ],
   "patch": { "...GraphPatch on graph catalog from baseRevision to baseRevision+1, null when not ok..." },
   "affected": { "modules": ["acme.svc", "acme.space"], "graphs": ["serviceTree"] } }
 ```
@@ -121,7 +121,7 @@ Canvas `evaluate(definition)` = `POST /check` for the diagnostics and diff, then
       "key": { "domain": "capability", "components": { "id": "payments" } } },
     { "kind": "relationship", "id": "r:cc", "before": null, "after": { "...RelationshipState..." } } ] }
 ```
-- Edits target the internal graph only. A chain ends at the master graph's authored partition (the rows of an authored source); no edit reaches a system that a collector observes. Elements and properties owned by `readonly` rules and all telemetry reject.
+- Edits target the internal graph only. A chain ends at the master graph's authored partition (the rows of an authored source); no edit reaches a system that a collector observes. Elements and properties owned by `readonly` rules and all event properties reject.
 - `baseRevisions` names the base revision of every graph on the edit path (the edited graph, each intermediate graph, the master). Any stale base rejects.
 - A created entity names its key (`key`); the server derives its id the way ingestion does and rejects a different id.
 - The server computes the backward proposal, applies it to a staged copy, evaluates forward, and accepts only if the staged view equals the edited view (PutGet). Accepted edits become recorded input rows; normal forward ingestion commits them and the patches arrive on the feed like any other.
@@ -129,7 +129,7 @@ Canvas `evaluate(definition)` = `POST /check` for the diagnostics and diff, then
 - Rejection: `422 { "error": { "code": <code>, "message", "graph", "element", "rule" } }` with `code` one of
   - `NotEditable`: the graph is produced by a `forward` projection;
   - `ReadOnlyByRule`: the element or property is owned by a `readonly` rule (`rule` names it);
-  - `TelemetryNotEditable`;
+  - `EventsNotEditable`;
   - `NotAccepted`: the rule's `accept` list does not allow this kind of edit;
   - `StaleBase` (`409`, with `actual`);
   - `PutGetViolation`: forward evaluation of the proposal does not reproduce the edited view; `element` names the first difference;
@@ -143,7 +143,7 @@ One connection, many subscriptions. Client messages:
 ```json
 { "op": "subscribe", "graph": "master", "after": "120" }
 { "op": "subscribe", "graph": "serviceTree" }
-{ "op": "subscribe", "graph": "serviceTree", "telemetry": false }
+{ "op": "subscribe", "graph": "serviceTree", "windows": false }
 { "op": "unsubscribe", "graph": "master" }
 { "op": "ping" }
 ```
@@ -153,12 +153,12 @@ One connection, many subscriptions. Client messages:
   - `{ "type": "snapshot", "graph", "snapshot" }`
   - `{ "type": "patch", "graph", "patch" }` one per revision, strictly consecutive per graph per subscription
   - `{ "type": "gap", "graph", "lastAvailable" }`
-  - `{ "type": "telemetry", "graph", "batch": { sparse TelemetryBatch with windowStart } }` unless `telemetry:false`
-  - `{ "type": "activation", "catalogRevision", "graphs": [ { "id", "from", "to" } ] }` after a definition commit. Its patches precede it. Clients refresh telemetry, ontology and `GET /space` bindings on activation. The graph IDs can stay the same while a port or producing file changes.
+  - `{ "type": "windows", "graph", "batch": { sparse WindowBatch with windowStart } }` unless `windows:false`
+  - `{ "type": "activation", "catalogRevision", "graphs": [ { "id", "from", "to" } ] }` after a definition commit. Its patches precede it. Clients refresh windows, ontology and `GET /space` bindings on activation. The graph IDs can stay the same while a port or producing file changes.
   - `{ "type": "time", "logicalTime": "<instant>", "rows": "<count>" }` at most once per second: the engine's logical frontier and input row count.
   - `{ "type": "end" }` when a replay input ends (live inputs never end).
   - `{ "type": "error", "code", "message" }`
-- Ordering: for one graph, patches are delivered in revision order. Telemetry and patches of different graphs are interleaved in engine order.
+- Ordering: for one graph, patches are delivered in revision order. Windows and patches of different graphs are interleaved in engine order.
 - Backpressure: a subscription that falls behind by more than 10,000 messages is closed with `{ "type": "error", "code": "SlowConsumer" }`; the client resubscribes with `after`.
 
 ## Input modes
@@ -179,7 +179,7 @@ Design stance: a **redux style** client. The server owns the committed state and
 - Every event except `time` carries `seq`, a server-wide decimal string that increases by one per event. The server keeps the last 100,000 events.
 - No `after`: the server sends one `snapshot` per subscribed graph, each with `"seq"` = the sequence number the snapshot is current as of, then every event with a larger `seq` that matches the filter, in order.
 - With `after`: events with `seq > after`. If `after` is older than the retained events: `{ "type": "gap", "firstSeq": "900" }` and then snapshots as above. If `after` is ahead of the server: `{ "type": "error", "code": "AheadOfHead" }`.
-- Events: `snapshot`, `patch {graph, patch}` (consecutive revisions per graph), `telemetry {graph, batch}`, `activation {catalogRevision, graphs}`, `draft {draft, revision, ok, diagnostics}` (after each change of a subscribed-to draft's workspace, only with `drafts: true`), `end`, `error`. `time` is unsequenced.
+- Events: `snapshot`, `patch {graph, patch}` (consecutive revisions per graph), `windows {graph, batch}`, `activation {catalogRevision, graphs}`, `draft {draft, revision, ok, diagnostics}` (after each change of a subscribed-to draft's workspace, only with `drafts: true`), `end`, `error`. `time` is unsequenced.
 - Reducer contract: apply `patch` when `patch.from` equals the local head of `graph`; otherwise resubscribe with `after = lastSeq`.
 - Slow consumers (more than 10,000 queued) are closed with `SlowConsumer`; resubscribe with `after`.
 
@@ -198,7 +198,7 @@ Design stance: a **redux style** client. The server owns the committed state and
                   { "name": "width", "kind": "Integer", "required": true, "unit": "ns" },
                   { "name": "late", "kind": "Text", "required": true, "values": ["revise"] } ],
       "slots": [ ],
-      "strategy": "linear: window assignment", "sink": false, "telemetry": false } ],
+      "strategy": "linear: window assignment", "sink": false, "windows": false } ],
   "ruleClasses": [ { "name": "lens", "params": ["putput"], "policies": ["accept","on create","on delete"] } ],
   "aggregates": [ { "name": "min", "supported": true, "inputs": "numeric|instant", "output": "same" } ],
   "functions": [ { "name": "Divide", "signature": "(n, m) -> Decimal", "role": "scalar", "inverse": null, "supported": true } ],
@@ -226,15 +226,15 @@ Every committed catalog revision that changes a module creates a release identif
 - `POST /drafts/{id}/restore { "digest": "sha256:..." }` applies the patch from the draft's current facts of that module to the release's facts, so the draft equals the release for that module (an ordinary draft patch, undoable by its inverse).
 
 ## v3: preview
-`POST /drafts/{id}/preview { "scope": { "maxRows": "500000" }, "graphs": ["serviceTree"], "include": ["counts","diff","snapshots","telemetry"], "limit": "5000" }`
+`POST /drafts/{id}/preview { "scope": { "maxRows": "500000" }, "graphs": ["serviceTree"], "include": ["counts","diff","snapshots","windows"], "limit": "5000" }`
 Evaluates the draft without committing or activating. A fresh engine with its own in-memory stores replays the retained inputs (the first `maxRows` input rows in order, default 500,000, hard cap 5,000,000; **the scope is stated in the response**); the live engine, its stores and its history are untouched.
 ```json
 { "scope": { "rows": "243457", "totalRows": "243457", "complete": true, "logicalTime": "2026-11-10T10:41:00Z" },
   "diagnostics": [ ],
-  "graphs": [ { "id": "serviceTree", "counts": { "entities": "19", "relationships": "29", "telemetryWindows": "182" }, "digest": "sha256:...",
+  "graphs": [ { "id": "serviceTree", "counts": { "entities": "19", "relationships": "29", "windows": "182" }, "digest": "sha256:...",
                 "diff": { "...GraphPatch from the current output to the preview output..." },
                 "snapshot": { "...": "present only with include snapshots; truncated flag when over limit" },
-                "telemetry": [ "...TelemetryBatch (as in the feed)..." ],
+                "windows": [ "...WindowBatch (as in the feed)..." ],
                 "truncated": false } ],
   "identity": { "preview": { "minted": "52266", "aliased": "81", "merged": "43", "conflicts": "0" },
                 "live":    { "minted": "52266", "aliased": "81", "merged": "43", "conflicts": "0" },
@@ -250,7 +250,7 @@ Pure functions on the definition text of a draft, returned as draft patches (not
 - `{ "kind": "inline", "module", "projection": "capabilityTree", "into": "capabilityView" }`: the reverse; the graph is removed from the space.
 - `{ "kind": "moveRule", "module", "from": "p1", "to": "p2", "rule": "observedPods" }`: moves a rule (and the lets only it uses) between two existing projections.
 - Response `{ "patch": <GraphPatch>, "modules": { "<m>": { "text": "..." } }, "preserves": { "outputs": "union" } }` or `422 { "error": { "code": "<reason>", "element": "<op or rule>", "message" } }` with codes `SharedOperator` (a kept statement consumes a moved one), `DependsOnUnmoved`, `UpdateWithoutCreate`, `SplitRule`, `IngestionProjection`, `CrossModule`, `UnknownSelection`, `NotAProjection`.
-- **Preservation** (tested on the fixtures): the union of the output graphs (elements with ids and states, and telemetry windows) after the refactoring equals the output graph before it. Relationship ids are derived from the output ontology and key rule, not from the projection id, so moving a rule between projections of one output ontology keeps ids.
+- **Preservation** (tested on the fixtures): the union of the output graphs (elements with ids and states, and windows) after the refactoring equals the output graph before it. Relationship ids are derived from the output ontology and key rule, not from the projection id, so moving a rule between projections of one output ontology keeps ids.
 
 ## v3: errors and misc
 - `POST /check`, `POST /definitions/{module}` unchanged (text based). `GET /health` also returns `"seq"`.
@@ -265,7 +265,7 @@ Same protocol number; these fix mismatches the canvas found in version 3.
 - `Unprintable` always names the element: a wired operator or sink with a missing slot or reference is reported with its own id (the Filter without predicate case), not the module.
 - Committing a module whose version changed (`module m @ 1.1.0;`, by `POST /definitions/{m}` or a draft commit) rewrites the `import m @ old` lines of its dependents to the new version and re-seals their pins, in the same revision. Dependents appear in the `modules` list of a draft commit and in the activation patch.
 - `GET /graphs/catalog/meters` answers `{ meters: [], thresholds: [], defaults: {} }` instead of 404.
-- Cache headers: `GET /graphs/{g}/ontology` is `no-cache` with a content-digest ETag, as is `GET /graphs/{g}/telemetry`; `GET /health` is `no-store` (it is liveness and changes with every event).
+- Cache headers: `GET /graphs/{g}/ontology` is `no-cache` with a content-digest ETag, as is `GET /graphs/{g}/windows`; `GET /health` is `no-store` (it is liveness and changes with every event).
 - **Dangling relationships** (not a bug, now visible; Version 3.11 says for each endpoint what it is and why it is missing): a relationship may name an endpoint entity that is not in the graph (ADR-084). Causes: a Hubble flow names a pod before the pod row arrives or after it left, a source cut that lacks the pod rows (`lab/fixtures` has 2 pods and flows between 11 others), a signal for a component outside the model's scope. Each graph entry of `GET /space` except `catalog` carries `dangling` (decimal string): the number of relationships with a missing endpoint at the head. A client draws them as pending stubs or skips them; they resolve by themselves when the entity appears, and the patch stream then needs no correction.
 
 ## Version 3.1: operators, parameters, kernel changes
@@ -667,6 +667,20 @@ The text editor of a projection reads and checks its `.kql` text through these c
 - **Counters.** `GET /health` has `counters`: `identity` (`minted`, `aliased`, `merged`, `conflicts`, the shape of a preview's `identity.live`), `lateRows` (rows dropped as late, 3.3) and `faults` (`divisionByZero`, `overflow`, `invalidParameter`). `replay` prints the same numbers from the same calculation.
 - **Digest per graph.** Each entry of `GET /health` `graphs` has `digest`: the graph's digest at its head (Def. 3.5, the `digest` of a preview's graphs), from the pass that makes the state digest. The catalog's too.
 - **Telemetry port (no wire change).** `ITelemetryStore.ScanGraph` hands every window of a graph in a range to a visitor, also the windows of an element that left; without a visitor it counts them and allocates nothing. `SeriesCount`, `PartialWindows` and `MergeConflicts` are on the port. `InMemoryTelemetryStore.Dump` and `WindowCount` are gone.
+
+## Version 3.66: events and windows, not telemetry (#166)
+- **Words.** A property whose values arrive as events and are combined per window is an event property; the combined value of one element, property and window start is a window. Version entries before this one keep the words of their version.
+- **Definitions.** A module property declares `"events": {"temporality", "combine", "period"}` (was `"telemetry"`). The kernel's `PropertyType.role` and an ontology property's `role` are `graphData` or `events` (was `telemetry`); the kernel digest is `sha256:e9cf3ac01ab13c2cb233f30c8057553f1a784820f198ee89b679e7acdb97a9bc` (`GET /palette` `kernelDigest`). A seal of the old kernel is not used (`written by another build`).
+- **Wire, old to new.**
+  - `GET /graphs/{g}/telemetry` is `GET /graphs/{g}/windows` (same query and answers).
+  - WebSocket and event stream: `{"type": "telemetry"}` is `{"type": "windows"}`; the subscribe flag `telemetry` is `windows`.
+  - Draft preview: `include` value `telemetry` is `windows`, the result field `telemetry` is `windows`, the count `telemetryWindows` is `windows`.
+  - Draft check `schemas`: a column's `role` is `data` or `events` (was `telemetry`).
+  - `GET /palette`: an operator's `role` `telemetry` is `windows`, its flag `telemetry` is `windows`.
+  - Rejection code `TelemetryNotEditable` is `EventsNotEditable`; diagnostic `TelemetryInGraph` is `EventsInGraph`.
+  - `replay --out`: `NAME.telemetry.ndjson` is `NAME.windows.ndjson`; the batch shape `TelemetryBatch` is called `WindowBatch` (fields unchanged).
+- **Stored data.** A journal header and a seal hold the module texts. The module reader refuses unknown fields, so a store written before this version is refused at load with a `Syntax` error on the field `telemetry`; there is no alias. Such a space is replayed from its capture with the current definitions (record envelopes carry no definitions and do not change).
+- **Engine API (no wire change).** `ITelemetryStore` is `IWindowStore` (the window port), `InMemoryTelemetryStore` is `InMemoryWindowStore`, `EngineOptions.TelemetryFactory` and `TelemetryRetentionNs` are `WindowStoreFactory` and `WindowRetentionNs`, `Engine.Telemetry` is `Engine.Windows`.
 
 ## Version 3.65: a no-data record sits where the silence began to count (#159 G7)
 - **Series.** The no-data record of an element sits at the grid window that holds `S + freshness`, `S` the later of `since` and the end of its newest record; before, it sat at the newest closed window before the clock and moved with it. A roll-up in no data sits at the greatest window of its members' records. Only a clock selection reads the clock (Ch. 7, R8). No output changes: a `hysteresis` that cites evidence computes its own silence window.

@@ -1,4 +1,4 @@
-// X4: fixed-point and compressed telemetry. Replays the newest capture and an estate workload in-process, reads every closed telemetry
+// X4: fixed-point and compressed windows. Replays the newest capture and an estate workload in-process, reads every closed
 // window as decimal, and reports (1) per property the smallest decimal scale at which every value is an exact i64, (2) bytes per window for
 // zigzag-varint deltas and for Gorilla XOR coding of the fixed-point values, (3) ns per appended value.
 // usage: dotnet run -c Release -- CAPTURE_DIR DEFINITIONS_DIR OVERLAY_FILE
@@ -83,12 +83,12 @@ var results = new List<(string Source, string Graph, string Prop, long Element, 
 void Collect(string source, Engine e)
 {
     foreach (var g in e.Graphs)
-        e.Telemetry.ScanGraph(g.Key, (el, p, ws, v) => results.Add((source, g.Name, Short(e.Interner.Get(p)), el, ws, v)));
+        e.Windows.ScanGraph(g.Key, (el, p, ws, v) => results.Add((source, g.Name, Short(e.Interner.Get(p)), el, ws, v)));
 }
 static string Short(string p) { var i = Math.Max(p.LastIndexOf("/prop:", StringComparison.Ordinal) + 6, p.LastIndexOf('.') + 1); return i > 0 && i <= p.Length ? p[i..] : p; }
 
 var derived = new HashSet<string> { "cpuPercent", "memoryPercent", "vipAvailability", "serverErrors", "forwardRate", "dropRate", "reading", "dropRatio", "callDropRatio", "flowRate", "signalValue", "value" };
-Console.WriteLine($"telemetry values collected: {results.Count:N0} ({string.Join(", ", results.GroupBy(r => r.Source).Select(g => $"{g.Key} {g.Count():N0}"))})");
+Console.WriteLine($"window values collected: {results.Count:N0} ({string.Join(", ", results.GroupBy(r => r.Source).Select(g => $"{g.Key} {g.Count():N0}"))})");
 
 // ---- 3. exactness per (graph, property)
 int ScaleOf(decimal v)

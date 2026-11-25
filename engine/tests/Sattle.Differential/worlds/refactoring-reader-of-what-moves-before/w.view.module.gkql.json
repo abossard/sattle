@@ -7,7 +7,7 @@
   "entities": [
     {"name": "Copy", "properties": [{"name": "k", "type": "Text"}, {"name": "g", "type": "Text"}, {"name": "n", "type": "Integer"}]},
     {"name": "Pair", "properties": [{"name": "a", "type": "Text"}, {"name": "b", "type": "Text"}, {"name": "n", "type": "Integer", "optional": true}]},
-    {"name": "Signal", "properties": [{"name": "k", "type": "Text"}, {"name": "v", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}]},
+    {"name": "Signal", "properties": [{"name": "k", "type": "Text"}, {"name": "v", "type": "Integer", "optional": true, "events": {"temporality": "delta", "combine": "sum", "period": "1m"}}]},
     {"name": "Owned", "properties": [{"name": "k", "type": "Text"}, {"name": "owner", "type": "Text", "optional": true}]},
     {"name": "Seen", "properties": [{"name": "a", "type": "Text"}, {"name": "b", "type": "Text"}]}
   ],

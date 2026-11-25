@@ -98,10 +98,10 @@ public class ReplayTests
         One_state_at_chunk_sizes_1_50_and_100000(dir);
     }
 
-    /// <summary>Theorem 7.1 (plane separation) on a tracked scenario: no element of a graph carries a property its ontology declares as telemetry, and every revision of a graph changes an element. So no revision is made by a telemetry value, however many windows the scenario writes. The count of revisions against windows on one relationship is in `AdapterTests`, the store's side of the claim in `StoreTests`.</summary>
+    /// <summary>Theorem 7.1 (plane separation) on a tracked scenario: no element of a graph carries a property its ontology declares as an event property, and every revision of a graph changes an element. So no revision is made by a event value, however many windows the scenario writes. The count of revisions against windows on one relationship is in `AdapterTests`, the store's side of the claim in `StoreTests`.</summary>
     [Theory]
     [InlineData("estate")] [InlineData("estate-wide")] [InlineData("deploy-health")]
-    public void On_a_tracked_scenario_no_element_carries_telemetry_and_every_revision_changes_an_element(string scenario)
+    public void On_a_tracked_scenario_no_element_carries_an_event_property_and_every_revision_changes_an_element(string scenario)
     {
         var r = Scenarios.Run(Scenarios.Tracked(scenario));
         var windows = 0;
@@ -111,9 +111,9 @@ public class ReplayTests
             var carried = r.Entities(g.Name).Concat(r.Relationships(g.Name)).SelectMany(x => x["properties"]!.AsArray()).Select(p => p!["property"].Id()).ToHashSet();
             Assert.Empty(carried.Intersect(meters));
             Assert.All(r.Export.PatchesOf(g.Name), p => Assert.NotEmpty(p.Edits));
-            windows += r.Read(x => x.TelemetryBatches(g).Count());
+            windows += r.Read(x => x.WindowBatches(g).Count());
         }
-        Assert.True(windows > 0, "the scenario writes no telemetry window: the claim says nothing here");
+        Assert.True(windows > 0, "the scenario writes no window: the claim says nothing here");
     }
 
     static void One_state_at_chunk_sizes_1_50_and_100000(string dir)

@@ -37,7 +37,7 @@
           "name": "reading",
           "type": "Decimal",
           "optional": true,
-          "telemetry": {"temporality": "gauge", "combine": "max", "period": "60s"}
+          "events": {"temporality": "gauge", "combine": "max", "period": "60s"}
         }
       ]
     },

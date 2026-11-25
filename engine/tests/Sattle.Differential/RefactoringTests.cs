@@ -34,7 +34,7 @@ public class RefactoringTests
             Space("extract, before"),
             Space("extract, after"),
             Same("entity:Pair ", "rel:Near ", "prop:n=", "entity:Seen ")),
-        ["inline: the signal and its telemetry windows come back from their own graph into the parent"] = new(
+        ["inline: the signal and its windows come back from their own graph into the parent"] = new(
             Space("inline, before"),
             Space("inline, after"),
             Same("entity:Copy ", "window ")),

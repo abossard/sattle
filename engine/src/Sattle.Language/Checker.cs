@@ -360,7 +360,7 @@ public sealed class ProjectionChecker(Graph defs)
                     var keys = Keys(op, R, true, out var kcols, out var carry);
                     if (v is null) return null;
                     if (v.Type.Ty.Tag != Tag.Decimal && v.Type.Ty.Tag != Tag.Integer || !v.Type.Req || v.Type.Role.IsData || v.Type.Role.Temporality == "cumulative")
-                    { Err("Threshold", op, $"threshold value must be a required numeric gauge or delta telemetry value, found {v.Type}"); return null; }
+                    { Err("Threshold", op, $"threshold value must be a required numeric gauge or delta event value, found {v.Type}"); return null; }
                     var above = d.Dec(op, "above"); var below = d.Dec(op, "below");
                     TExpr? ParamExpr(string slot)
                     {
@@ -377,7 +377,7 @@ public sealed class ProjectionChecker(Graph defs)
                     var (noData, ignore) = (d.Text(op, "nodata"), d.Bool(op, "nodataIgnore"));
                     var marked = R.Find(TThreshold.NoDataColumn) is { } nd && nd.T.Ty.Tag == Tag.Boolean && !nd.T.Role.IsData;
                     if (marked && noData is null && !ignore) Err("Threshold", op, "a series with a freshness limit needs hysteresis to specify what no data gives (noData)");
-                    if (!marked && (noData is not null || ignore)) Err("Threshold", op, "a no-data state needs telemetry with a time to live upstream (series.freshness) and the noData column in the row");
+                    if (!marked && (noData is not null || ignore)) Err("Threshold", op, "a no-data state needs events with a time to live upstream (series.freshness) and the noData column in the row");
                     if (noData is not null && (noData == high || noData == low)) Err("Threshold", op, "the value for no data must differ from the two states");
                     var target = d.Text(op, "target") ?? "status";
                     var cols = kcols.Concat(carry).Append(new Col(target, new FType(Ty.Text, true, Role.Data))).ToList();
@@ -457,7 +457,7 @@ public sealed class ProjectionChecker(Graph defs)
             var parts = dem.Split('|'); var pn = parts[2];
             if (parts[1] != target) continue;
             var hit = view.PropsOf(reached).Where(kv => view.Props.TryGetValue(kv.Key, out var pi) && pi.Name == pn).Select(kv => (Id: kv.Key, Req: kv.Value)).ToList();
-            if (hit.Count != 1 || view.Props[hit[0].Id].Role == "telemetry") continue;
+            if (hit.Count != 1 || view.Props[hit[0].Id].Role == "events") continue;
             var pi = view.Props[hit[0].Id];
             reads.Add(new TRead(target, hit[0].Id, target + "." + pn));
             cols.Add(new Col(target + "." + pn, new FType(KindOfProp(pi, view), hit[0].Req, Role.Data)));
@@ -468,7 +468,7 @@ public sealed class ProjectionChecker(Graph defs)
     TOp? TypeJoin(string op, string name, Dictionary<string, Src> inputs, Schema? l, Schema? r)
     {
         if (l is null || r is null) return null;
-        if (l.Window != 0 || r.Window != 0 || l.Cols.Concat(r.Cols).Any(c => !c.T.Role.IsData)) { Err("Join", op, "join takes data rows: no windowed or telemetry input (roll it up and cross it with a threshold first)"); return null; }
+        if (l.Window != 0 || r.Window != 0 || l.Cols.Concat(r.Cols).Any(c => !c.T.Role.IsData)) { Err("Join", op, "join takes data rows: no windowed or event input (roll it up and cross it with a threshold first)"); return null; }
         var clash = l.Cols.Select(c => c.Name).Intersect(r.Cols.Select(c => c.Name)).FirstOrDefault();
         if (clash is not null) { Err("Join", op, $"both inputs have a column named '{clash}'; rename one with project"); return null; }
         var both = new Schema([.. l.Cols, .. r.Cols]);
@@ -528,7 +528,7 @@ public sealed class ProjectionChecker(Graph defs)
         return keys;
     }
 
-    List<TAgg> Aggs(string op, Schema R, bool telemetry)
+    List<TAgg> Aggs(string op, Schema R, bool windows)
     {
         var res = new List<TAgg>();
         foreach (var a in d.Children(op, "agg"))
@@ -538,15 +538,15 @@ public sealed class ProjectionChecker(Graph defs)
             var v = ve is null ? null : Ex(ve, R); var w = we is null ? null : Ex(we, R);
             if (ve is not null && v is null) continue;
             var row = d.Text(a, "row");
-            if (row is not null && (fn != "last" || telemetry)) { Err("Aggregate", a, $"'row {row}' marks a last of a group: the last aggregates with one mark take their values from one row"); continue; }
+            if (row is not null && (fn != "last" || windows)) { Err("Aggregate", a, $"'row {row}' marks a last of a group: the last aggregates with one mark take their values from one row"); continue; }
             var percent = d.Prop(a, "percent") is DecimalValue pv ? pv.Q : (decimal?)null;
-            if (percent is not null && (fn != "percentile" || telemetry)) { Err("Aggregate", a, $"'percent {Norm.Decimal(percent.Value)}' is the p of a percentile of a group"); continue; }
+            if (percent is not null && (fn != "percentile" || windows)) { Err("Aggregate", a, $"'percent {Norm.Decimal(percent.Value)}' is the p of a percentile of a group"); continue; }
             FType? ft = null;
             if (fn == "count") { if (v is not null) Err("Aggregate", a, "count takes no argument"); ft = new FType(Ty.Int(), true, Role.Data); }
             else if (v is null) Err("Aggregate", a, $"{fn} needs an argument");
-            else if (!telemetry)
+            else if (!windows)
             {
-                if (!v.Type.Role.IsData) Err("Aggregate", a, "a summarize of data takes data; telemetry is summarized by windowStart after a join with telemetry(...)");
+                if (!v.Type.Role.IsData) Err("Aggregate", a, "a summarize of data takes data; windows are summarized by windowStart after a join with a series");
                 else switch (fn)
                     {
                         case "countDistinct": ft = new FType(Ty.Int(), true, Role.Data); break;
@@ -572,7 +572,7 @@ public sealed class ProjectionChecker(Graph defs)
             else
             {
                 var role = v.Type.Role;
-                if (role.IsData || !v.Type.Ty.IsNumeric) Err("Aggregate", a, $"rollup aggregate {fn} needs a numeric telemetry value, found {v.Type}");
+                if (role.IsData || !v.Type.Ty.IsNumeric) Err("Aggregate", a, $"rollup aggregate {fn} needs a numeric event value, found {v.Type}");
                 else if (fn is not ("sum" or "min" or "max" or "mean")) Err("Unsupported", a, $"rollup aggregate {fn} is not supported (sum, min, max, mean)");
                 else if (role.Temporality == "cumulative") Err("Aggregate", a, $"{fn} over a cumulative value is an error, apply Delta first");
                 else if (fn == "mean" && role.Temporality != "gauge") Err("Aggregate", a, "mean over a delta value is not defined; use sum, or rate it first");
@@ -634,7 +634,7 @@ public sealed class ProjectionChecker(Graph defs)
             var tid = nodeTypes.GetValueOrDefault(v) ?? edges.FirstOrDefault(e => e.Var == v)?.TypeId;
             if (tid is null) continue;
             var hit = view.PropsOf(tid).Where(kv => view.Props.TryGetValue(kv.Key, out var pi) && pi.Name == pn).Select(kv => (Id: kv.Key, Req: kv.Value)).ToList();
-            if (hit.Count != 1 || view.Props[hit[0].Id].Role == "telemetry") continue;
+            if (hit.Count != 1 || view.Props[hit[0].Id].Role == "events") continue;
             var pi = view.Props[hit[0].Id];
             reads.Add(new TRead(v, hit[0].Id, v + "." + pn));
             cols.Add(new Col(v + "." + pn, new FType(KindOfProp(pi, view), nodes.Any(n => n.Var == v) ? hit[0].Req : hit[0].Req, Role.Data)));
@@ -671,7 +671,7 @@ public sealed class ProjectionChecker(Graph defs)
             if (target is not null && target != v) { Err("Series", rd, "all series reads must name the same element variable"); continue; }
             target = v;
             var hit = view.PropsOf(col.T.Ty.TypeId).Keys.Where(k => view.Props.TryGetValue(k, out var pi) && pi.Name == pn).ToList();
-            if (hit.Count != 1 || view.Props[hit[0]].Role != "telemetry") { Err("Series", rd, $"'{pn}' is not a telemetry property of {Ids.Name(col.T.Ty.TypeId)}"); continue; }
+            if (hit.Count != 1 || view.Props[hit[0]].Role != "events") { Err("Series", rd, $"'{pn}' is not a event property of {Ids.Name(col.T.Ty.TypeId)}"); continue; }
             var p = view.Props[hit[0]];
             if (period != 0 && p.Period != period) { Err("Series", rd, "series reads have different periods"); continue; }
             period = p.Period;
@@ -683,9 +683,9 @@ public sealed class ProjectionChecker(Graph defs)
             reads.Add(new TSeriesRead(v, hit[0], pn, p.ValueKind, fill));
         }
         var within = d.Int(op, "within");
-        if (period > 0 && within < period) Err("Series", op, "the look-back of telemetry(...) must be at least the period of the property");
+        if (period > 0 && within < period) Err("Series", op, "the look-back of a series must be at least the period of the property");
         var ttl = d.Prop(op, "ttl") is IntegerValue tv ? (long)tv.N : (long?)null;
-        if (ttl is null && reads.Any(r => r.Fill is not null)) Err("Series", op, "a fill needs a time to live, as telemetry_filled(graph, lookback, ttl, fill) gives: silence must have a declared outcome");
+        if (ttl is null && reads.Any(r => r.Fill is not null)) Err("Series", op, "a fill needs a time to live, as a series with freshness gives: silence must have a declared outcome");
         // at most `within` less one window: a record that ends within the time to live is then a window of the look-back
         if (ttl is { } life && period > 0 && (life < period || life > within - period)) Err("Series", op, "the series freshness limit must be at least one window and at most the look-back less one window");
         if (ttl is not null && R.Has(TThreshold.NoDataColumn)) Err("Series", op, $"name '{TThreshold.NoDataColumn}' already exists in the row");
@@ -695,9 +695,9 @@ public sealed class ProjectionChecker(Graph defs)
         foreach (var r in reads)
         {
             var p = view.Props[r.PropId];
-            cols.Add(new Col(r.OutName, new FType(KindOfProp(p, view), true, Role.Tele(p.Temporality!, p.Period))));
+            cols.Add(new Col(r.OutName, new FType(KindOfProp(p, view), true, Role.Events(p.Temporality!, p.Period))));
         }
-        if (ttl is not null) cols.Add(new Col(TThreshold.NoDataColumn, new FType(Ty.Boolean, true, Role.Tele("gauge", period))));
+        if (ttl is not null) cols.Add(new Col(TThreshold.NoDataColumn, new FType(Ty.Boolean, true, Role.Events("gauge", period))));
         return new TSeries(name, op, inputs, R.With(cols, period), gsrc.Name, reads, within, period, target, ttl);
     }
 
@@ -717,20 +717,20 @@ public sealed class ProjectionChecker(Graph defs)
             var target = KindOfProp(pi, outView);
             if (!Types.Sub(e.Type.Ty, target, outView)) { Err("Set", s, $"property {pi.Name} expects {target}, found {e.Type.Ty}"); continue; }
             if (required && !e.Type.Req) { Err("Set", s, $"required property {pi.Name} cannot take an optional value"); continue; }
-            var tele = pi.Role == "telemetry";
+            var tele = pi.Role == "events";
             if (tele)
             {
-                if (R.Window != pi.Period) { Err("Set", s, $"telemetry property {pi.Name} has period {Norm.DurationText(pi.Period)}, the row window is {(R.Window == 0 ? "undefined" : Norm.DurationText(R.Window))}"); continue; }
-                if (!e.Type.Role.IsData && (e.Type.Role.Temporality != pi.Temporality || e.Type.Role.Period != pi.Period)) { Err("Set", s, $"telemetry property {pi.Name} is {pi.Temporality}, the value is {e.Type.Role}"); continue; }
+                if (R.Window != pi.Period) { Err("Set", s, $"event property {pi.Name} has period {Norm.DurationText(pi.Period)}, the row window is {(R.Window == 0 ? "undefined" : Norm.DurationText(R.Window))}"); continue; }
+                if (!e.Type.Role.IsData && (e.Type.Role.Temporality != pi.Temporality || e.Type.Role.Period != pi.Period)) { Err("Set", s, $"event property {pi.Name} is {pi.Temporality}, the value is {e.Type.Role}"); continue; }
                 if (e.Type.Prov is { } f && pi.Combine is { } c && f != c) { Err("Set", s, $"property {pi.Name} combines with {c}, the value was rolled up with {f}"); continue; }
-                if (isRule) Err("Set", s, $"a step with an editable rule (accept or update) cannot set telemetry property {pi.Name}");
+                if (isRule) Err("Set", s, $"a step with an editable rule (accept or update) cannot set event property {pi.Name}");
             }
-            else if (!e.Type.Role.IsData) { Err("RoleInterference", s, $"graph data property {pi.Name} cannot take a telemetry value (only Threshold crosses to data)"); continue; }
+            else if (!e.Type.Role.IsData) { Err("RoleInterference", s, $"graph data property {pi.Name} cannot take a event value (only Threshold crosses to data)"); continue; }
             res.Add(new TSet(pid, pi.Name, e, tele, pi.Period, pi.Combine));
         }
         if (!update)
             foreach (var (p, req) in props)
-                if (req && outView.Props.TryGetValue(p, out var pi) && pi.Role != "telemetry" && !res.Any(x => x.PropId == p))
+                if (req && outView.Props.TryGetValue(p, out var pi) && pi.Role != "events" && !res.Any(x => x.PropId == p))
                     Err("P5", op, $"nodes {Ids.Name(typeId)} must set required property {pi.Name}");
         return res;
     }
@@ -762,8 +762,8 @@ public sealed class ProjectionChecker(Graph defs)
         return new TEmitRel(name, op, inputs, new Schema([]), t, update, d.Text(op, "key") ?? "", src, tgt, sets, d.Text(op, "retype") ?? "reject", rule);
     }
 
-    /// <summary>Premise B1 as a checker rule (O6.7): one row per element and window writes a telemetry property. A group or roll-up whose key has a column the identity of the emitted element does not read gives several rows for one element and window: refused.</summary>
-    void TelemetryKeyCheck(List<TOp> ops)
+    /// <summary>Premise B1 as a checker rule (O6.7): one row per element and window writes a event property. A group or roll-up whose key has a column the identity of the emitted element does not read gives several rows for one element and window: refused.</summary>
+    void WindowKeyCheck(List<TOp> ops)
     {
         static IEnumerable<string> Fields(TExpr e) => e switch
         {
@@ -776,13 +776,13 @@ public sealed class ProjectionChecker(Graph defs)
         foreach (var (emit, typeId, ids, sets) in ops.OfType<TEmitEntity>().Select(e => ((TOp)e, e.TypeId, new[] { e.EntityId }, e.Sets))
                      .Concat(ops.OfType<TEmitRel>().Select(e => ((TOp)e, e.TypeId, new[] { e.Source, e.Target }, e.Sets))))
         {
-            if (!sets.Any(x => x.Telemetry) || !emit.Inputs.TryGetValue("in", out var src) || src.IsPort || !byName.TryGetValue(src.Name, out var up)) continue;
+            if (!sets.Any(x => x.Events) || !emit.Inputs.TryGetValue("in", out var src) || src.IsPort || !byName.TryGetValue(src.Name, out var up)) continue;
             var keys = up switch { TGroup g => g.Keys.Select(k => k.Name), TRollup r => r.Keys.Select(k => k.Name), _ => null };
             if (keys is null) continue;
             var read = ids.SelectMany(Fields).ToHashSet(StringComparer.Ordinal);
             var finer = keys.Where(k => k != "windowStart" && !read.Contains(k)).ToList();
             if (finer.Count > 0)
-                Err("B1", emit.Id, $"the telemetry of {Ids.Name(typeId)} comes from {up.Name}, grouped by {string.Join(", ", finer.Select(k => $"'{k}'"))} besides what its identity reads: several rows would write one window of one element (premise B1)");
+                Err("B1", emit.Id, $"the windows of {Ids.Name(typeId)} come from {up.Name}, grouped by {string.Join(", ", finer.Select(k => $"'{k}'"))} besides what its identity reads: several rows would write one window of one element (premise B1)");
         }
     }
 
@@ -829,7 +829,7 @@ public sealed class ProjectionChecker(Graph defs)
 
     void EmitterChecks(List<TOp> ops, List<TRule> rules, string pid)
     {
-        TelemetryKeyCheck(ops);
+        WindowKeyCheck(ops);
         LinkedIdentityCheck(ops, pid);
         var creates = ops.OfType<TEmitEntity>().Where(e => !e.Update).ToList();
         var relCreates = ops.OfType<TEmitRel>().Where(e => !e.Update).ToList();
@@ -890,7 +890,7 @@ public sealed class ProjectionChecker(Graph defs)
                     foreach (var kv in view.PropsOf(src)) if (view.Props.TryGetValue(kv.Key, out var pi) && pi.Name == pn) covered.Add(kv.Key);
                 }
             foreach (var (propId, req) in view.PropsOf(src))
-                if (req && view.Props.TryGetValue(propId, out var pi) && pi.Role != "telemetry" && !covered.Contains(propId) && accept.Contains("create"))
+                if (req && view.Props.TryGetValue(propId, out var pi) && pi.Role != "events" && !covered.Contains(propId) && accept.Contains("create"))
                     Err("P5", pid, $"rule {r.Name}: create must provide required property {pi.Name} of {Ids.Name(src)} (from the view or the onCreate function)");
             foreach (var x in p.DeleteSets) if (!view.PropsOf(src).ContainsKey(x.PropId)) Err("P5", pid, $"rule {r.Name}: onDelete sets {x.Name}, which {Ids.Name(src)} does not have");
         }
@@ -1022,7 +1022,7 @@ public sealed class ProjectionChecker(Graph defs)
                         var hit = view.PropsOf(tid).Where(kv => view.Props.TryGetValue(kv.Key, out var pi) && pi.Name == pn).Select(kv => (Id: kv.Key, Req: kv.Value)).ToList();
                         if (hit.Count != 1) { Err("E-Prop", node, $"{Ids.Name(tid)} has no property '{pn}' in the graph's ontology"); return null; }
                         var p = view.Props[hit[0].Id];
-                        if (p.Role == "telemetry") { Err("E-Prop", node, $"telemetry property {pn} is read only through Series"); return null; }
+                        if (p.Role == "events") { Err("E-Prop", node, $"event property {pn} is read only through Series"); return null; }
                         var known = !demands.Add($"{parts[0]}|{parts[1]}|{pn}");
                         if (known && !R.Has(path)) { Err("E-Prop", node, $"{path} is read after an aggregation that dropped it; read the property before grouping"); return null; }
                         return new TField(path, new FType(KindOfProp(p, view), ec.T.Req && hit[0].Req, Role.Data));
@@ -1185,7 +1185,7 @@ public sealed class ProjectionChecker(Graph defs)
                     if (!Arity(3, 3)) break;
                     if (args[0].Type.Ty.Tag != Tag.Boolean) { Err("E-Call", node, "If needs a Boolean condition"); return null; }
                     if (!Types.Comparable(args[1].Type.Ty, args[2].Type.Ty, null)) { Err("E-Call", node, $"If branches differ: {args[1].Type.Ty} and {args[2].Type.Ty}"); return null; }
-                    role = Types.Join("If", roles, out je);       // the condition decides the value: a telemetry condition makes a telemetry result
+                    role = Types.Join("If", roles, out je);       // the condition decides the value: an event condition makes an event result
                     if (role is null) { Err("E-Call", node, je!); return null; }
                     return new TCall(fn, args, new FType(args[1].Type.Ty, true, role));
                 }
@@ -1193,9 +1193,9 @@ public sealed class ProjectionChecker(Graph defs)
                 {
                     if (!Arity(1, 1)) break;
                     var a = args[0];
-                    if (!a.Type.Ty.IsNumeric || a.Type.Role.Temporality != "delta") { Err("E-Call", node, $"Rate needs a numeric delta telemetry value, found {a.Type}"); return null; }
+                    if (!a.Type.Ty.IsNumeric || a.Type.Role.Temporality != "delta") { Err("E-Call", node, $"Rate needs a numeric delta event value, found {a.Type}"); return null; }
                     if (R.Window != a.Type.Role.Period) { Err("E-Call", node, "Rate: the row window differs from the value period"); return null; }
-                    return new TCall(fn, args, new FType(Ty.Dec(Types.UnitDiv(a.Type.Ty.Unit, "s") is var u && a.Type.Ty.Unit == "1" ? "1/s" : u), true, Role.Tele("gauge", a.Type.Role.Period)));
+                    return new TCall(fn, args, new FType(Ty.Dec(Types.UnitDiv(a.Type.Ty.Unit, "s") is var u && a.Type.Ty.Unit == "1" ? "1/s" : u), true, Role.Events("gauge", a.Type.Role.Period)));
                 }
             default: Err("Unsupported", node, $"function {fn} is not supported in this engine slice"); return null;
         }
@@ -1293,12 +1293,12 @@ public sealed class SpaceChecker(Graph defs)
         foreach (var g in graphs.Where(g => !ingests.Contains(g.Name) && !Reaches(g.Name, []))) Err("S3", spaceId, $"graph {g.Name} is not reachable from a graph that ingests");
         foreach (var src in graphs.SelectMany(g => g.Bindings.Values.Where(sources.Select(s => s.Name).Contains).Select(s => (Source: s, GraphId: g.Name))).GroupBy(x => x.Source).Where(x => x.Select(y => y.GraphId).Distinct().Count() > 1))
             Err("S2", spaceId, $"source {src.Key} is bound by more than one graph ({string.Join(", ", src.Select(x => x.GraphId).Distinct())})");
-        // a graph other than the master that ingests writes no telemetry (windows, loss marks and coverage stay with the master) and links no identities (a merge reaches the sinks of the graphs that step after the one that links)
+        // a graph other than the master that ingests writes no windows (they, loss marks and coverage stay with the master) and links no identities (a merge reaches the sinks of the graphs that step after the one that links)
         foreach (var g in graphs.Where(g => !g.Master && ingests.Contains(g.Name)))
         {
             var ops = projections[g.ProjectionId].Ops;
-            if (ops.Any(o => (o switch { TEmitEntity e => e.Sets, TEmitRel r => r.Sets, _ => [] }).Any(x => x.Telemetry)))
-                Err("S1", spaceId, $"graph {g.Name} ingests and is not the master: it writes no telemetry");
+            if (ops.Any(o => (o switch { TEmitEntity e => e.Sets, TEmitRel r => r.Sets, _ => [] }).Any(x => x.Events)))
+                Err("S1", spaceId, $"graph {g.Name} ingests and is not the master: it writes no windows");
             if (ops.OfType<TLink>().Any())
                 Err("S1", spaceId, $"graph {g.Name} ingests and is not the master: it links no identities, a link rule belongs to the master's projection");
         }

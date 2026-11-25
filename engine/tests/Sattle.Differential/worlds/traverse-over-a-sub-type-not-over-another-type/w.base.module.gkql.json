@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "imports": [],
   "entities": [
-    {"name": "Item", "properties": [{"name": "k", "type": "Text"}, {"name": "g", "type": "Text"}, {"name": "n", "type": "Integer"}, {"name": "hits", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}]}
+    {"name": "Item", "properties": [{"name": "k", "type": "Text"}, {"name": "g", "type": "Text"}, {"name": "n", "type": "Integer"}, {"name": "hits", "type": "Integer", "optional": true, "events": {"temporality": "delta", "combine": "sum", "period": "1m"}}]}
   ],
   "relationships": [
     {"name": "Edge", "from": "Item", "to": "Item"},

@@ -10,7 +10,7 @@ public sealed record World(string Name, string Kind, IReadOnlyList<SourceFile> F
 {
     /// <summary>Text that some reference result of the default seeds must contain, so a world that never exercises its operator fails.</summary>
     public IReadOnlyList<string> Witnesses { get; init; } = [];
-    /// <summary>The telemetry retention of the space (Def. 7.13), for the engine and the reference alike; the default is 48 hours.</summary>
+    /// <summary>The window retention of the space (Def. 7.13), for the engine and the reference alike; the default is 48 hours.</summary>
     public long RetentionNs { get; init; } = 48 * 60 * Minute;
     /// <summary>The sources that report progress in the logs of this world (Def. 10.9), and the share of the inputs that are such reports.</summary>
     public IReadOnlyList<string> Reporting { get; init; } = [];
@@ -129,8 +129,8 @@ public static class Worlds
     /// <summary>A view names its elements by the element it matches, so it follows a merge of the master (a key of a linked domain is refused there, `IdentityLinked`).</summary>
     public static readonly World LinkedNamed = LinkedWith("a view named by the element of a linked domain", "Link, Match, EmitEntity in a view") with { Witnesses = ["d:w.view/prop:name="] };
 
-    const string LoadsWorld = "two groups by two keys of one class, one telemetry property";
-    /// <summary>Law 7.5 item 3, "rows after the link" (D37): the load of an instance aggregated per window once by its uid and once by its name, both writing one telemetry property. A link merges the two identities before, between or after the rows; the window is what both groups give together, as if every row had been written under the survivor.
+    const string LoadsWorld = "two groups by two keys of one class, one event property";
+    /// <summary>Law 7.5 item 3, "rows after the link" (D37): the load of an instance aggregated per window once by its uid and once by its name, both writing one event property. A link merges the two identities before, between or after the rows; the window is what both groups give together, as if every row had been written under the survivor.
     /// The load property is declared `{kind}` with the temporality and combine rule `rule`; `aggregate` is the aggregate of each group: `sum` or `avg` of n, or `arg_max` for the n of the latest row.</summary>
     public static World LinkedLoadsUnder(string rule, string aggregate = "sum", string kind = "Integer")
     {
@@ -139,11 +139,11 @@ public static class Worlds
         var files = Files(LoadsWorld).Select(f => f with
         {
             Text = f.Text
-                .Replace("""{"name": "load", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}""",
-                    $$$"""{"name": "load", "type": "{{{kind}}}", "optional": true, "telemetry": {"temporality": "{{{temporality}}}", "combine": "{{{combine}}}", "period": "1m"}}""", StringComparison.Ordinal)
+                .Replace("""{"name": "load", "type": "Integer", "optional": true, "events": {"temporality": "delta", "combine": "sum", "period": "1m"}}""",
+                    $$$"""{"name": "load", "type": "{{{kind}}}", "optional": true, "events": {"temporality": "{{{temporality}}}", "combine": "{{{combine}}}", "period": "1m"}}""", StringComparison.Ordinal)
                 .Replace("""{"c": {"fn": "sum", "args": [{"ref": "n"}]}}""", "{\"c\": " + call + "}", StringComparison.Ordinal),
         }).ToList();
-        return new(rule == "delta sum" && aggregate == "sum" ? LoadsWorld : $"{LoadsWorld} ({rule}, {aggregate})", "Link, Window, Group, EmitEntity telemetry", files,
+        return new(rule == "delta sum" && aggregate == "sum" ? LoadsWorld : $"{LoadsWorld} ({rule}, {aggregate})", "Link, Window, Group, EmitEntity windows", files,
         [Instances, Flows, new("loads", (r, now) => { var i = r.Next(4); var byUid = r.Next(2) == 0; return Row(("uid", byUid ? Value.Text("u" + i) : Value.Null), ("name", byUid ? Value.Null : Value.Text(InstanceNames[i])), ("n", Value.Integer(r.Next(1, 4))), ("t", Near(r, now))); })], AdvanceShare: 0.2)
         { Witnesses = ["prop:load"] };
     }
@@ -256,7 +256,7 @@ public static class Worlds
         Aggregate("countif"),
         Windowed with { Witnesses = ["window "] },
         LatenessPerInput,
-        Windowed with { Name = "window late revise, retention 2 minutes", Kind = "Window, telemetry retention", RetentionNs = 2 * Minute, Witnesses = ["window "] },
+        Windowed with { Name = "window late revise, retention 2 minutes", Kind = "Window, window retention", RetentionNs = 2 * Minute, Witnesses = ["window "] },
         Hopped with { Witnesses = ["window "] },
         HopOverWindows with { Witnesses = ["window "] },
         Shifted with { Witnesses = ["window "] },

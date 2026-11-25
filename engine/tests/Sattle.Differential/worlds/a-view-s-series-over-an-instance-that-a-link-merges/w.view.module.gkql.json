@@ -5,6 +5,6 @@
     {"module": "w", "alias": "base", "version": "1.0.0", "digest": null}
   ],
   "entities": [
-    {"name": "Seen", "properties": [{"name": "load", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}]}
+    {"name": "Seen", "properties": [{"name": "load", "type": "Integer", "optional": true, "events": {"temporality": "delta", "combine": "sum", "period": "1m"}}]}
   ]
 }

@@ -126,7 +126,7 @@ static class Census
     {
         var roots = new List<(string, string, object?)>
         {
-            ("interner", "-", e.Interner), ("identities", "-", e.Identities), ("telemetry", "-", e.Telemetry),
+            ("interner", "-", e.Interner), ("identities", "-", e.Identities), ("windows", "-", e.Windows),
         };
         foreach (var g in e.Graphs) foreach (var (n, v) in Expand("graph.state", g.State)) roots.Add((n, g.Name, v));
         foreach (var (n, v) in Expand("store", e.Store))

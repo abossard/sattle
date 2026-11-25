@@ -6,7 +6,7 @@ using Sattle.Runtime;
 
 namespace Sattle.Tests;
 
-/// <summary>A projection is an abstraction of the graph below it, with its edges: an edge between two lower nodes becomes an edge between their images (README, "Edge lifting"). On the synthetic estate every projection whose output ontology declares relationship types has relationships, the capabilities carry the service dependencies one level up with the telemetry summed, and the policies for the three special cases hold: self-loops are dropped, parallel edges collapse onto one with the sums, and an end without an image is not lifted.</summary>
+/// <summary>A projection is an abstraction of the graph below it, with its edges: an edge between two lower nodes becomes an edge between their images (README, "Edge lifting"). On the synthetic estate every projection whose output ontology declares relationship types has relationships, the capabilities carry the service dependencies one level up with the windows summed, and the policies for the three special cases hold: self-loops are dropped, parallel edges collapse onto one with the sums, and an end without an image is not lifted.</summary>
 public class ProjectionEdgesTests
 {
     static string Estate => EstateTests.EstateDir;

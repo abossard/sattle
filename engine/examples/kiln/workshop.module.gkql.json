@@ -12,7 +12,7 @@
           "name": "temperature",
           "type": "Decimal",
           "optional": true,
-          "telemetry": {"temporality": "gauge", "combine": "mean", "period": "60s"}
+          "events": {"temporality": "gauge", "combine": "mean", "period": "60s"}
         },
         {
           "name": "state",

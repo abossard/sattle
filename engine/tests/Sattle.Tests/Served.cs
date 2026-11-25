@@ -44,13 +44,13 @@ static class Served
     /// <summary>The value of a property of a served element as text, null when the element has none.</summary>
     public static string? Prop(this JsonNode element, string property) => element.Value(property)?["value"]?.ToString();
 
-    /// <summary>The telemetry windows of a property of a graph that the range read of a host serves: per window and element, the value. `Window` names the window (its start) and is the same text for every property of the graph.</summary>
+    /// <summary>The windows of a property of a graph that the range read of a host serves: per window and element, the value. `Window` names the window (its start) and is the same text for every property of the graph.</summary>
     public static List<(string Window, string Element, decimal Value)> Windows(this SpaceHost h, string graph, string property) =>
-        [.. h.Telemetry(graph, null, null, null, null, batches: false)["series"]!.AsArray().Where(s => Names(s!["property"]!.GetValue<string>(), property))
+        [.. h.Windows(graph, null, null, null, null, batches: false)["series"]!.AsArray().Where(s => Names(s!["property"]!.GetValue<string>(), property))
             .SelectMany(s => s!["points"]!.AsArray().Select(p => (p!["windowStart"]!.GetValue<string>(), s["element"]!.GetValue<string>(), decimal.Parse(p["valueText"]!.GetValue<string>(), System.Globalization.CultureInfo.InvariantCulture))))];
 
-    /// <summary>The same on the replay of a scenario, from the telemetry batches its export writes: `Window` is the number of the window, counted from the first window of the graph.</summary>
+    /// <summary>The same on the replay of a scenario, from the window batches its export writes: `Window` is the number of the window, counted from the first window of the graph.</summary>
     public static List<(string Window, string Element, decimal Value)> Windows(this ReplayTests.Run r, string graph, string property) =>
-        [.. r.Read(x => x.TelemetryBatches(r.Engine.Graph(graph)).ToList()).Where(b => Names(b["property"]!.GetValue<string>(), property))
+        [.. r.Read(x => x.WindowBatches(r.Engine.Graph(graph)).ToList()).Where(b => Names(b["property"]!.GetValue<string>(), property))
             .SelectMany(b => b["ids"]!.AsArray().Zip(b["values"]!.AsArray(), (id, v) => (b["tick"]!.ToString(), id!.GetValue<string>(), (decimal)v!.GetValue<double>())))];
 }

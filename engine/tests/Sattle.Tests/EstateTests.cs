@@ -5,7 +5,7 @@ using Sattle.Runtime;
 
 namespace Sattle.Tests;
 
-/// <summary>The synthetic capture `estate` (tests/Sattle.Tests/fixtures/estate, record envelopes, invented names only) has data for every operator of the projection language: instances, services and the calls between them for a closure, a Link that merges, a Union of two sources, and host and resource telemetry for Series, Window, Threshold and Rollup.</summary>
+/// <summary>The synthetic capture `estate` (tests/Sattle.Tests/fixtures/estate, record envelopes, invented names only) has data for every operator of the projection language: instances, services and the calls between them for a closure, a Link that merges, a Union of two sources, and host and resource events for Series, Window, Threshold and Rollup.</summary>
 public class EstateTests
 {
     const long Min = 60_000_000_000;
@@ -165,7 +165,7 @@ public class EstateTests
     }
 
     [Fact]
-    public void Host_and_resource_telemetry_has_windows()
+    public void Host_and_resource_events_have_windows()
     {
         var e = Plain.Value;
         Assert.All(new[] { "dropRate", "forwardRate", "cpuPercent" }, p => Assert.NotEmpty(e.Windows("master", p)));

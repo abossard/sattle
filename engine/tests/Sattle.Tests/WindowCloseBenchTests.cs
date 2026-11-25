@@ -26,7 +26,7 @@ public class WindowCloseBenchTests
             Assert.True(child.ExitStatus.ExitCode == 0, child.StandardError);
             var report = child.StandardOutput;
             Assert.Contains("window close all: 7 closes", report);
-            Assert.Contains($"window close before telemetry: {(withMetric ? 2 : 6)} closes", report);
+            Assert.Contains($"window close before windows: {(withMetric ? 2 : 6)} closes", report);
             Assert.Contains($"window close first populated: {(withMetric ? "1 close," : "0 closes")}", report);
             Assert.Contains($"window close steady (after first populated): {(withMetric ? 3 : 0)} closes", report);
             Assert.Contains("window close empty end-of-capture advance: 1 close,", report);

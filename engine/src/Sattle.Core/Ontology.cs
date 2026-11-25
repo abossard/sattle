@@ -163,12 +163,12 @@ public static class Conformance
         foreach (var (p, v) in props.Items)
         {
             if (!allowed.ContainsKey(p) || !o.Props.TryGetValue(p, out var pi)) { err("UnknownProperty", id, $"property {p} is not declared for {Ids.Name(type)}", "error"); continue; }
-            if (pi.Role == "telemetry") { err("TelemetryInGraph", id, $"telemetry property {pi.Name} cannot be graph data (WF4)", "error"); continue; }
+            if (pi.Role == "events") { err("EventsInGraph", id, $"event property {pi.Name} cannot be graph data (WF4)", "error"); continue; }
             if (!KindOk(v, pi, o)) err("ValueKind", id, $"property {pi.Name} expects {pi.ValueKind}{(pi.ItemKind is null ? "" : "<" + pi.ItemKind + ">")}, got {v.Kind}", "error");
             foreach (var c in o.Constraints.Where(c => c.PropId == p && o.IsSubtype(type, c.TypeId))) ValueConstraint(id, pi, v, c, err);
         }
         foreach (var (p, req) in allowed)
-            if (req && !props.TryGet(p, out _) && o.Props.TryGetValue(p, out var pi) && pi.Role != "telemetry")
+            if (req && !props.TryGet(p, out _) && o.Props.TryGetValue(p, out var pi) && pi.Role != "events")
                 err("RequiredProperty", id, $"required property {pi.Name} of {Ids.Name(type)} is missing", "error");
     }
 
@@ -280,17 +280,17 @@ public static class KernelChecks
                         if (d.Text(pid, "direction") != dir || d.Text(pid, "kind") != kind) Err("K9", pid, $"port {name} of {tn} must be {dir} {kind}");
                     }
             }
-            // K10 / K11: telemetry properties
+            // K10 / K11: event properties
             if (tn == "PropertyType")
             {
                 var role = d.Text(e.Id, "role");
-                var tele = role == "telemetry";
+                var tele = role == "events";
                 foreach (var f in new[] { "temporality", "combine", "period" })
-                    if ((d.Prop(e.Id, f) is not null) != tele) Err("K11", e.Id, $"{f} must be present iff role is telemetry");
+                    if ((d.Prop(e.Id, f) is not null) != tele) Err("K11", e.Id, $"{f} must be present iff role is events");
                 if (tele)
                 {
                     var vk = Ids.Name(d.Target(e.Id, "valueKind") ?? "");
-                    if (vk is not ("Integer" or "Decimal")) Err("K11", e.Id, "telemetry value kind must be Integer or Decimal");
+                    if (vk is not ("Integer" or "Decimal")) Err("K11", e.Id, "event value kind must be Integer or Decimal");
                     if (d.Text(e.Id, "combine") == "sum" && d.Text(e.Id, "temporality") == "cumulative") Err("K11", e.Id, "combine sum is not allowed with temporality cumulative (use Delta first)");
                 }
             }

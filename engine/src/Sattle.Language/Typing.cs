@@ -23,12 +23,12 @@ public sealed record Ty(Tag Tag, string Unit = "1", string? TypeId = null, Tag? 
     };
 }
 
-/// <summary>Field role: graph data or telemetry with temporality and period (ns).</summary>
+/// <summary>Field role: graph data or events with temporality and period (ns).</summary>
 public sealed record Role(string? Temporality, long Period)
 {
     public static readonly Role Data = new((string?)null, 0);
     public bool IsData => Temporality is null;
-    public static Role Tele(string temporality, long period) => new(temporality, period);
+    public static Role Events(string temporality, long period) => new(temporality, period);
     public override string ToString() => IsData ? "data" : $"tele<{Temporality}, {Norm.DurationText(Period)}>";
 }
 
@@ -73,7 +73,7 @@ public sealed record TId(string DomainId, string DomainName, IReadOnlyList<TComp
 
 /// <summary>`Percent`: the p of a `percentile`, from 0 to 100. `Row`: the mark of a `last`. The `last` aggregates of one group with the same mark take their values from one input row: the one with the greatest order, on a tie the greatest values in the order of the aggregates; a value that row does not have is absent.</summary>
 public sealed record TAgg(string Target, string Fn, TExpr? Value, TExpr? Order, FType Out, string? Row = null, decimal? Percent = null);
-public sealed record TSet(string PropId, string PropName, TExpr Value, bool Telemetry, long Period, string? Combine);
+public sealed record TSet(string PropId, string PropName, TExpr Value, bool Events, long Period, string? Combine);
 public sealed record Src(bool IsPort, string Name);
 
 public abstract record TOp(string Name, string Id, string Kind, IReadOnlyDictionary<string, Src> Inputs, Schema Out);
@@ -192,29 +192,29 @@ public static class Types
         if (tele.Count == 0) return Role.Data;
         if (tele.Any(r => r.Temporality == "cumulative") && fn is not ("Equal" or "NotEqual" or "IsPresent" or "Coalesce"))
         { error = "arithmetic on a cumulative value is an error, apply Delta first"; return null; }
-        if (tele.Select(r => r.Period).Distinct().Count() > 1) { error = "telemetry operands have different periods"; return null; }
+        if (tele.Select(r => r.Period).Distinct().Count() > 1) { error = "event operands have different periods"; return null; }
         var p = tele[0].Period;
-        var allTele = roles.All(r => !r.IsData);
+        var allEvents = roles.All(r => !r.IsData);
         switch (fn)
         {
             case "Add" or "Subtract":
-                if (!allTele) { error = "telemetry and data cannot be added or subtracted"; return null; }
+                if (!allEvents) { error = "events and data cannot be added or subtracted"; return null; }
                 if (tele.Select(r => r.Temporality).Distinct().Count() > 1) { error = "operands have different temporality"; return null; }
                 return tele[0];
             case "Multiply":
-                if (allTele) { error = "product of two telemetry values is not defined"; return null; }
+                if (allEvents) { error = "product of two event values is not defined"; return null; }
                 return tele[0];
             case "Divide":
-                if (allTele)
+                if (allEvents)
                 {
-                    if (tele[0].Temporality == tele[1].Temporality) return Role.Tele("gauge", p);
+                    if (tele[0].Temporality == tele[1].Temporality) return Role.Events("gauge", p);
                     error = "ratio of values with different temporality"; return null;
                 }
                 if (!roles[0].IsData) return tele[0];
-                error = "a data value divided by a telemetry value is not defined"; return null;
+                error = "a data value divided by a event value is not defined"; return null;
             case "Negate": return tele[0];
             default: // comparisons, logic, Equal, Coalesce, IsPresent
-                return tele.Select(r => r.Temporality).Distinct().Count() > 1 ? Role.Tele("gauge", p) : tele[0];
+                return tele.Select(r => r.Temporality).Distinct().Count() > 1 ? Role.Events("gauge", p) : tele[0];
         }
     }
 }

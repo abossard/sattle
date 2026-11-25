@@ -31,8 +31,8 @@ for (var pass = 0; pass < passes; pass++)
     if (pass == 0) { first = pf; last = pl; span = last - first; }
     var rows = replay.Stats.Rows; var late = e.Counters().LateRows;
     Console.WriteLine($"pass {pass + 1}: records fed {records:N0} (skipped as absolute-time {skipped:N0}); rows this pass: {string.Join(", ", rows.OrderBy(x => x.Key).Select(x => $"{x.Key}={x.Value - prev.GetValueOrDefault(x.Key):N0}"))}");
-    Console.WriteLine($"        late rows dropped this pass {late - prevLate:N0} (total {late:N0}); master {e.Master.State.EntityCount:N0} entities, {e.Master.State.RelCount:N0} relationships; logical span {(pl + offset - first) / 1e9 / 3600:F2} h; flow telemetry windows in master {MasterWindowStarts(e):N0} distinct window starts");
+    Console.WriteLine($"        late rows dropped this pass {late - prevLate:N0} (total {late:N0}); master {e.Master.State.EntityCount:N0} entities, {e.Master.State.RelCount:N0} relationships; logical span {(pl + offset - first) / 1e9 / 3600:F2} h; flow windows in master {MasterWindowStarts(e):N0} distinct window starts");
     prev = new Dictionary<string, long>(rows); prevLate = late;
 }
 
-static int MasterWindowStarts(Engine e) { var starts = new HashSet<long>(); e.Telemetry.ScanGraph(e.Master.Key, (_, _, ws, _) => starts.Add(ws)); return starts.Count; }
+static int MasterWindowStarts(Engine e) { var starts = new HashSet<long>(); e.Windows.ScanGraph(e.Master.Key, (_, _, ws, _) => starts.Add(ws)); return starts.Count; }

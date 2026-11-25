@@ -7,9 +7,9 @@
     {"name": "Group", "properties": [{"name": "name", "type": "Text", "label": true}]}
   ],
   "relationships": [
-    {"name": "Edge", "from": "Item", "to": "Item", "kind": "communication", "properties": [{"name": "calls", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}]},
+    {"name": "Edge", "from": "Item", "to": "Item", "kind": "communication", "properties": [{"name": "calls", "type": "Integer", "optional": true, "events": {"temporality": "delta", "combine": "sum", "period": "1m"}}]},
     {"name": "Belongs", "from": "Item", "to": "Group", "kind": "composition"},
-    {"name": "Talks", "from": "Group", "to": "Group", "kind": "communication", "properties": [{"name": "calls", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}]}
+    {"name": "Talks", "from": "Group", "to": "Group", "kind": "communication", "properties": [{"name": "calls", "type": "Integer", "optional": true, "events": {"temporality": "delta", "combine": "sum", "period": "1m"}}]}
   ],
   "identities": [
     {"name": "item", "type": "Item", "components": [{"name": "k", "type": "Text"}]},

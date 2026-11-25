@@ -24,7 +24,7 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
     /// <summary>The relationship id function of a sink (the id hashes its endpoints), needed to re-key relationships when an identity merges.</summary>
     public void RegisterRelSink(int sink, Func<string, string, string> idOf) => relSinks[sink] = idOf;
 
-    /// <summary>Two identities merged: what was emitted under the loser moves to the survivor (an entity's rows as they are; a relationship with the loser as an endpoint gets the id of its new endpoints). `g` is the graph as the last flush left it. Gives each element whose rows moved, where they went, and the own ids its rows had in it (`Implied`, packed as a telemetry row's own).</summary>
+    /// <summary>Two identities merged: what was emitted under the loser moves to the survivor (an entity's rows as they are; a relationship with the loser as an endpoint gets the id of its new endpoints). `g` is the graph as the last flush left it. Gives each element whose rows moved, where they went, and the own ids its rows had in it (`Implied`, packed as a event row's own).</summary>
     public List<(int From, int To, long Implied)> Move(int loser, int survivor, Graph g)
     {
         var moved = new List<(int From, int To, long Implied)>();
@@ -34,7 +34,7 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
         int Moved(int end) => end == loser ? survivor : end;
     }
 
-    /// <summary>A class split: the rows written under own ids of the part that leaves (`inPart`) move from `r` to `n`, the part's representative; a relationship whose endpoint `r` such a row names gets the id of its new endpoints. Rows under ids that stay, and rows whose own id is the element (no link touched them), stay. Gives each element whose rows moved, where they went, and which own ids of a row (packed as a telemetry row's own) went there.</summary>
+    /// <summary>A class split: the rows written under own ids of the part that leaves (`inPart`) move from `r` to `n`, the part's representative; a relationship whose endpoint `r` such a row names gets the id of its new endpoints. Rows under ids that stay, and rows whose own id is the element (no link touched them), stay. Gives each element whose rows moved, where they went, and which own ids of a row (packed as a event row's own) went there.</summary>
     public List<(int From, int To, Func<long, bool> Which)> Split(int r, int n, Func<int, bool> inPart, Graph g)
     {
         var moved = new List<(int From, int To, Func<long, bool> Which)>();
@@ -104,7 +104,7 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
                 any = true;
             }
         }
-        if (!isRel && !any && dest(elem, -1, -1, -1, elem, -1) is { } e) moved.Add((elem, e.Elem, false, -1, -1, -1, -1));      // an entity with no row left, touched in this step: what else it holds (telemetry, lineage) follows
+        if (!isRel && !any && dest(elem, -1, -1, -1, elem, -1) is { } e) moved.Add((elem, e.Elem, false, -1, -1, -1, -1));      // an entity with no row left, touched in this step: what else it holds (windows, lineage) follows
         Touch(elem);
     }
 

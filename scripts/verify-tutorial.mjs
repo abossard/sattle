@@ -170,8 +170,8 @@ const cluster = resources.get(arm);
 const meter = master.entities.find((node) => name(node.type) === 'Meter' && armId(property(node, 'armId')) === arm && property(node, 'metric') === cpu);
 assert(cluster && meter, 'Master carries the inventory node and the Azure Monitor meter');
 assert(connected('MeterOf', meter, cluster), 'Master connects the meter to the inventoried resource');
-const telemetry = ndjson(join(output, 'master.telemetry.ndjson')).filter((batch) => batch.property.split('.').at(-1) === 'reading');
-const measurements = telemetry
+const batches = ndjson(join(output, 'master.windows.ndjson')).filter((batch) => batch.property.split('.').at(-1) === 'reading');
+const measurements = batches
   .filter((batch) => batch.ids.includes(meter.id.value))
   .map((batch) => batch.values[batch.ids.indexOf(meter.id.value)]);
 assert.deepEqual(measurements, readings, 'Master preserves the Azure measurements in order');
@@ -203,14 +203,14 @@ if (existsSync(otherMetrics)) {
   const meters = master.entities.filter((node) => name(node.type) === 'Meter');
   assert.equal(meters.length, expectedMeters.size, 'Master carries one meter per imported resource and metric');
   const windowsByMeter = new Map();
-  for (const { ids, values, t } of telemetry) {
+  for (const { ids, values, t } of batches) {
     for (const [i, id] of ids.entries()) {
       if (!windowsByMeter.has(id)) windowsByMeter.set(id, new Map());
       windowsByMeter.get(id).set(t, values[i]);
     }
   }
   const firstExpected = Math.min(...[...expectedMeters.values()].flatMap((windows) => [...windows.keys()]));
-  const firstObserved = Math.min(...telemetry.map((batch) => batch.t));
+  const firstObserved = Math.min(...batches.map((batch) => batch.t));
   let windows = 0;
   for (const node of meters) {
     const id = armId(property(node, 'armId'));

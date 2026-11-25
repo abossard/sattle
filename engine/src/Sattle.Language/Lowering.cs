@@ -124,25 +124,25 @@ public sealed class Lowering
 
     void Ontology()
     {
-        var props = new Dictionary<string, (string Kind, string? Item, bool Nullable, string? Unit, TeleMod? Tele, string Id)>();
+        var props = new Dictionary<string, (string Kind, string? Item, bool Nullable, string? Unit, EventsMod? Events, string Id)>();
         string PropNode(Member m)
         {
             var seg = m.Was ?? m.Name;
             var id = Ids.Child(mid, "prop", seg);
             var vk = m.Type.Kind;
-            var cur = (vk, m.Type.Item, m.Nullable, m.Unit, m.Tele, id);
+            var cur = (vk, m.Type.Item, m.Nullable, m.Unit, m.Events, id);
             if (props.TryGetValue(seg, out var old))
             {
-                if (old.Kind != vk || old.Item != m.Type.Item || old.Nullable != m.Nullable || old.Unit != m.Unit || !Equals(old.Tele, m.Tele))
+                if (old.Kind != vk || old.Item != m.Type.Item || old.Nullable != m.Nullable || old.Unit != m.Unit || !Equals(old.Events, m.Events))
                     Err("PropertyDisagrees", $"property '{m.Name}' is declared with different kind, unit, role or nullability than an earlier declaration in this module", m.Pos);
                 return id;
             }
             props[seg] = cur;
-            var p = new List<(string, Value)> { ("name", T(m.Name)), ("nullable", Value.Boolean(m.Nullable)), ("role", T(m.Tele is null ? "graphData" : "telemetry")) };
+            var p = new List<(string, Value)> { ("name", T(m.Name)), ("nullable", Value.Boolean(m.Nullable)), ("role", T(m.Events is null ? "graphData" : "events")) };
             if (m.Doc is not null) p.Add(("description", T(m.Doc)));
             if (m.Unit is not null) p.Add(("unit", T(m.Unit)));
             if (m.TreeRole is not null) p.Add(("treeRole", T(m.TreeRole)));
-            if (m.Tele is { } tl) { p.Add(("temporality", T(tl.Temporality))); p.Add(("combine", T(tl.Combine))); p.Add(("period", Value.Integer(tl.PeriodNs))); }
+            if (m.Events is { } tl) { p.Add(("temporality", T(tl.Temporality))); p.Add(("combine", T(tl.Combine))); p.Add(("period", Value.Integer(tl.PeriodNs))); }
             b.Contain(mid, "prop", seg, "PropertyType", null, [.. p]);
             Reg(id, m.Pos);
             foreach (var (rv, rr) in m.Roles ?? [])
@@ -158,7 +158,7 @@ public sealed class Lowering
             {
                 if (m.Label) b.Edge(owner, "hasProperty", PropNode(m), ("required", Value.Boolean(!m.Optional)), ("label", Value.Boolean(true)));
                 else b.Edge(owner, "hasProperty", PropNode(m), ("required", Value.Boolean(!m.Optional)));
-                if (m.Label && (m.Type.Kind != "Text" || m.Tele is not null)) Err("Label", $"the label '{m.Name}' must be a Text property of the graph data", m.Pos);
+                if (m.Label && (m.Type.Kind != "Text" || m.Events is not null)) Err("Label", $"the label '{m.Name}' must be a Text property of the graph data", m.Pos);
             }
             if (members.Where(m => m.Label).Skip(1).FirstOrDefault() is { } second) Err("Label", $"a type has one label: '{second.Name}' is a second one", second.Pos);
         }

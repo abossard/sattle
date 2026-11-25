@@ -3,7 +3,7 @@ using Sattle.Language;
 
 namespace Sattle.Runtime;
 
-/// <summary>Series: closed telemetry windows of the matched elements, joined to the structural rows by element handle. Bilinear: changed windows against the rows before the step, then changed rows against the windows after it (section 11.1, section 11.2). It keeps the rows only; the windows are read from the telemetry store, their one copy.</summary>
+/// <summary>Series: closed windows of the matched elements, joined to the structural rows by element handle. Bilinear: changed windows against the rows before the step, then changed rows against the windows after it (section 11.1, section 11.2). It keeps the rows only; the windows are read from the window store, their one copy.</summary>
 sealed class SeriesOp : PhysOp
 {
     readonly TSeries t; readonly Layout inLayout; readonly int elemCol; readonly int[] propHandles; readonly bool[] readIsDec;
@@ -49,7 +49,7 @@ sealed class SeriesOp : PhysOp
     [ThreadStatic] static bool[]? oldSet;
     static Dictionary<(int Elem, long Start), int> changed => changedOfThread ??= [];
 
-    /// <summary>Per read, the places of its changes in the step's telemetry, and how far `ChangesOf` has taken them.</summary>
+    /// <summary>Per read, the places of its changes in the step's window changes, and how far `ChangesOf` has taken them.</summary>
     readonly ArraySegment<int>[] reads; readonly int[] at;
 
     /// <summary>Collects the changes of this step into `changed`; false when there are none.</summary>
@@ -57,7 +57,7 @@ sealed class SeriesOp : PhysOp
     {
         changed.Clear();
         var gd = ep.Graphs.GetValueOrDefault(t.GraphPort);
-        if (gd is null || gd.Telemetry.Count == 0) return false;
+        if (gd is null || gd.Windows.Count == 0) return false;
         var n = propHandles.Length;
         for (var q = 0; q < n; q++) { reads[q] = Array.IndexOf(propHandles, propHandles[q]) == q ? gd.ChangesOf(propHandles[q]) : ArraySegment<int>.Empty; at[q] = 0; }
         while (true)            // the changes of the reads in the order of the step: a merge of the reads' places
@@ -66,7 +66,7 @@ sealed class SeriesOp : PhysOp
             for (var q = 0; q < n; q++) if (at[q] < reads[q].Count && reads[q][at[q]] < next) { next = reads[q][at[q]]; p = q; }
             if (p < 0) break;
             at[p]++;
-            var ch = gd.Telemetry[next];
+            var ch = gd.Windows[next];
             if (!changed.TryGetValue((ch.Key.Element, ch.Key.WindowStart), out var slot))
             {
                 changed[(ch.Key.Element, ch.Key.WindowStart)] = slot = changed.Count;
@@ -381,7 +381,7 @@ sealed class SeriesOp : PhysOp
         if (Fills) return RunFilled(ep, inputs);
         var bb = EmptyOutput();
         var edge = frontier == long.MinValue ? long.MinValue : frontier - within;
-        // step B: changed telemetry windows against the rows before this step
+        // step B: changed windows against the rows before this step
         if (ChangesOf(ep))
             foreach (var ((elem, wstart), slot) in changed)
             {
@@ -422,12 +422,12 @@ sealed class SeriesOp : PhysOp
     }
 }
 
-// ---- output: element layers and telemetry puts ----------------------------------------------------------------
+// ---- output: element layers and window puts ----------------------------------------------------------------
 
-/// <summary>Collects emitted contributions with their weights, resolves them to element states per flush (support counting: an element exists while some create row supports it), and holds the telemetry samples of the step.</summary>
+/// <summary>Collects emitted contributions with their weights, resolves them to element states per flush (support counting: an element exists while some create row supports it), and holds the event samples of the step.</summary>
 public sealed record LineageSource(string Role, int Handle, bool IsRel, string GraphPort);
-/// <summary>A conflict of Def. 6.4 (D34) that holds in a graph: fragments that disagree. `Kind` is `property` (the property is absent), `element` (creates that disagree on type or endpoints: the element is absent), `uniqueness` (several relationships on one source, target and type: `Element` is the one that is present) or `window` (several values for one telemetry window: it has no value). `Values` are the disagreeing values as canonical text, sorted.</summary>
-/// <summary>A telemetry value and the pair it may carry: for a `mean` its sum and count, for a `last` its order (Law 7.5 item 3 (i)); null for every other value.</summary>
+/// <summary>A conflict of Def. 6.4 (D34) that holds in a graph: fragments that disagree. `Kind` is `property` (the property is absent), `element` (creates that disagree on type or endpoints: the element is absent), `uniqueness` (several relationships on one source, target and type: `Element` is the one that is present) or `window` (several values for one window: it has no value). `Values` are the disagreeing values as canonical text, sorted.</summary>
+/// <summary>A event value and the pair it may carry: for a `mean` its sum and count, for a `last` its order (Law 7.5 item 3 (i)); null for every other value.</summary>
 public readonly record struct TVal(decimal V, (decimal A, decimal B)? Aux = null);
 
 public sealed record Conflict(string Kind, string Element, string? Property, long? WindowStart, IReadOnlyList<string> Values)
@@ -479,7 +479,7 @@ sealed class ConflictSet
 /// <summary>How often the rows of a projection disagreed or were held back, counted since the start. Rejections: relationships held back because another holds their (source, target, type). Property and element conflicts: counted each time such an element is resolved. Window conflicts: windows that rows with different values write. Merge conflicts: windows that two ids of one class write with values their rule does not combine. Windows of two ids: windows written under more than one own id now.</summary>
 public readonly record struct OutputCounts(long Rejections, long PropertyConflicts, long ElementConflicts, long WindowConflicts, long MergeConflicts, long WindowsOfTwoIds);
 
-/// <summary>What a projection contributes to its graph, as the one thing its operators hold. Three modules own the state: which elements exist (`ElementLayer`), where they come from (`LineageLayer`) and which rows support each telemetry window (`WindowSupport`). A merge of two identities moves all three.</summary>
+/// <summary>What a projection contributes to its graph, as the one thing its operators hold. Three modules own the state: which elements exist (`ElementLayer`), where they come from (`LineageLayer`) and which rows support each window (`WindowSupport`). A merge of two identities moves all three.</summary>
 public sealed class OutputBuilder
 {
     readonly ConflictSet conflicts = new();
@@ -499,22 +499,22 @@ public sealed class OutputBuilder
     public bool Contribute(FragmentShape shape, int elem, int source, int target, Column[] cols, int row, long weight, int ownA, int ownB) => elements.Contribute(shape, elem, source, target, cols, row, weight, ownA, ownB);
     /// <summary>The relationship id function of a sink (the id hashes its endpoints), needed to re-key relationships when an identity merges.</summary>
     public void RegisterRelSink(int sink, Func<string, string, string> idOf) => elements.RegisterRelSink(sink, idOf);
-    /// <summary>A telemetry row of the step: the window it writes, its value and weight, and the id it was written under before any link (`own`, Law 7.5 item 3); `combine` is the property's combine rule.</summary>
-    public void Telemetry(WindowKey key, TVal value, long weight, long period, long own, string? combine) => windows.Write(key, value, weight, period, own, combine);
+    /// <summary>A event row of the step: the window it writes, its value and weight, and the id it was written under before any link (`own`, Law 7.5 item 3); `combine` is the property's combine rule.</summary>
+    public void Windows(WindowKey key, TVal value, long weight, long period, long own, string? combine) => windows.Write(key, value, weight, period, own, combine);
 
     /// <summary>The edits that bring the graph to what the elements touched since the last flush resolve to.</summary>
     public List<Edit> Flush(Graph g) => elements.Flush(g);
     /// <summary>Brings the store's windows to what the rows of the step give: writes the samples that set or delete them.</summary>
-    public void FlushTelemetry(ITelemetryStore store, GraphKey g, long inputId) => windows.Flush(store, g, inputId);
+    public void FlushWindows(IWindowStore store, GraphKey g, long inputId) => windows.Flush(store, g, inputId);
 
-    /// <summary>Two identities merged: the rows and the lineage of the loser move to the survivor; `g` is the graph as the last flush left it. Gives the elements whose telemetry must follow, old and new: the entity itself, whether or not this graph emitted it, and every relationship that got a new id.</summary>
+    /// <summary>Two identities merged: the rows and the lineage of the loser move to the survivor; `g` is the graph as the last flush left it. Gives the elements whose windows must follow, old and new: the entity itself, whether or not this graph emitted it, and every relationship that got a new id.</summary>
     public IReadOnlyList<(int From, int To)> Remap(int loser, int survivor, Graph g)
     {
         var moved = elements.Move(loser, survivor, g).Select(m => { Lineage.Move(m.From, m.To, m.Implied); return (m.From, m.To); }).ToList();
         return moved.Contains((loser, survivor)) ? moved : [(loser, survivor), .. moved];
     }
 
-    /// <summary>A class split (Ch. 2, Def. 2.5): what was written under own ids of the part that leaves (`inPart`) moves from `r` to the part's representative `n`, in the rows and in the lineage; `g` is the graph as the last flush left it. Gives the elements whose telemetry must follow, old and new, with which rows go by their own ids: the entity itself, whether or not this graph holds it, and each relationship re-keyed.</summary>
+    /// <summary>A class split (Ch. 2, Def. 2.5): what was written under own ids of the part that leaves (`inPart`) moves from `r` to the part's representative `n`, in the rows and in the lineage; `g` is the graph as the last flush left it. Gives the elements whose windows must follow, old and new, with which rows go by their own ids: the entity itself, whether or not this graph holds it, and each relationship re-keyed.</summary>
     public IReadOnlyList<(int From, int To, Func<long, bool> Which)> Split(int r, int n, Func<int, bool> inPart, Graph g)
     {
         var moved = elements.Split(r, n, inPart, g);
@@ -522,8 +522,8 @@ public sealed class OutputBuilder
         return moved.Any(m => m.From == r) ? moved : [(r, n, o => inPart((int)o)), .. moved];
     }
 
-    /// <summary>The telemetry windows of a merged element follow it, in the support and in the store; with `which`, only the rows whose own id it holds (a split). The samples that set each moved window to what its rows give are appended to the store.</summary>
-    public void MoveTelemetry(ITelemetryStore store, GraphKey g, int from, int to, Func<int, string?> combine, long inputId, Func<long, bool>? which = null)
+    /// <summary>The windows of a merged element follow it, in the support and in the store; with `which`, only the rows whose own id it holds (a split). The samples that set each moved window to what its rows give are appended to the store.</summary>
+    public void MoveWindows(IWindowStore store, GraphKey g, int from, int to, Func<int, string?> combine, long inputId, Func<long, bool>? which = null)
     {
         var corrections = which is null ? windows.Move(store, g, from, to, combine, inputId) : windows.Move(store, g, from, to, which, inputId);
         if (corrections.Count > 0) store.Append(g, [.. corrections]);
@@ -543,19 +543,19 @@ abstract class SinkOp : PhysOp
 
     /// <summary>Per set: the companion columns of the aggregate it writes, if its value is one read directly (`{name}#sum` and `#count` of a mean, `#order` of a last), else -1.</summary>
     protected static (int A, int B)[] PairColumns(IReadOnlyList<TSet> sets, Layout inLayout) => [.. sets.Select(s =>
-        !s.Telemetry || s.Value is not TField f ? (-1, -1)
+        !s.Events || s.Value is not TField f ? (-1, -1)
         : inLayout.Has(f.Name + "#sum") ? (inLayout.Index(f.Name + "#sum"), inLayout.Index(f.Name + "#count"))
         : inLayout.Has(f.Name + "#order") ? (inLayout.Index(f.Name + "#order"), -1) : (-1, -1))];
 
     /// <summary>The graph-data properties of an emit's sets, by their column among the evaluated sets: what its fragments carry.</summary>
     protected static IEnumerable<(string, int, Tag)> GraphProps(IReadOnlyList<TSet> sets) =>
-        sets.Select((s, i) => (s.PropId, i, s.Value.Type.Ty.Tag, s.Telemetry)).Where(x => !x.Telemetry).Select(x => (x.PropId, x.i, x.Tag));
+        sets.Select((s, i) => (s.PropId, i, s.Value.Type.Ty.Tag, s.Events)).Where(x => !x.Events).Select(x => (x.PropId, x.i, x.Tag));
 
     protected static TVal ValueOf(Column col, int row, Batch b, (int A, int B) pair) =>
         new(col.IsDec ? col.D[row] : col.L[row], pair.A >= 0 && b.Cols[pair.A].Present(row) ? (b.Cols[pair.A].D[row], pair.B >= 0 ? b.Cols[pair.B].L[row] : 0) : null);
 }
 
-/// <summary>Emit entity: contributions per row; graph-data properties into the element state, telemetry properties into the telemetry plane at the row's window.</summary>
+/// <summary>Emit entity: contributions per row; graph-data properties into the element state, event properties into the window plane at the row's window.</summary>
 sealed class EmitEntityOp : SinkOp
 {
     readonly (int A, int B)[] pairs;
@@ -584,8 +584,8 @@ sealed class EmitEntityOp : SinkOp
             for (var s = 0; s < sets.Length; s++)
             {
                 var set = sets[s].Set; var col = cols[s];
-                if (set.Telemetry && col.Present(row))
-                    cx.Out.Telemetry(new WindowKey(elem, it.Intern(set.PropId), b.Cols[ws].L[row]), ValueOf(col, row, b, pairs[s]), w, set.Period, owns is null ? elem : owns.L[row], set.Combine);
+                if (set.Events && col.Present(row))
+                    cx.Out.Windows(new WindowKey(elem, it.Intern(set.PropId), b.Cols[ws].L[row]), ValueOf(col, row, b, pairs[s]), w, set.Period, owns is null ? elem : owns.L[row], set.Combine);
             }
             var own = owns is null ? elem : (int)owns.L[row];
             if (!cx.Out.Contribute(shape, elem, -1, -1, cols, row, w, own, -1)) continue;
@@ -632,7 +632,7 @@ sealed class EmitRelOp : SinkOp
             for (var i = 0; i < sets.Length; i++)
             {
                 var set = sets[i].Set; var col = cols[i];
-                if (set.Telemetry && col.Present(row)) cx.Out.Telemetry(new WindowKey(rel, it.Intern(set.PropId), b.Cols[ws].L[row]), ValueOf(col, row, b, pairs[i]), w, set.Period,
+                if (set.Events && col.Present(row)) cx.Out.Windows(new WindowKey(rel, it.Intern(set.PropId), b.Cols[ws].L[row]), ValueOf(col, row, b, pairs[i]), w, set.Period,
                     ((long)os << 32) | (uint)od, set.Combine);          // a relationship is written under the own ids of its two endpoints
             }
             if (!cx.Out.Contribute(shape, rel, s, d, cols, row, w, os, od)) continue;

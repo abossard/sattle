@@ -305,8 +305,8 @@ public class StoreConformanceTests
     }
 }
 
-/// <summary>The telemetry port: Append, ReadWindow, ClosedWindows (in-memory ring).</summary>
-public class TelemetryStoreTests
+/// <summary>The window port: Append, ReadWindow, ClosedWindows (in-memory ring).</summary>
+public class WindowStoreTests
 {
     static readonly GraphKey G = new("t", "g");
     const long W = 60_000_000_000;
@@ -314,7 +314,7 @@ public class TelemetryStoreTests
     [Fact]
     public void Window_count_tracks_only_the_windows_present_in_the_requested_graph()
     {
-        var store = new InMemoryTelemetryStore();
+        var store = new InMemoryWindowStore();
         var other = new GraphKey("t", "other");
         var first = new Sample(1, 1, 0, W, 10, 1);
         var deleted = new Sample(3, 2, W, W, 30, 1);
@@ -343,7 +343,7 @@ public class TelemetryStoreTests
     [Fact]
     public void Append_dedupes_replaces_and_reports_closed_windows_once_in_order()
     {
-        var s = new InMemoryTelemetryStore();
+        var s = new InMemoryWindowStore();
         s.Append(G, [new Sample(1, 1, 0, W, 10, 1), new Sample(1, 1, W, W, 20, 2)]);
         s.Append(G, [new Sample(1, 1, W, W, 20, 2)]);                // duplicate delivery
         var c = s.ClosedWindows(G, 0, out var pos);
@@ -374,7 +374,7 @@ public class TelemetryStoreTests
     [Theory, MemberData(nameof(Windows_to_read_back))]
     public void A_series_reads_back_every_start_and_value_exactly(long width, long start, decimal value)
     {
-        var s = new InMemoryTelemetryStore();
+        var s = new InMemoryWindowStore();
         var written = new SortedDictionary<long, decimal> { [0] = 1.5m, [5 * width] = -3m, [start] = value };
         s.Append(G, [new Sample(1, 1, 0, width, 1.5m, 1), new Sample(1, 1, 5 * width, width, -3m, 2), new Sample(1, 1, start, width, 9m, 3), new Sample(1, 1, start, width, value, 4)]);
         var points = s.ReadWindow(G, [1], [1], long.MinValue, long.MaxValue)[0].Points;
@@ -392,7 +392,7 @@ public class TelemetryStoreTests
     [InlineData(null, 3, 4, null)]
     public void Windows_of_two_merged_ids_combine_by_the_rule_of_their_property(string? rule, int loser, int survivor, int? expected)
     {
-        var s = new InMemoryTelemetryStore();
+        var s = new InMemoryWindowStore();
         s.Append(G, [new Sample(1, 1, 0, W, loser, 1), new Sample(2, 1, 0, W, survivor, 2), new Sample(1, 1, W, W, 9, 3)]);
         s.ClosedWindows(G, 0, out var position);
         s.MoveElement(G, 1, 2, _ => rule);
@@ -409,7 +409,7 @@ public class TelemetryStoreTests
     [InlineData(2, 3, 1)]
     public void A_window_without_a_value_stays_so_when_a_third_id_merges_in(int first, int second, int survivor)
     {
-        var s = new InMemoryTelemetryStore();
+        var s = new InMemoryWindowStore();
         s.Append(G, [new Sample(1, 1, 0, W, 5, 1), new Sample(2, 1, 0, W, 6, 2), new Sample(3, 1, 0, W, 5, 3)]);
         s.MoveElement(G, first, second, _ => "mean");
         s.MoveElement(G, second, survivor, _ => "mean");
@@ -418,23 +418,23 @@ public class TelemetryStoreTests
     }
 
     [Fact]
-    public void Telemetry_never_touches_graph_revisions()
+    public void Windows_never_touch_graph_revisions()
     {
-        // a second window of flows between the same instances changes telemetry only: the windows grow, the revisions of the master and the stored head do not move
+        // a second window of flows between the same instances changes windows only: the windows grow, the revisions of the master and the stored head do not move
         using var h = HostTests.NewHost();
         HostTests.Drive(h, windows: 2);
-        long Windows() => h.Engine.Telemetry.ScanGraph(h.Engine.Master.Key, null);
+        long Windows() => h.Engine.Windows.ScanGraph(h.Engine.Master.Key, null);
         string Digest() => h.Liveness()["graphs"]!.AsArray().Single(g => g!["name"]!.GetValue<string>() == "master")!["digest"]!.GetValue<string>();
         var (head, stored, windows, digest) = (h.Engine.Master.Head, h.Engine.Store.Head(h.Engine.Master.Key).Head, Windows(), Digest());
         HostTests.Flows(h, window: 2);
-        Assert.True(Windows() > windows, "the third window wrote no telemetry");
+        Assert.True(Windows() > windows, "the third window wrote no windows");
         Assert.Equal((head, stored, digest), (h.Engine.Master.Head, h.Engine.Store.Head(h.Engine.Master.Key).Head, Digest()));
     }
 
     [Fact]
     public void Delete_retracts_a_window_and_unknown_keys_read_as_empty()
     {
-        var s = new InMemoryTelemetryStore();
+        var s = new InMemoryWindowStore();
         s.Append(G, [new Sample(1, 1, 0, W, 10, 1)]);
         s.Append(G, [new Sample(1, 1, 0, W, 0, 1, Deleted: true)]);
         Assert.Empty(s.ReadWindow(G, [1, 9], [1], 0, W)[0].Points);
@@ -445,7 +445,7 @@ public class TelemetryStoreTests
     [InlineData(0, 100)] [InlineData(3, 7)] [InlineData(10, 11)] [InlineData(50, 50)] [InlineData(0, 0)]
     public void ScanWindow_visits_exactly_the_windows_ReadWindow_returns_in_the_same_order(long fromWindow, long toWindow)
     {
-        var s = new InMemoryTelemetryStore();
+        var s = new InMemoryWindowStore();
         var samples = new List<Sample>();
         for (var e = 0; e < 4; e++) for (var p = 0; p < 2; p++) for (var w = 0; w < 20; w++) samples.Add(new Sample(e, p, w * W, W, e * 1000 + p * 100 + w, w));
         s.Append(G, [.. samples]);
@@ -466,7 +466,7 @@ public class TelemetryStoreTests
     [InlineData(20, new int[0])]
     public void Retention_keeps_the_windows_that_end_after_the_frontier_minus_the_age(int frontierWindows, int[] kept)
     {
-        var s = new InMemoryTelemetryStore();
+        var s = new InMemoryWindowStore();
         s.Append(G, [new Sample(1, 1, 0, W, 1, 1), new Sample(1, 1, 3 * W, W, 2, 2), new Sample(1, 1, 10 * W, W, 3, 3)]);
         Assert.Equal([1m, 2m, 3m], s.ReadWindow(G, [1], [1], 0, 20 * W)[0].Points.Select(p => p.Value));       // a newer window alone drops nothing
         s.ClosedWindows(G, 0, out var position);

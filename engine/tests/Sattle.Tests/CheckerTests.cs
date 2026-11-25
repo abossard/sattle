@@ -11,8 +11,8 @@ public class CheckerTests
     const string Base = """
         {"module": "t", "version": "1.0.0", "imports": [],
          "entities": [{"name": "Item", "properties": [{"name": "k", "type": "Text"}, {"name": "g", "type": "Text"},
-                        {"name": "hits", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}},
-                        {"name": "level", "type": "Decimal", "optional": true, "telemetry": {"temporality": "gauge", "combine": "max", "period": "1m"}}]},
+                        {"name": "hits", "type": "Integer", "optional": true, "events": {"temporality": "delta", "combine": "sum", "period": "1m"}},
+                        {"name": "level", "type": "Decimal", "optional": true, "events": {"temporality": "gauge", "combine": "max", "period": "1m"}}]},
                       {"name": "Other", "properties": [{"name": "k", "type": "Text"}]}],
          "identities": [{"name": "item", "type": "Item", "components": [{"name": "k", "type": "Text"}]}, {"name": "other", "type": "Other", "components": [{"name": "k", "type": "Text"}]}],
          "rows": [{"name": "R", "fields": [{"name": "k", "type": "Text"}, {"name": "g", "type": "Text"}, {"name": "n", "type": "Integer"}, {"name": "t", "type": "Instant"}]}]}
@@ -109,7 +109,7 @@ public class CheckerTests
         string.Join(", ", FromItems, Wire("fields", "series"), Wire("series", "state"), Wire("state", "out")));
 
     const string LoadType = """
-        {"entities": [{"name": "Load", "properties": [{"name": "k", "type": "Text"}, {"name": "hits", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}]}],
+        {"entities": [{"name": "Load", "properties": [{"name": "k", "type": "Text"}, {"name": "hits", "type": "Integer", "optional": true, "events": {"temporality": "delta", "combine": "sum", "period": "1m"}}]}],
          "identities": [{"name": "load", "type": "Load", "components": [{"name": "k", "type": "Text"}]}]}
         """;
     /// <summary>Loads per item, rolled up by `keys` (with the window) and written to the item's Load element.</summary>
@@ -224,9 +224,9 @@ public class CheckerTests
             {"id": "names", "verb": "project", "columns": {"p": {"ref": "p"}, "name": {"ref": "p.name"}}},
             {"id": "tags", "verb": "nodes", "target": {"nodes": [{"var": "t", "label": "Tag", "id": {"identity": "instanceName", "args": [{"ref": "name"}]}, "props": {"name": {"ref": "name"}}}]}}
             """, string.Join(", ", Wire("instances", "names"), Wire("names", "tags"))), "IdentityLinked", "keep its id (p.id)" },
-        { "the condition of an if is telemetry, so its result is: it is no value of a data property", View(Items + ", " + Signals + ", " + """
+        { "the condition of an if is an event value, so its result is: it is no value of a data property", View(Items + ", " + Signals + ", " + """
             {"id": "out", "verb": "nodes", "target": {"nodes": [{"var": "o", "label": "Out", "id": {"identity": "out", "args": [{"ref": "k"}]}, "props": {"k": {"ref": "k"}, "flag": {"fn": "iff", "args": [{"fn": ">", "args": [{"ref": "hits"}, {"lit": 2}]}, {"lit": "hot"}, {"lit": "cold"}]}}}]}}
-            """, string.Join(", ", FromItems, Wire("fields", "series"), Wire("series", "out"))), "RoleInterference", "telemetry value" },
+            """, string.Join(", ", FromItems, Wire("fields", "series"), Wire("series", "out"))), "RoleInterference", "event value" },
         { "a key and the state of a threshold of one name", View("""
             {"id": "items", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "i", "label": "Item"}]}},
             {"id": "keys", "verb": "project", "columns": {"i": {"ref": "i"}, "state": {"ref": "i.k"}}},
@@ -242,8 +242,8 @@ public class CheckerTests
         { "a time to live above the look-back", Quiet(", \"freshness\": \"4m\"", Said), "Series", "at most the look-back less one window" },
         { "a time to live as long as the look-back", Quiet(", \"freshness\": \"3m\"", Said), "Series", "at most the look-back less one window" },
         { "a threshold over a series with a time to live that does not say what no data gives", Quiet(", \"freshness\": \"2m\"", ""), "Threshold", "what no data gives" },
-        { "a no-data state without a time to live upstream", Quiet("", Said), "Threshold", "needs telemetry with a time to live" },
-        { "a telemetry roll-up keyed finer than the element it writes (premise B1)", View(Loaded(ByKey + ", \"g\": {\"ref\": \"g\"}"), LoadedWires, LoadType), "B1", "grouped by 'g'" },
+        { "a no-data state without a time to live upstream", Quiet("", Said), "Threshold", "needs events with a time to live" },
+        { "a roll-up of windows keyed finer than the element it writes (premise B1)", View(Loaded(ByKey + ", \"g\": {\"ref\": \"g\"}"), LoadedWires, LoadType), "B1", "grouped by 'g'" },
         { "a fixpoint whose image list goes down: the equation would not be monotone (R7)", Fixpoint("\"value\": \"g\", \"order\": [\"a\", \"b\", \"c\"], " + ByG + "[\"a\", \"c\", \"b\"]}}"), "Fixpoint", "the image list of 'x' goes down" },
         { "a fixpoint whose image list leaves the order", Fixpoint("\"value\": \"g\", \"order\": [\"a\", \"b\", \"c\"], " + ByG + "[\"a\", \"b\", \"z\"]}}"), "Fixpoint", "the image list of 'x' has one value of the order per value of the order" },
         { "a fixpoint whose image list is shorter than the order", Fixpoint("\"value\": \"g\", \"order\": [\"a\", \"b\", \"c\"], " + ByG + "[\"a\", \"b\"]}}"), "Program", "the image list of 'x' has one value per value of the order" },
@@ -264,8 +264,8 @@ public class CheckerTests
         { "a percentile whose p is no literal", Percentile("""{"lit": 3}, {"ref": "k"}"""), "Program", "the p of a percentile is a literal number from 0 to 100" },
         { "a percentile without its p", Percentile("""{"lit": 3}"""), "Program", "percentile takes a value and p" },
         { "a percentile of a text", Percentile("""{"ref": "k"}, {"lit": 50}"""), "Aggregate", "percentile needs a numeric argument" },
-        { "a percentile of telemetry windows: it does not combine them", View(Loaded(ByKey).Replace("""{"fn": "sum", "args": [{"ref": "hits"}]}""", """{"fn": "percentile", "args": [{"ref": "hits"}, {"lit": 95}]}"""), LoadedWires, LoadType),
-            "Program", "percentile does not combine telemetry windows" },
+        { "a percentile of windows: it does not combine them", View(Loaded(ByKey).Replace("""{"fn": "sum", "args": [{"ref": "hits"}]}""", """{"fn": "percentile", "args": [{"ref": "hits"}, {"lit": 95}]}"""), LoadedWires, LoadType),
+            "Program", "percentile does not combine windows" },
         { "a lens over a lens view: the engine runs one lens over a bijective rule (Ch. 8)", LensOverLens(), "Unsupported", "rule tops: a lens over the lens view view is later work" },
         { "a lens rule whose rows pass through a join: a join is not a lens step", View(Items + ", " + """
             {"id": "others", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "x", "label": "Other"}]}},
@@ -332,7 +332,7 @@ public class CheckerTests
         var files = View(Items + ", " + """
             {"id": "beats", "verb": "nodes", "target": {"nodes": [{"var": "b", "label": "Beat", "id": {"identity": "beat", "args": [{"ref": "k"}]}, "props": {"k": {"ref": "k"}}}]}}
             """, string.Join(", ", FromItems, Wire("fields", "beats")), """
-            {"entities": [{"name": "Beat", "properties": [{"name": "k", "type": "Text"}, {"name": "beats", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}]}],
+            {"entities": [{"name": "Beat", "properties": [{"name": "k", "type": "Text"}, {"name": "beats", "type": "Integer", "optional": true, "events": {"temporality": "delta", "combine": "sum", "period": "1m"}}]}],
              "identities": [{"name": "beat", "type": "Beat", "components": [{"name": "k", "type": "Text"}]}]}
             """, ViewGraph + """, {"name": "second", "projection": "v.read", "inputs": {"view": "view"}}""");
         files = [.. files, new("v.read.gkql.json", Program("read", "v", """[{"name": "view", "ontology": "v"}]""", """

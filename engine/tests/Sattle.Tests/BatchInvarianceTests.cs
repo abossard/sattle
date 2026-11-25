@@ -93,11 +93,11 @@ public class BatchInvarianceTests
     static Dictionary<long, decimal> Changes(Engine e)
     {
         var changes = new Dictionary<long, decimal>();
-        e.Telemetry.ScanGraph(e.Master.Key, (_, p, ws, v) => { if (e.Interner.Get(p) == "d:sattle.cloud/prop:changes") changes.Add(ws, v); });
+        e.Windows.ScanGraph(e.Master.Key, (_, p, ws, v) => { if (e.Interner.Get(p) == "d:sattle.cloud/prop:changes") changes.Add(ws, v); });
         return changes;
     }
 
-    /// <summary>B1: the Activity Log writes one resource under two spellings of its id. The group is keyed by the lowercased id, so every batching gives one aggregate for the element and window; keyed by the raw text it gave two and the telemetry store kept the last one written.</summary>
+    /// <summary>B1: the Activity Log writes one resource under two spellings of its id. The group is keyed by the lowercased id, so every batching gives one aggregate for the element and window; keyed by the raw text it gave two and the window store kept the last one written.</summary>
     [Theory]
     [InlineData("one batch", false, false)]
     [InlineData("two batches, the 3-row spelling first", true, false)]

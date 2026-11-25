@@ -4,16 +4,16 @@ using Sattle.Runtime;
 
 namespace Sattle.Tests;
 
-/// <summary>A Rollup aggregates telemetry, and what it may do depends on the temporality of the value: a delta (counts per window) sums and takes extremes; a gauge (a level) does too; a cumulative (a counter that only grows) does neither until `Delta` makes it a delta. The palette declares this per aggregate (`requires`); the checker must agree with the declaration for every temporality. The matrix covers the aggregates sum, min and max.</summary>
+/// <summary>A Rollup aggregates windows, and what it may do depends on the temporality of the value: a delta (counts per window) sums and takes extremes; a gauge (a level) does too; a cumulative (a counter that only grows) does neither until `Delta` makes it a delta. The palette declares this per aggregate (`requires`); the checker must agree with the declaration for every temporality. The matrix covers the aggregates sum, min and max.</summary>
 public class RollupTemporalityTests
 {
     const string Delta = """{"temporality": "delta", "combine": "sum", "period": "60s"}""", Gauge = """{"temporality": "gauge", "combine": "max", "period": "60s"}""", Cumulative = """{"temporality": "cumulative", "combine": "last", "period": "60s"}""";
 
-    /// <summary>`Item.hits` with the telemetry `TEMPORALITY`, `Load.x` a delta.</summary>
+    /// <summary>`Item.hits` with the events `TEMPORALITY`, `Load.x` a delta.</summary>
     const string Module = """
         {"module": "t", "version": "1.0.0", "imports": [],
-         "entities": [{"name": "Item", "properties": [{"name": "k", "type": "Text"}, {"name": "hits", "type": "Integer", "optional": true, "telemetry": TEMPORALITY}]},
-                      {"name": "Load", "properties": [{"name": "k", "type": "Text"}, {"name": "x", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "60s"}}]}],
+         "entities": [{"name": "Item", "properties": [{"name": "k", "type": "Text"}, {"name": "hits", "type": "Integer", "optional": true, "events": TEMPORALITY}]},
+                      {"name": "Load", "properties": [{"name": "k", "type": "Text"}, {"name": "x", "type": "Integer", "optional": true, "events": {"temporality": "delta", "combine": "sum", "period": "60s"}}]}],
          "identities": [{"name": "item", "type": "Item", "components": [{"name": "k", "type": "Text"}]},
                         {"name": "load", "type": "Load", "components": [{"name": "k", "type": "Text"}]}],
          "rows": [{"name": "R", "fields": [{"name": "k", "type": "Text"}]}]}

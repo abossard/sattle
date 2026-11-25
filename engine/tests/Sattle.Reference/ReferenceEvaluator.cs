@@ -13,9 +13,9 @@ public sealed record ProgressInput(string Source, long Until) : Input;
 /// <summary>A source lost events at a time (Def. 10.4): the window that contains the time carries a loss mark and is not covered (Def. 7.14).</summary>
 public sealed record LossInput(long Time) : Input;
 
-/// <summary>`TelemetryRetentionNs`: the declared retention of the series of the space (Def. 7.13).</summary>
+/// <summary>`WindowRetentionNs`: the declared retention of the series of the space (Def. 7.13).</summary>
 /// <summary>`LateHorizonWindows` null: no late horizon.</summary>
-public sealed record Settings(string Tenant = "lab", int? LateHorizonWindows = 3, long TelemetryRetentionNs = 48L * 3_600_000_000_000)
+public sealed record Settings(string Tenant = "lab", int? LateHorizonWindows = 3, long WindowRetentionNs = 48L * 3_600_000_000_000)
 {
     /// <summary>The late horizon of a window of this width as a time, the greatest time when there is none.</summary>
     public System.Int128 Horizon(long width) => LateHorizonWindows is { } n ? (System.Int128)width * n : long.MaxValue;
@@ -77,7 +77,7 @@ public static class ReferenceEvaluator
         return InDependencyOrder(space).Aggregate(at, (p, g) => Graph(catalog, space, settings, g, before.Facts.Frontier, p));
     }
 
-    /// <summary>Def. 7.14: the sources that feed a telemetry property of a graph. From every sink that sets it, everything upstream: a rows port gives the source bound to it, a Series gives the sources that feed what it reads, a graph that is only matched gives none.</summary>
+    /// <summary>Def. 7.14: the sources that feed a event property of a graph. From every sink that sets it, everything upstream: a rows port gives the source bound to it, a Series gives the sources that feed what it reads, a graph that is only matched gives none.</summary>
     /// The lag is how much later than its grid window a window of the property ends: w − h for a window of length w on the grid of its hop h (#111).
     static (ImmutableSortedSet<string> Sources, long Lag) Feeding(Catalog catalog, TypedSpace space, string graphName, string propId)
     {
@@ -202,7 +202,7 @@ public static class ReferenceEvaluator
 
         var ids = new Identities(settings.Tenant, p.Links.Values.SelectMany(l => l));
         Relation SinkInput(TOp sink) => sink.Inputs["in"] is { IsPort: true } s ? rowPorts[s.Name] : outs[sink.Inputs["in"].Name];
-        var facts = Materialization.Of(plan.Ops.SelectMany(op => Materialization.Fragments(op, SinkInput, ids, settings.Tenant, plan.OutputModule)), frontier, settings.TelemetryRetentionNs);
+        var facts = Materialization.Of(plan.Ops.SelectMany(op => Materialization.Fragments(op, SinkInput, ids, settings.Tenant, plan.OutputModule)), frontier, settings.WindowRetentionNs);
         return p with { Facts = p.Facts with { Graphs = p.Facts.Graphs.SetItem(graph.Name, facts) } };
     }
 
@@ -236,7 +236,7 @@ public static class ReferenceEvaluator
     {
         if (frontierAtPosition is not { } frontier) return true;
         var end = windowStart + w.WidthNs;
-        var beyondHorizon = end + System.Int128.Min(w.LatenessNs ?? s.Horizon(w.WidthNs), s.TelemetryRetentionNs) <= frontier;      // revisable for the smaller of the inputs' lateness (Cor. 6.5), else the late horizon, and the retention (Def. 7.13)
+        var beyondHorizon = end + System.Int128.Min(w.LatenessNs ?? s.Horizon(w.WidthNs), s.WindowRetentionNs) <= frontier;      // revisable for the smaller of the inputs' lateness (Cor. 6.5), else the late horizon, and the retention (Def. 7.13)
         return !beyondHorizon;
     }
 }

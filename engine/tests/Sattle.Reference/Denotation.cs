@@ -351,7 +351,7 @@ public static class Denotation
     static Relation Retain(TRetain r, Relation rows, long? frontier) =>
         new(Names(r), ZSet.Of(rows.Rows.Where(x => rows.Reader(x.Row)(r.TimeField) is InstantValue t && (frontier is null || t.Ns + r.AgeNs > frontier))));
 
-    // ---- telemetry ----
+    // ---- windows ----
 
     /// <summary>
     /// Def. 6.7: each row with the closed windows of its element in [frontier − within, frontier) that hold every property read.
@@ -368,13 +368,13 @@ public static class Denotation
             var id = element.Id;
             long? started = since.TryGetValue(id, out var from) ? from : null;
             decimal? At(int i, long start) =>
-                g.Telemetry.TryGetValue(new WindowId(id, s.Reads[i].PropId, start), out var stored) ? stored
+                g.Windows.TryGetValue(new WindowId(id, s.Reads[i].PropId, start), out var stored) ? stored
                 : s.Reads[i].Fill is { } fill && started is { } k && start >= k && frontier is { } f && start + s.PeriodNs <= f && covered[i] is { } c && start + s.PeriodNs + lags[i] <= c
                     && !lost.Any(t => t >= start && t < start + s.PeriodNs + lags[i]) ? fill       // a window ends `Lag` after its grid window (a hop window); one in which the source lost events is not covered
                 : null;
             IEnumerable<long> Grid(long lo, long hi) { for (var a = Floor(lo + s.PeriodNs - 1); a + s.PeriodNs <= hi; a += s.PeriodNs) yield return a; }
             var fillable = frontier is { } now && started is { } first && s.Reads.Any(x => x.Fill is not null) ? Grid(Math.Max(now - s.WithinNs, first), now) : [];
-            var records = g.Telemetry.Keys.Where(k => k.Element == id).Select(k => k.Start).Concat(fillable).Distinct()
+            var records = g.Windows.Keys.Where(k => k.Element == id).Select(k => k.Start).Concat(fillable).Distinct()
                 .Where(start => frontier is null || start >= frontier - s.WithinNs).Order()
                 .Select(start => (Start: start, Values: s.Reads.Select((_, i) => At(i, start)).ToArray())).Where(x => x.Values.All(v => v is not null)).ToList();
             IEnumerable<(string, Value)> Marker(bool noData) => s.TtlNs is null ? [] : [(TThreshold.NoDataColumn, Value.Boolean(noData))];

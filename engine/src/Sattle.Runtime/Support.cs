@@ -31,16 +31,16 @@ public static class Support
     {
         ["Delta"] = "not built: no property in the definitions or the captures is cumulative (sources arrive as gauges or deltas), so it would ship without real data to test against",
     };
-    /// <summary>Where an aggregate may be used, as the checker decides it: a `Group` aggregates data columns, a `Rollup` aggregates telemetry values (and is limited to the aggregates that combine windows). An aggregate in a context not listed is a typed error at that position.</summary>
+    /// <summary>Where an aggregate may be used, as the checker decides it: a `Group` aggregates data columns, a `Rollup` aggregates event values (and is limited to the aggregates that combine windows). An aggregate in a context not listed is a typed error at that position.</summary>
     public sealed record AggregateContext(string Operator, string Inputs, string Output, string? Requires = null);
     public static readonly Dictionary<string, AggregateContext[]> AggregateContexts = new()
     {
         ["count"] = [new("Group", "no argument", "Integer"), new("Rollup", "no argument", "Integer")],
         ["countDistinct"] = [new("Group", "any data value", "Integer")],
-        ["sum"] = [new("Group", "numeric data value", "same as the value"), new("Rollup", "numeric telemetry value", "same as the value", "not cumulative")],
-        ["min"] = [new("Group", "numeric data value", "same as the value"), new("Rollup", "numeric telemetry value", "same as the value", "not cumulative")],
-        ["max"] = [new("Group", "numeric data value", "same as the value"), new("Rollup", "numeric telemetry value", "same as the value", "not cumulative")],
-        ["mean"] = [new("Group", "numeric data value", "Decimal"), new("Rollup", "numeric telemetry value", "Decimal", "gauge")],
+        ["sum"] = [new("Group", "numeric data value", "same as the value"), new("Rollup", "numeric event value", "same as the value", "not cumulative")],
+        ["min"] = [new("Group", "numeric data value", "same as the value"), new("Rollup", "numeric event value", "same as the value", "not cumulative")],
+        ["max"] = [new("Group", "numeric data value", "same as the value"), new("Rollup", "numeric event value", "same as the value", "not cumulative")],
+        ["mean"] = [new("Group", "numeric data value", "Decimal"), new("Rollup", "numeric event value", "Decimal", "gauge")],
         ["percentile"] = [new("Group", "numeric data value and p, a number from 0 to 100: the value of nearest rank p, no interpolation", "same as the value")],
         ["last"] = [new("Group", "data value (not an element) and an ordering of data Integer, Decimal or Instant, marked with its row: the last aggregates of one row take their values from it (arg_max)", "same as the value")],
     };
@@ -103,7 +103,7 @@ public static class Support
     };
 
     public static readonly HashSet<string> SinkKinds = ["EmitEntity", "EmitRelationship", "Link"];
-    public static readonly HashSet<string> TelemetryKinds = ["Series", "Rollup", "Delta", "Threshold"];
+    public static readonly HashSet<string> WindowKinds = ["Series", "Rollup", "Delta", "Threshold"];
 }
 
 /// <summary>The editor palette, built from the kernel table (never hard-coded in the UI).</summary>
@@ -181,10 +181,10 @@ public static class Palette
             var supported = Support.Operators.TryGetValue(kind, out var strategy);
             var o = new JsonObject
             {
-                ["kind"] = kind, ["supported"] = supported, ["role"] = Support.SinkKinds.Contains(kind) ? "sink" : Support.TelemetryKinds.Contains(kind) ? "telemetry" : kind is "Match" ? "source" : "linear",
+                ["kind"] = kind, ["supported"] = supported, ["role"] = Support.SinkKinds.Contains(kind) ? "sink" : Support.WindowKinds.Contains(kind) ? "windows" : kind is "Match" ? "source" : "linear",
                 ["container"] = "Projection", ["slot"] = "op",
                 ["ports"] = new JsonArray([.. KernelTable.OperatorPorts(kind).Select(p => (JsonNode)new JsonObject { ["name"] = p.Name, ["direction"] = p.Direction, ["kind"] = p.Kind })]),
-                ["params"] = Params(kind), ["references"] = References(kind), ["slots"] = Slots(kind), ["strategy"] = supported ? strategy : null, ["sink"] = Support.SinkKinds.Contains(kind), ["telemetry"] = Support.TelemetryKinds.Contains(kind),
+                ["params"] = Params(kind), ["references"] = References(kind), ["slots"] = Slots(kind), ["strategy"] = supported ? strategy : null, ["sink"] = Support.SinkKinds.Contains(kind), ["windows"] = Support.WindowKinds.Contains(kind),
             };
             if (!supported) o["unsupportedReason"] = Support.Unsupported.GetValueOrDefault(kind, "not built");
             ops.Add(o);

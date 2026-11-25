@@ -2,10 +2,10 @@ using System.Text.RegularExpressions;
 
 namespace Sattle.Tests;
 
-/// <summary>The core assemblies name no domain: no health states, no authored health rows, no Azure, Kubernetes or other source system (#144). Domains come in through definitions and record envelopes only.</summary>
+/// <summary>The core assemblies name no domain: no health states, no authored health rows, no Azure, Kubernetes or other source system (#144), and no observability word for events and windows (#166). Domains come in through definitions and record envelopes only.</summary>
 public partial class NeutralityTests
 {
-    [GeneratedRegex(@"Healthy|Degraded|Unhealthy|SignalRule|PolicyRow|CurationRow|RollupPolicy|[Hh]ealth|[Aa]zure|[Kk]ubernetes|\bk8s\b|kubectl|\b[Pp]ods?\b|[Hh]ubble|[Pp]rometheus|[Ee]vent ?[Hh]ubs?\b|eventhub|ResourceGraph|\bAKS\b|\baks\b|[Cc]luster")]
+    [GeneratedRegex(@"Healthy|Degraded|Unhealthy|SignalRule|PolicyRow|CurationRow|RollupPolicy|[Hh]ealth|[Aa]zure|[Kk]ubernetes|\bk8s\b|kubectl|\b[Pp]ods?\b|[Hh]ubble|[Pp]rometheus|[Ee]vent ?[Hh]ubs?\b|eventhub|ResourceGraph|\bAKS\b|\baks\b|[Cc]luster|[Tt]elemetry")]
     private static partial Regex DomainWord();
 
     /// <summary>The domain words of a source text: (line, symbol, match). The symbol is the identifier or word the match is in.</summary>
@@ -47,6 +47,8 @@ public partial class NeutralityTests
     [InlineData("const string Id = \"azure.metrics\";", "azure")]
     [InlineData("rows MetricRow from prometheus", "prometheus")]
     [InlineData("var d = row.cluster;", "cluster")]
+    [InlineData("interface ITelemetryStore { }", "Telemetry")]
+    [InlineData("// the telemetry of the step", "telemetry")]
     public void A_planted_domain_literal_is_found(string line, string match) =>
         Assert.Equal(match, Assert.Single(Scan(line)).Match);
 

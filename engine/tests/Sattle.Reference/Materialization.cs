@@ -4,15 +4,15 @@ using Sattle.Language;
 
 namespace Sattle.Reference;
 
-/// <summary>A fragment of a sink (Def. 6.3): for one element key, a create or an update with the data properties it assigns, or one telemetry window value.
-/// A telemetry fragment also names the id it was written under (`Own`: the id allocated for the key of the row, before any link; for a relationship, those of its two endpoints) and the combine rule of its property: rows written under two ids of one class are two contributions (Law 7.5 item 3).
+/// <summary>A fragment of a sink (Def. 6.3): for one element key, a create or an update with the data properties it assigns, or one window value.
+/// A window fragment also names the id it was written under (`Own`: the id allocated for the key of the row, before any link; for a relationship, those of its two endpoints) and the combine rule of its property: rows written under two ids of one class are two contributions (Law 7.5 item 3).
 /// `Pair`: for a window of a `mean` its sum and count, of a `last` its order (B unused), when the aggregate that wrote it carries them.</summary>
 public sealed record Fragment(bool IsRel, bool Update, string Id, string Type, string? Source, string? Target, ImmutableSortedDictionary<string, Value> Props, WindowId? Window, decimal WindowValue, long WindowWidth = 0, string Own = "", string? Combine = null, (decimal A, decimal B)? Pair = null)
 {
     public string Text => string.Join('\u001f', IsRel, Update, Id, Type, Source, Target, string.Join(',', Props.Select(p => p.Key + "=" + Canon.Of(p.Value))), Window, Window is null ? "" : Norm.Decimal(WindowValue), Own, Pair is { } q ? Norm.Decimal(q.A) + "/" + Norm.Decimal(q.B) : "");
 }
 
-/// <summary>Def. 6.4 as ruled (D34): materialization is a function of the multiset of positive fragments per key, whatever their sink or order. An element is present iff a create fragment for its key has positive support; its state merges the assignments of its positive fragments. A property with more than one value is absent and reported; of several relationships on one (source, target, type) the smallest id is present; a telemetry window with more than one value has none (premise B1 broken). Creates of one key that disagree on type or endpoints leave the element absent, reported.</summary>
+/// <summary>Def. 6.4 as ruled (D34): materialization is a function of the multiset of positive fragments per key, whatever their sink or order. An element is present iff a create fragment for its key has positive support; its state merges the assignments of its positive fragments. A property with more than one value is absent and reported; of several relationships on one (source, target, type) the smallest id is present; a window with more than one value has none (premise B1 broken). Creates of one key that disagree on type or endpoints leave the element absent, reported.</summary>
 public static class Materialization
 {
     static readonly ImmutableSortedDictionary<string, Value> NoProps = ImmutableSortedDictionary.Create<string, Value>(StringComparer.Ordinal);
@@ -41,14 +41,14 @@ public static class Materialization
             (decimal, decimal)? PairOf(TSet s) => s.Value is not TField f ? null
                 : rows.Columns.Contains(f.Name + "#sum") && read(f.Name + "#sum") is DecimalValue sum && read(f.Name + "#count") is IntegerValue n ? (sum.Q, (decimal)n.N)
                 : rows.Columns.Contains(f.Name + "#order") && read(f.Name + "#order") is DecimalValue o ? (o.Q, 0m) : null;
-            foreach (var t in assigned.Where(x => x.Set.Telemetry))
+            foreach (var t in assigned.Where(x => x.Set.Events))
                 yield return (new Fragment(isRel, true, id, type, source, target, NoProps, new WindowId(id, t.Set.PropId, ((InstantValue)read("windowStart")).Ns), Canon.Number(t.Value), t.Set.Period, own, t.Set.Combine, PairOf(t.Set)), weight);
-            var props = assigned.Where(x => !x.Set.Telemetry).ToImmutableSortedDictionary(x => x.Set.PropId, x => x.Value, StringComparer.Ordinal);
+            var props = assigned.Where(x => !x.Set.Events).ToImmutableSortedDictionary(x => x.Set.PropId, x => x.Value, StringComparer.Ordinal);
             if (!update || props.Count > 0) yield return (new Fragment(isRel, update, id, type, source, target, props, null, 0), weight);
         }
     }
 
-    /// <summary>`frontier`, `retention`: a telemetry window [a, b) is part of the graph while b is after the frontier minus the retention (Def. 7.13). A window that is no longer kept takes nothing else with it.</summary>
+    /// <summary>`frontier`, `retention`: a window [a, b) is part of the graph while b is after the frontier minus the retention (Def. 7.13). A window that is no longer kept takes nothing else with it.</summary>
     /// <summary>A conflict as one line: its kind, what it is about, and the disagreeing values sorted by code point.</summary>
     static string Conflict(string kind, string element, string? property, long? windowStart, IEnumerable<string> values) =>
         $"{kind} {element} {property} {windowStart}: {string.Join(" | ", values.Distinct().Order(StringComparer.Ordinal))}";
@@ -88,7 +88,7 @@ public static class Materialization
             rels = rels.RemoveRange(same.Select(r => r.Id).Order(StringComparer.Ordinal).Skip(1));
         }
 
-        var telemetry = GraphFacts.Empty.Telemetry;
+        var windows = GraphFacts.Empty.Windows;
         foreach (var window in positive.Where(f => f.Window is not null && (frontier is null || f.Window.Value.Start + f.WindowWidth > frontier - retention)).GroupBy(f => f.Window!.Value))
         {
             string Line(IEnumerable<decimal> values) => $"window {window.Key.Element} {window.Key.Property} {window.Key.Start}: {string.Join(" | ", values.Distinct().Order().Select(Norm.Decimal))}";
@@ -111,9 +111,9 @@ public static class Materialization
             };
             (decimal V, (decimal A, decimal B)? P)? combined = (values[0].WindowValue, values[0].Pair);
             foreach (var next in values.Skip(1)) combined = combined is { } acc ? Combine(acc, (next.WindowValue, next.Pair)) : null;
-            if (combined is { } c) telemetry = telemetry.SetItem(window.Key, c.V);
+            if (combined is { } c) windows = windows.SetItem(window.Key, c.V);
             else conflicts.Add(Line(values.Select(x => x.WindowValue)));
         }
-        return new GraphFacts(entities, rels, telemetry, conflicts.ToImmutable());
+        return new GraphFacts(entities, rels, windows, conflicts.ToImmutable());
     }
 }

@@ -11,7 +11,7 @@ public sealed record Mismatch(string Chunking, int AfterInput, string Graph, Imm
     static string Indent(ImmutableArray<string> lines) => lines.Length == 0 ? "    (nothing)" : string.Join("\n", lines.Select(l => "    " + l));
 }
 
-/// <summary>Theorem 6.1 and Theorem 6.2 as a check: after every batch of every chunking, the engine's graphs and telemetry equal the reference's batch result on the inputs consumed so far.</summary>
+/// <summary>Theorem 6.1 and Theorem 6.2 as a check: after every batch of every chunking, the engine's graphs and windows equal the reference's batch result on the inputs consumed so far.</summary>
 public static class Differential
 {
     /// <summary>Every way the log is cut: one row per batch, the largest batches, random cuts and a cut at every position. With `reordered`, the largest batches with their rows in reverse order instead (a retraction can then precede its insertion inside a batch).</summary>
@@ -21,12 +21,12 @@ public static class Differential
 
     public static Mismatch? FirstMismatch(World world, IReadOnlyList<Input> log, int seed, bool reordered)
     {
-        var reference = ReferenceEvaluator.Prefixes(world.Catalog, world.Catalog.Spaces.Keys.Single(), log, new Settings(TelemetryRetentionNs: world.RetentionNs)).ToArray();
+        var reference = ReferenceEvaluator.Prefixes(world.Catalog, world.Catalog.Spaces.Keys.Single(), log, new Settings(WindowRetentionNs: world.RetentionNs)).ToArray();
         foreach (var chunking in Chunkings(log.Count, seed, reordered))
         {
             try
             {
-                foreach (var (consumed, engine) in EngineRun.States(world.Catalog, log, chunking, new Sattle.Runtime.EngineOptions { TelemetryRetentionNs = world.RetentionNs }))
+                foreach (var (consumed, engine) in EngineRun.States(world.Catalog, log, chunking, new Sattle.Runtime.EngineOptions { WindowRetentionNs = world.RetentionNs }))
                     foreach (var (graph, expected) in reference[consumed].Graphs)
                     {
                         // the elements and windows, and the conflicts that hold (Def. 6.4): both are part of what a graph is after an input

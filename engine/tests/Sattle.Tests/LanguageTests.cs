@@ -69,15 +69,16 @@ public class LanguageTests
         Assert.Contains(new Catalog(Repo.Projections).Load(wrong, updatePins: false).Diagnostics, d => d.Code is "ImportPinMismatch");
     }
 
-    const string FlowsOut = "{\"name\": \"flowsOut\", \"type\": \"Integer\", \"optional\": true, \"telemetry\": {\"temporality\": \"delta\", \"combine\": \"sum\", \"period\": \"1m\"}}";
-    const string Flows = "{\"name\": \"flows\", \"type\": \"Integer\", \"optional\": true, \"telemetry\": {\"temporality\": \"delta\", \"combine\": \"sum\", \"period\": \"1m\"}}";
+    const string FlowsOut = "{\"name\": \"flowsOut\", \"type\": \"Integer\", \"optional\": true, \"events\": {\"temporality\": \"delta\", \"combine\": \"sum\", \"period\": \"1m\"}}";
+    const string Flows = "{\"name\": \"flows\", \"type\": \"Integer\", \"optional\": true, \"events\": {\"temporality\": \"delta\", \"combine\": \"sum\", \"period\": \"1m\"}}";
 
     public static IEnumerable<object[]> Negative() =>
     [
         ["combine provenance mismatch", "acme.svc.module.gkql.json", FlowsOut, FlowsOut.Replace("\"combine\": \"sum\"", "\"combine\": \"max\""), "Set"],
         ["syntax error", "sattle.infra.module.gkql.json", "\"module\": \"sattle.infra\",", "\"module\": \"sattle.infra\"", "Syntax"],
         ["property declared twice with different kinds", "sattle.infra.module.gkql.json", "{\"name\": \"Service\", \"properties\": [{\"name\": \"site\", \"type\": \"Text\"}", "{\"name\": \"Service\", \"properties\": [{\"name\": \"site\", \"type\": \"Integer\"}", "PropertyDisagrees"],
-        ["cumulative telemetry cannot sum", "sattle.infra.module.gkql.json", Flows, Flows.Replace("\"delta\"", "\"cumulative\""), "K11"],
+        ["cumulative events cannot sum", "sattle.infra.module.gkql.json", Flows, Flows.Replace("\"delta\"", "\"cumulative\""), "K11"],
+        ["a property written before #166 (field telemetry) is refused", "sattle.infra.module.gkql.json", Flows, Flows.Replace("\"events\"", "\"telemetry\""), "Syntax"],
     ];
 
     [Theory, MemberData(nameof(Negative))]

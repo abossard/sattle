@@ -21,7 +21,7 @@ public class DifferentialTests
     public void The_generated_logs_exercise_the_world(string world)
     {
         var w = Worlds.All.Single(x => x.Name == world);
-        var results = Enumerable.Range(0, 12).Select(seed => Sattle.Reference.ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), w.Log(seed, 14), new Sattle.Reference.Settings(TelemetryRetentionNs: w.RetentionNs))).ToArray();
+        var results = Enumerable.Range(0, 12).Select(seed => Sattle.Reference.ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), w.Log(seed, 14), new Sattle.Reference.Settings(WindowRetentionNs: w.RetentionNs))).ToArray();
         foreach (var graph in results[0].Graphs.Keys) Assert.Contains(results, r => r.Graphs[graph].Lines().Length > 0);
         var lines = results.SelectMany(r => r.Graphs.Values.SelectMany(g => g.Lines())).ToArray();
         Assert.All(w.Witnesses, witness => Assert.Contains(lines, l => l.Contains(witness, StringComparison.Ordinal)));
@@ -110,7 +110,7 @@ public class DifferentialTests
             foreach (var chunking in new[] { Chunking.OneByOne, Chunking.Largest, Chunking.Reversed })
             {
                 Sattle.Reference.Input[] log = [.. order.Select(i => parts[i]), new Sattle.Reference.AdvanceInput(Logs.Origin + 120 * Logs.Second)];
-                string Load_(Sattle.Reference.GraphFacts g) => string.Join(",", g.Telemetry.Where(x => x.Key.Property.EndsWith("prop:load", StringComparison.Ordinal)).Select(x => Sattle.Core.Norm.Decimal(x.Value)));
+                string Load_(Sattle.Reference.GraphFacts g) => string.Join(",", g.Windows.Where(x => x.Key.Property.EndsWith("prop:load", StringComparison.Ordinal)).Select(x => Sattle.Core.Norm.Decimal(x.Value)));
                 var engine = Load_(EngineRun.Final(w.Catalog, log, chunking).Graphs["master"]);
                 var reference = Load_(Sattle.Reference.ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), log).Graphs["master"]);
                 Assert.True(engine == reference, $"order {string.Join(" ", order)}, {chunking}: engine [{engine}], reference [{reference}]");
@@ -119,7 +119,7 @@ public class DifferentialTests
         Assert.Equal([expected ?? ""], seen);
     }
 
-    /// <summary>#159 G1 (Ch. 2, Def. 2.5): the class of a key is a function of the links present now. A link whose rows are all retracted is withdrawn; the class may split, and the part without the old id gets the smallest id among its keys. What was written under a key of that part (rows, relationships at it, telemetry windows) moves to the part's id.
+    /// <summary>#159 G1 (Ch. 2, Def. 2.5): the class of a key is a function of the links present now. A link whose rows are all retracted is withdrawn; the class may split, and the part without the old id gets the smallest id among its keys. What was written under a key of that part (rows, relationships at it, windows) moves to the part's id.
     /// A change is `+A=Web` (a row linking uid A to the name Web, `/g1` for a second row of the same link), `-A=Web` its retraction, `~web>api` a call, `A:1` or `Web:2` a load by uid or by name at 10 s (`-Web:2` retracts it), `@90` an advance. A, B are the uids of the smallest and the next own id, smaller than the names' (checked); Y, Z the uids of the largest, larger than the names' (checked). `splits`: the withdrawal changes the ids (else another link holds the class).</summary>
     [Theory]
     [InlineData("+A=Web +B=Web ~web>api A:1 Web:2 B:4 @90 -A=Web @150", true)]                // a chain A-web-B split at A: web and B, its relationship and their windows move to the smaller of their ids
@@ -267,7 +267,7 @@ public class DifferentialTests
             e.Advance(Logs.Origin + 150 * Logs.Second, 6);
         }
         Assert.Equal(original.StateDigest(), restored.StateDigest());
-        string LoadOf(Engine e) => string.Join(",", EngineRun.FactsOf(e).Graphs["master"].Telemetry.Where(x => x.Key.Property.EndsWith("prop:load", StringComparison.Ordinal)).Select(x => Sattle.Core.Norm.Decimal(x.Value)));
+        string LoadOf(Engine e) => string.Join(",", EngineRun.FactsOf(e).Graphs["master"].Windows.Where(x => x.Key.Property.EndsWith("prop:load", StringComparison.Ordinal)).Select(x => Sattle.Core.Norm.Decimal(x.Value)));
         Assert.Equal("7", LoadOf(restored));
     }
 
@@ -539,7 +539,7 @@ public class DifferentialTests
         Assert.NotEmpty(name);
         var w = Worlds.LatenessPerInput;
         Sattle.Reference.Input[] log = [.. changes.Split(' ').Select(LatenessInput)];
-        static string Pairs(Sattle.Reference.SpaceFacts f) => string.Join(" ", f.Graphs["master"].Telemetry
+        static string Pairs(Sattle.Reference.SpaceFacts f) => string.Join(" ", f.Graphs["master"].Windows
             .Where(t => t.Key.Property.EndsWith("pairs", StringComparison.Ordinal) && t.Value != 0).Select(t => $"{t.Key.Start / Logs.Minute}={Norm.Decimal(t.Value)}"));
         Assert.Equal(expected, Pairs(Sattle.Reference.ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), log)));
         foreach (var chunking in new[] { Chunking.OneByOne, Chunking.Largest, Chunking.Reversed })

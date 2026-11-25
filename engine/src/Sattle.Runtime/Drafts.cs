@@ -295,7 +295,7 @@ public sealed partial class SpaceHost
                 var o = new JsonObject
                 {
                     ["id"] = g.Name, ["digest"] = g.State.Digest(),
-                    ["counts"] = new JsonObject { ["entities"] = Rev(g.State.EntityCount), ["relationships"] = Rev(g.State.RelCount), ["telemetryWindows"] = Rev(fresh.Telemetry.ScanGraph(g.Key, null)) },
+                    ["counts"] = new JsonObject { ["entities"] = Rev(g.State.EntityCount), ["relationships"] = Rev(g.State.RelCount), ["windows"] = Rev(fresh.Windows.ScanGraph(g.Key, null)) },
                 };
                 if (include.Contains("diff"))
                 {
@@ -332,7 +332,7 @@ public sealed partial class SpaceHost
                         };
                     })]);
                 }
-                if (include.Contains("telemetry")) { var tb = exp.TelemetryBatches(g).Take(limit).ToList(); truncated |= tb.Count == limit; o["telemetry"] = new JsonArray([.. tb]); }
+                if (include.Contains("windows")) { var tb = exp.WindowBatches(g).Take(limit).ToList(); truncated |= tb.Count == limit; o["windows"] = new JsonArray([.. tb]); }
                 o["truncated"] = truncated;
                 graphs.Add(o);
             }

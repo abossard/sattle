@@ -11,7 +11,7 @@
   ],
   "relationships": [
     {"name": "Under", "from": "BizCapability", "to": "BizCapability", "kind": "composition"},
-    {"name": "DependsOn", "from": "BizCapability", "to": "BizCapability", "kind": "communication", "properties": [{"name": "callStatus", "type": "Text", "optional": true}, {"name": "callFlows", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}, {"name": "callDrops", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}, {"name": "callDropRatio", "type": "Decimal", "optional": true, "telemetry": {"temporality": "gauge", "combine": "max", "period": "1m"}}]}
+    {"name": "DependsOn", "from": "BizCapability", "to": "BizCapability", "kind": "communication", "properties": [{"name": "callStatus", "type": "Text", "optional": true}, {"name": "callFlows", "type": "Integer", "optional": true, "events": {"temporality": "delta", "combine": "sum", "period": "1m"}}, {"name": "callDrops", "type": "Integer", "optional": true, "events": {"temporality": "delta", "combine": "sum", "period": "1m"}}, {"name": "callDropRatio", "type": "Decimal", "optional": true, "events": {"temporality": "gauge", "combine": "max", "period": "1m"}}]}
   ],
   "constraints": [
     {"kind": "cardinality", "type": "Under", "side": "source", "min": 0, "max": 1},

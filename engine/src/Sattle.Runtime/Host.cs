@@ -464,7 +464,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
 
     static string BuildId => typeof(SpaceHost).Assembly.ManifestModule.ModuleVersionId.ToString();
 
-    /// <summary>The format of a seal's content. 2: telemetry windows of `mean` and `last` carry their pair, and sinks keep the support of windows written under more than one own id (Law 7.5 item 3). 3: the sink table. 4: tables with one index on the whole key. 5: the text table has free slots. 6: a Series keeps the windows of the elements with a row only, in a sorted list. 7: a join keeps a key part that is a column once, with 4-byte codes. 8: a group stores integers and codes as themselves, and text and decimal keys as 4-byte codes. 9: a served revision keeps its commit time. 10: a Series keeps no windows (it reads them from the store), and the store keeps a series as its starts and values, without input ids. 11: a sink keeps the kinds of its elements and the touched ones as bitmaps. 12: lineage rows keep handles in 4 bytes, -1 for absent, with no absent bits. 13: a sink keeps the endpoints of a relationship only where its graph does not hold it. 14: a sink keeps an element whose one row is a create its graph holds as its sink and weight. 15: the joins of a graph keep an input they share as one table, with one table of decimal codes. 16: a traverse stores a column of codes in 4 bytes, -1 when absent. 17: a column grows in segments of 4,096 entries. 18: a column of 8 bytes and the weight of a row take 4 bytes per entry until a value needs 8. 19: the rows of an `arg_max` or `arg_min` are reached through their key, and a table with no key columns has no index. 20: a key row keeps no emitted flag and no count accumulator. 21: a row for an element of `ones` that leaves its graph unchanged goes to its weight, and the sink keeps the graph the last flush wrote to check it. 22: a telemetry series keeps a window start in 4 bytes and a value in 8 until one needs more. 23: a Series keeps the oldest window start it wrote. 24: a join on the start rows of a traverse below it runs before the walk, as `<join>.starts`. 25: a threshold keeps the windows of a key in a sorted list. 26: it retains the window that established the emitted state. 27: silence and resumption evidence derive from the ordered supported windows. A seal of another format is refused with both versions named, and the journal is replayed.</summary>
+    /// <summary>The format of a seal's content. 2: windows of `mean` and `last` carry their pair, and sinks keep the support of windows written under more than one own id (Law 7.5 item 3). 3: the sink table. 4: tables with one index on the whole key. 5: the text table has free slots. 6: a Series keeps the windows of the elements with a row only, in a sorted list. 7: a join keeps a key part that is a column once, with 4-byte codes. 8: a group stores integers and codes as themselves, and text and decimal keys as 4-byte codes. 9: a served revision keeps its commit time. 10: a Series keeps no windows (it reads them from the store), and the store keeps a series as its starts and values, without input ids. 11: a sink keeps the kinds of its elements and the touched ones as bitmaps. 12: lineage rows keep handles in 4 bytes, -1 for absent, with no absent bits. 13: a sink keeps the endpoints of a relationship only where its graph does not hold it. 14: a sink keeps an element whose one row is a create its graph holds as its sink and weight. 15: the joins of a graph keep an input they share as one table, with one table of decimal codes. 16: a traverse stores a column of codes in 4 bytes, -1 when absent. 17: a column grows in segments of 4,096 entries. 18: a column of 8 bytes and the weight of a row take 4 bytes per entry until a value needs 8. 19: the rows of an `arg_max` or `arg_min` are reached through their key, and a table with no key columns has no index. 20: a key row keeps no emitted flag and no count accumulator. 21: a row for an element of `ones` that leaves its graph unchanged goes to its weight, and the sink keeps the graph the last flush wrote to check it. 22: a series keeps a window start in 4 bytes and a value in 8 until one needs more. 23: a Series keeps the oldest window start it wrote. 24: a join on the start rows of a traverse below it runs before the walk, as `<join>.starts`. 25: a threshold keeps the windows of a key in a sorted list. 26: it retains the window that established the emitted state. 27: silence and resumption evidence derive from the ordered supported windows. A seal of another format is refused with both versions named, and the journal is replayed.</summary>
     public const int SealFormat = 27;
     void MaybeSeal() { if (options.SealEvery > 0 && journal is not null && phase != Phase.Replaying && journalPos - lastSealPosition >= options.SealEvery) Seal(); }
 
@@ -603,7 +603,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         {
             var p = new Patch(e.GraphId, e.Patch.From + sg.Offset, e.Patch.To + sg.Offset, e.Patch.Edits, e.Patch.Cause);
             sg.Add(p, lambdaSeen); Trim(sg);
-            Publish(new JsonObject { ["type"] = "patch", ["graph"] = e.GraphId, ["patch"] = export.Patch(p), ["time"] = TimeJson(lambdaSeen) }, e.GraphId, telemetry: false);
+            Publish(new JsonObject { ["type"] = "patch", ["graph"] = e.GraphId, ["patch"] = export.Patch(p), ["time"] = TimeJson(lambdaSeen) }, e.GraphId, windows: false);
         }
         // Def. 6.4: a conflict is reported with the commit it appeared, changed or ended in
         if (e.Conflicts.Count > 0)
@@ -616,9 +616,9 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
                     ["values"] = new JsonArray([.. c.Values.Select(v => (JsonNode)v)]),
                 })]),
             }, e.GraphId);
-        if (e.Telemetry.Count > 0)
-            foreach (var grp in e.Telemetry.GroupBy(c => (c.Key.WindowStart, c.Key.Prop)))
-                Publish(new JsonObject { ["type"] = "telemetry", ["graph"] = e.GraphId, ["batch"] = TelemetryBatch(e.GraphId, grp.Key.WindowStart, grp.Key.Prop, grp.Where(c => c.New is not null).Select(c => (c.Key.Element, c.New!.Value)), grp.Where(c => c.New is null).Select(c => c.Key.Element)) }, e.GraphId, telemetry: true);
+        if (e.Windows.Count > 0)
+            foreach (var grp in e.Windows.GroupBy(c => (c.Key.WindowStart, c.Key.Prop)))
+                Publish(new JsonObject { ["type"] = "windows", ["graph"] = e.GraphId, ["batch"] = WindowBatch(e.GraphId, grp.Key.WindowStart, grp.Key.Prop, grp.Where(c => c.New is not null).Select(c => (c.Key.Element, c.New!.Value)), grp.Where(c => c.New is null).Select(c => c.Key.Element)) }, e.GraphId, windows: true);
     }
 
     /// <summary>Drops the oldest patches of a graph when the retained ones are 10 percent over the declared retention (in one cut, not one at a time).</summary>
@@ -630,7 +630,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     }
 
     /// <summary>One window of one property: the elements with a (new) value, and under `removed` the elements whose window was retracted.</summary>
-    JsonNode TelemetryBatch(string graphId, long ws, int prop, IEnumerable<(int Element, decimal Value)> items, IEnumerable<int>? removed = null)
+    JsonNode WindowBatch(string graphId, long ws, int prop, IEnumerable<(int Element, decimal Value)> items, IEnumerable<int>? removed = null)
     {
         var gone = (removed ?? []).Select(interner.Get).ToList();
         var sg = served[graphId];
@@ -656,7 +656,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     public long Seq { get; private set; }
 
     /// <summary>Appends an event to the ordered log and delivers it to matching subscriptions. Events of type time are delivered but not logged.</summary>
-    void Publish(JsonNode msg, string? graphId, bool telemetry = false)
+    void Publish(JsonNode msg, string? graphId, bool windows = false)
     {
         var kind = msg["type"]!.GetValue<string>();
         if (kind == "draft") Append(new Entry.SequenceStep());   // drafts are not stored; the sequence number they consumed is
@@ -873,7 +873,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     JsonArray ProjectionFiles(string module) => new([.. Catalog.Projections.Keys.Where(p => Ids.ModuleOf(p) == module && Catalog.FileOf.TryGetValue(p, out var f) && IsFileName(Path.GetFileName(f))).Order(StringComparer.Ordinal)
         .Select(p => (JsonNode)new JsonObject { ["projection"] = module + "." + Ids.Name(p), ["file"] = Path.GetFileName(Catalog.FileOf[p]), ["language"] = options.Projections!.Language(Path.GetFileName(Catalog.FileOf[p])) })]);
 
-    // ---- telemetry ----
+    // ---- windows ----
     /// <summary>The relationships of a graph that name an endpoint it does not hold, by cause: relationship type, the end, the type of the missing entity and whether another graph holds it (`inOtherGraph`, with the graph) or no graph does (`absent`). Empty when every endpoint is in the graph.</summary>
     JsonArray DanglingBy(GraphRuntime g)
     {
@@ -886,7 +886,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         })]);
     }
 
-    public JsonNode Telemetry(string g, long? from, long? to, string? property, string? element, bool batches)
+    public JsonNode Windows(string g, long? from, long? to, string? property, string? element, bool batches)
     {
         lock (Gate)
         {
@@ -894,15 +894,15 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             var rt = Engine.Graph(g);
             var view = Catalog.OntologyOf(rt.Typed.OutputModule);
             var dump = new List<(int Element, int Prop, long Ws, decimal Value)>();
-            Engine.Telemetry.ScanGraph(rt.Key, (e, p, ws, v) => dump.Add((e, p, ws, v)), from ?? long.MinValue, to ?? long.MaxValue);
+            Engine.Windows.ScanGraph(rt.Key, (e, p, ws, v) => dump.Add((e, p, ws, v)), from ?? long.MinValue, to ?? long.MaxValue);
             dump.Sort();          // by element, property, window: the order of the ids in a batch
-            var partial = Engine.Telemetry.PartialWindows(rt.Key);
+            var partial = Engine.Windows.PartialWindows(rt.Key);
             if (property is not null) dump = [.. dump.Where(x => interner.Get(x.Prop) == property || export.PropNameOf(interner.Get(x.Prop)) == property)];
             if (element is not null) dump = [.. dump.Where(x => interner.Get(x.Element) == element)];
             if (batches)
             {
                 var windows = dump.Select(x => x.Ws).Distinct().Order().ToList();
-                return new JsonArray([.. dump.GroupBy(x => (x.Ws, x.Prop)).OrderBy(x => x.Key.Ws).ThenBy(x => interner.Get(x.Key.Prop), StringComparer.Ordinal).Select(x => TelemetryBatch(g, x.Key.Ws, x.Key.Prop, x.Select(y => (y.Element, y.Value))))]);
+                return new JsonArray([.. dump.GroupBy(x => (x.Ws, x.Prop)).OrderBy(x => x.Key.Ws).ThenBy(x => interner.Get(x.Key.Prop), StringComparer.Ordinal).Select(x => WindowBatch(g, x.Key.Ws, x.Key.Prop, x.Select(y => (y.Element, y.Value))))]);
             }
             var series = dump.GroupBy(x => (x.Element, x.Prop)).OrderBy(x => interner.Get(x.Key.Element), StringComparer.Ordinal).ThenBy(x => interner.Get(x.Key.Prop), StringComparer.Ordinal).Select(x =>
             {
@@ -920,7 +920,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             {
                 ["graph"] = g, ["from"] = from is null ? null : Norm.Instant(from.Value), ["to"] = to is null ? null : Norm.Instant(to.Value), ["series"] = new JsonArray([.. series]),
                 // Def. 7.13: windows that ended at or before `retainedFrom` are no longer kept; a range that lies wholly before it is not an empty series but one that is not retained
-                ["retainedFrom"] = Engine.Telemetry.RetainedFrom(rt.Key) is { } kept ? Norm.Instant(kept) : null, ["notRetained"] = Engine.Telemetry.RetainedFrom(rt.Key) is { } edge && to is { } end && end <= edge,
+                ["retainedFrom"] = Engine.Windows.RetainedFrom(rt.Key) is { } kept ? Norm.Instant(kept) : null, ["notRetained"] = Engine.Windows.RetainedFrom(rt.Key) is { } edge && to is { } end && end <= edge,
                 ["partialWindows"] = new JsonArray([.. partial.Where(kv => (from is null || kv.Key >= from) && (to is null || kv.Key < to)).OrderBy(kv => kv.Key).Select(kv => (JsonNode)new JsonObject { ["windowStart"] = Norm.Instant(kv.Key), ["reason"] = kv.Value.Reason, ["count"] = Rev(kv.Value.Count) })]),
             };
         }
@@ -1091,7 +1091,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         }
     }
 
-    /// <summary>The row schema after each operator of the projections of the given modules, as the check typed them (also when the module has errors: the operators that typed are listed). Per projection id, in plan order: the operator's id, name and kind, its window (or null), and its columns with their kind, element type, unit, whether the value is always present, and its role (data, or telemetry with temporality and period).</summary>
+    /// <summary>The row schema after each operator of the projections of the given modules, as the check typed them (also when the module has errors: the operators that typed are listed). Per projection id, in plan order: the operator's id, name and kind, its window (or null), and its columns with their kind, element type, unit, whether the value is always present, and its role (data, or events with temporality and period).</summary>
     /// <summary>The row schema after each operator of every projection of a catalog, by projection id.</summary>
     internal static JsonObject Schemas(Catalog cand)
     {
@@ -1101,7 +1101,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             ["kind"] = c.T.Ty.Tag switch { Tag.Ent => "Entity", Tag.Rel => "Relationship", var t => t.ToString() },
             ["type"] = c.T.Ty.TypeId, ["unit"] = c.T.Ty.IsNumeric && c.T.Ty.Unit != "1" ? c.T.Ty.Unit : null, ["item"] = c.T.Ty.Item?.ToString(),
             ["required"] = c.T.Req,
-            ["role"] = c.T.Role.IsData ? "data" : "telemetry", ["temporality"] = c.T.Role.Temporality, ["period"] = c.T.Role.IsData ? null : Norm.DurationText(c.T.Role.Period),
+            ["role"] = c.T.Role.IsData ? "data" : "events", ["temporality"] = c.T.Role.Temporality, ["period"] = c.T.Role.IsData ? null : Norm.DurationText(c.T.Role.Period),
         };
         var res = new JsonObject();
         foreach (var (pid, ops) in cand.OperatorTypes.OrderBy(kv => kv.Key, StringComparer.Ordinal))

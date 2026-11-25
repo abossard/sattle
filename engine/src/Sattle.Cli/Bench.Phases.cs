@@ -24,7 +24,7 @@ static partial class Bench
         Dictionary<string, double>? graphMs;
         Dictionary<string, (double Ms, long Bytes, long Calls)>? kinds;
 
-        void Count(CommitEvent ce) { committed = true; changes += ce.Telemetry.Count; }
+        void Count(CommitEvent ce) { committed = true; changes += ce.Windows.Count; }
 
         // Replay sends all source progress records immediately before their advance.
         void BeginClose()
@@ -77,7 +77,7 @@ static partial class Bench
             e.Committed -= Count;
             closing = false;
             AdvanceTicks += dt; AdvanceAlloc += da; AdvanceCpu += dc; Advances++;
-            var series = e.Graphs.Sum(g => (long)e.Telemetry.SeriesCount(g.Key));
+            var series = e.Graphs.Sum(g => (long)e.Windows.SeriesCount(g.Key));
             var top = graphMs is null ? [] : e.Graphs.Select(g => (g.Name, Ms: GraphMillis(e, g.Name) - graphMs[g.Name])).OrderByDescending(x => x.Ms).Take(4).ToList();
             double? matchMs = kinds is null ? null : e.KindStats.GetValueOrDefault("MatchOp").Ms - kinds.GetValueOrDefault("MatchOp").Ms;
             Closes.Add(new(lambdaNs, Ms(dt), dc / 1e6, processCpu.TotalMilliseconds, allocated / 1e6, pause.TotalMilliseconds, changes, series,
@@ -97,7 +97,7 @@ static partial class Bench
 
     static void PrintCloses(List<Close> closes, TextWriter w)
     {
-        w.WriteLine("window close (progress records and advance, to committed graphs) | frontier | wall ms | writer CPU ms | process CPU ms | allocated MB (all threads) | GC pause ms | telemetry window changes | series held | prepared ranges (total / off writer) | longest graphs, ms");
+        w.WriteLine("window close (progress records and advance, to committed graphs) | frontier | wall ms | writer CPU ms | process CPU ms | allocated MB (all threads) | GC pause ms | window changes | series held | prepared ranges (total / off writer) | longest graphs, ms");
         for (var i = 0; i < closes.Count; i++)
         {
             var c = closes[i];
@@ -114,7 +114,7 @@ static partial class Bench
         // Source-driven quiet windows still count. A synthetic final flush belongs to the sample only if it committed a change.
         var sample = closes.Where(c => !c.EmptyFinalAdvance).ToList();
         var first = sample.FindIndex(c => c.WindowChanges > 0 || c.Series > 0);
-        Stats("before telemetry", sample.Take(first < 0 ? sample.Count : first));
+        Stats("before windows", sample.Take(first < 0 ? sample.Count : first));
         Stats("first populated", first < 0 ? [] : [sample[first]]);
         Stats("steady (after first populated)", first < 0 ? [] : sample.Skip(first + 1));
         if (sample.Count != closes.Count) Stats("empty end-of-capture advance", closes.Where(c => c.EmptyFinalAdvance));

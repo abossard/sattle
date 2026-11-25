@@ -30,7 +30,7 @@ public class SmallestLogTests
                 Row("b", 1, "k0", "g0", 3, 120), Row("b", 1, "k0", "g0", 3, 180), Row("b", 1, "k0", "g0", 3, 240), Row("b", 1, "k0", "g0", 3, 300),
                 Advance(360),                                                                         // the windows at 6 are older than the 3 minutes of the look-back; 3 never reached below 1
             ], "state=t:on" },
-        { "a telemetry window stays while one of its two supporting rows remains", "shared window",
+        { "a window stays while one of its two supporting rows remains", "shared window",
             [
                 Row("a", 1, "K0", "g0", 1, 0), Row("a", 1, "k0", "g0", 1, 0),
                 Row("b", 1, "K0", "g0", 4, 0), Row("b", 1, "k0", "g0", 4, 0), Advance(60),
@@ -69,10 +69,10 @@ public class SmallestLogTests
         { "two scales of one number cancel through a Join on the number", "join on a decimal key",
             [Row("b", 1, "k9", "g0", 1, 0, 1.5m), Row("a", 1, "k0", "g0", 1, 0, 1.5m), Row("a", 1, "k1", "g0", 1, 0, 1.50m), Row("a", -1, "k0", "g0", 1, 0, 1.50m), Row("a", -1, "k1", "g0", 1, 0, 1.5m)], null },
 
-        // ---- the second code review, defect 22: telemetry of merged identities (Law 7.5 item 3) ----
+        // ---- the second code review, defect 22: windows of merged identities (Law 7.5 item 3) ----
         { "a view reads the windows of a merged instance in the step of the merge", "a view's series over an instance that a link merges",
             [Edge(1, "web", "web", "flows"), Load(null, "Web", 2, 20), Advance(90), Instance("u0", "Web")], "d:w.view/prop:load " },
-        { "a window without a value under one id has none after the merge, whichever came first", "two groups by two keys of one class, one telemetry property",
+        { "a window without a value under one id has none after the merge, whichever came first", "two groups by two keys of one class, one event property",
             [Load(null, "Web", 5, 10), Load(null, "web", 7, 20), Load("u0", null, 3, 30), Advance(90), Instance("u0", "Web")], null },
         { "a view named by the element follows a merge of the master", "a view named by the element of a linked domain",
             [Edge(1, "web", "web", "flows"), Instance("u0", "Web")], "d:w.view/prop:name=" },
@@ -100,7 +100,7 @@ public class SmallestLogTests
         _ = defect;
         var w = Worlds.All.Single(x => x.Name == world);
         if (witness is not null)
-            Assert.Contains(ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), log, new Settings(TelemetryRetentionNs: w.RetentionNs)).Graphs.Values.SelectMany(g => g.Lines()), l => l.Contains(witness, StringComparison.Ordinal));
+            Assert.Contains(ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), log, new Settings(WindowRetentionNs: w.RetentionNs)).Graphs.Values.SelectMany(g => g.Lines()), l => l.Contains(witness, StringComparison.Ordinal));
         foreach (var reordered in new[] { false, true })
         {
             var mismatch = Differential.FirstMismatch(w, log, 0, reordered);

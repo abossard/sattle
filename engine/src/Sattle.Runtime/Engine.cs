@@ -14,11 +14,11 @@ public sealed record EngineOptions
     public int PreparationWorkers { get => preparationWorkers ?? MatchPreparation.DefaultWorkers(); init => preparationWorkers = value; }
     /// <summary>The store the engine commits its patches to. The default keeps the head number of each graph only (`HeadOnlyGraphStore`); a durable store keeps the history.</summary>
     public Func<string, IGraphStore> StoreFactory { get; init; } = _ => new HeadOnlyGraphStore();
-    public Func<ITelemetryStore> TelemetryFactory { get; init; } = () => new InMemoryTelemetryStore();
-    /// <summary>Closed windows stay revisable for this many window widths (allowed lateness, Def. 7.6). Null is no late horizon: a closed window stays revisable while its telemetry is retained.</summary>
+    public Func<IWindowStore> WindowStoreFactory { get; init; } = () => new InMemoryWindowStore();
+    /// <summary>Closed windows stay revisable for this many window widths (allowed lateness, Def. 7.6). Null is no late horizon: a closed window stays revisable while it is retained.</summary>
     public int? LateHorizonWindows { get; init; } = 3;
-    /// <summary>The declared retention of every telemetry series of the space (Def. 7.13): a closed window is kept while its end is after the logical frontier minus this age. Until the definitions declare it per series it is one age for the space. A window is revisable for the smaller of this and the late horizon.</summary>
-    public long TelemetryRetentionNs { get; init; } = 48L * 3_600_000_000_000;
+    /// <summary>The declared retention of every series of the space (Def. 7.13): a closed window is kept while its end is after the logical frontier minus this age. Until the definitions declare it per series it is one age for the space. A window is revisable for the smaller of this and the late horizon.</summary>
+    public long WindowRetentionNs { get; init; } = 48L * 3_600_000_000_000;
     /// <summary>When set, only these graphs and the graphs they derive from are activated (a staged evaluation of one view needs no other graph).</summary>
     public IReadOnlySet<string>? Only { get; init; }
     /// <summary>Graphs whose operator outputs are integrated for inspection (a draft preview, `include: rows`): per graph and operator, the rows the operator holds now with their summed weights. A traced graph runs its plan as written. Null: nothing is traced.</summary>
@@ -259,9 +259,9 @@ public static class PlanCompiler
     }
 }
 
-public sealed record GraphResult(Patch? Patch, IReadOnlyList<WindowChange> Telemetry, long Revision);
+public sealed record GraphResult(Patch? Patch, IReadOnlyList<WindowChange> Windows, long Revision);
 /// <summary>`Conflicts`: the conflicts of Def. 6.4 that appeared, changed or ended with this commit (an ended one has kind `resolved`).</summary>
-public sealed record CommitEvent(string GraphId, Patch? Patch, IReadOnlyList<WindowChange> Telemetry, long Lambda, long Seq, Interner Interner)
+public sealed record CommitEvent(string GraphId, Patch? Patch, IReadOnlyList<WindowChange> Windows, long Lambda, long Seq, Interner Interner)
 {
     public IReadOnlyList<Conflict> Conflicts { get; init; } = [];
 }
@@ -273,14 +273,14 @@ public sealed class GraphRuntime
     public required GraphKey Key { get; init; }
     public required CompiledProjection Plan { get; init; }
     public required bool IsMaster { get; init; }
-    /// <summary>Produced by an ingestion projection: source rows reach it. The master ingests; another graph may too (authored rows), and then writes no telemetry.</summary>
+    /// <summary>Produced by an ingestion projection: source rows reach it. The master ingests; another graph may too (authored rows), and then writes no windows.</summary>
     public required bool Ingests { get; init; }
     public required OpContext Cx { get; init; }
     public required OutputBuilder Out { get; init; }
     /// <summary>The elements of the graph; its texts are codes of the engine's interner.</summary>
     public required Graph State { get; init; }
     public long Head { get; set; }
-    public long TelemetryPosition { get; set; }
+    public long WindowPosition { get; set; }
     public Dictionary<string, string> PortSources { get; } = []; // port -> source or upstream graph name
     public long Skipped { get; set; }
     public TypedProjection Typed => Plan.Typed;
@@ -314,7 +314,7 @@ public sealed class Engine : IDisposable, IEngineInput
     public Interner Interner { get; }
     public RuntimeFaults Faults { get; } = new();
     public IdentityCatalog Identities { get; }
-    public ITelemetryStore Telemetry { get; }
+    public IWindowStore Windows { get; }
     public IReadOnlyList<GraphRuntime> Graphs => graphs;
 
     public GraphRuntime Master => graphs.First(g => g.IsMaster);
@@ -372,7 +372,7 @@ public sealed class Engine : IDisposable, IEngineInput
         var space = catalog.Spaces.TryGetValue(spaceId, out var s) ? s : throw new ArgumentException($"space {spaceId} is not activated");
         SpaceName = space.Name;
         store = this.options.StoreFactory(space.Name);
-        Telemetry = this.options.TelemetryFactory();
+        Windows = this.options.WindowStoreFactory();
         Identities = new IdentityCatalog(this.options.Tenant, Interner);
         // topological order of the graphs (S3)
         var active = space.Graphs.ToList();
@@ -392,9 +392,9 @@ public sealed class Engine : IDisposable, IEngineInput
             var tp = ProjectionOf(next);
             var key = new GraphKey(this.options.Tenant, next.Name);
             var outb = new OutputBuilder(Interner);
-            var cx = new OpContext(Interner, Faults, Identities, this.options.Tenant, tp.OutputModule, key, outb) { LateHorizonFactor = this.options.LateHorizonWindows, RetentionNs = this.options.TelemetryRetentionNs };
-            foreach (var series in tp.Ops.OfType<TSeries>().Where(x => x.WithinNs > this.options.TelemetryRetentionNs))
-                throw new InvalidOperationException($"graph {next.Name}: {series.Name} reads {Norm.DurationText(series.WithinNs)} back, and telemetry is retained for {Norm.DurationText(this.options.TelemetryRetentionNs)} (Def. 7.13)");
+            var cx = new OpContext(Interner, Faults, Identities, this.options.Tenant, tp.OutputModule, key, outb) { LateHorizonFactor = this.options.LateHorizonWindows, RetentionNs = this.options.WindowRetentionNs };
+            foreach (var series in tp.Ops.OfType<TSeries>().Where(x => x.WithinNs > this.options.WindowRetentionNs))
+                throw new InvalidOperationException($"graph {next.Name}: {series.Name} reads {Norm.DurationText(series.WithinNs)} back, and windows are retained for {Norm.DurationText(this.options.WindowRetentionNs)} (Def. 7.13)");
             var gr = new GraphRuntime { Name = next.Name, Key = key, Plan = PlanCompiler.Compile(tp, catalog, cx, next.Bindings.Where(kv => active.Any(x => x.Name == kv.Value)).ToDictionary(kv => kv.Key, kv => ProjectionOf(active.First(x => x.Name == kv.Value)).EntityTypes), this.options.TraceGraphs?.Contains(next.Name) == true), IsMaster = next.Master, Ingests = tp.Purpose == "ingestion", Cx = cx, Out = outb, State = new Graph(Interner) };
             foreach (var (port, from) in next.Bindings) gr.PortSources[port] = from;
             graphs.Add(gr); byName[next.Name] = gr;
@@ -407,7 +407,7 @@ public sealed class Engine : IDisposable, IEngineInput
             foreach (var series in g.Plan.Ops.OfType<SeriesOp>())
             {
                 var read = new GraphKey(this.options.Tenant, g.PortSources[((TSeries)series.Typed).GraphPort]);
-                series.Stored = (elems, props, from, to, visit) => Telemetry.ScanWindow(read, elems, props, from, to, visit);
+                series.Stored = (elems, props, from, to, visit) => Windows.ScanWindow(read, elems, props, from, to, visit);
             }
         // Def. 7.14: the sources that feed what a filling Series reads are fixed here
         foreach (var g in graphs)
@@ -427,14 +427,14 @@ public sealed class Engine : IDisposable, IEngineInput
             foreach (var (g, properties) in ingesting)
             {
                 foreach (var (from, to) in g.Out.Remap(loser, survivor, g.State))
-                    g.Out.MoveTelemetry(Telemetry, g.Key, from, to, prop => properties.TryGetValue(Interner.Get(prop), out var p) ? p.Combine : null, epochId);
+                    g.Out.MoveWindows(Windows, g.Key, from, to, prop => properties.TryGetValue(Interner.Get(prop), out var p) ? p.Combine : null, epochId);
             }
         };
         Identities.OnSplit = (r, n, inPart) =>
         {
             foreach (var (g, _) in ingesting)
                 foreach (var (from, to, which) in g.Out.Split(r, n, inPart, g.State))
-                    g.Out.MoveTelemetry(Telemetry, g.Key, from, to, _ => null, epochId, which);
+                    g.Out.MoveWindows(Windows, g.Key, from, to, _ => null, epochId, which);
         };
     }
 
@@ -473,7 +473,7 @@ public sealed class Engine : IDisposable, IEngineInput
         return n == rows.Rows ? rows : n == 0 ? null : rows.WithSelection(sel, n);
     }
 
-    /// <summary>Def. 7.14: the sources that feed a telemetry property of a graph. From every sink that sets it, everything upstream: a rows port gives the source bound to it, a Series gives the sources that feed what it reads, a graph that is only matched gives none.</summary>
+    /// <summary>Def. 7.14: the sources that feed a event property of a graph. From every sink that sets it, everything upstream: a rows port gives the source bound to it, a Series gives the sources that feed what it reads, a graph that is only matched gives none.</summary>
     /// The lag is how much later than its grid window a window of the property ends: a window of length w on the grid of its hop h ends w − h after its grid window (#111), so it is covered that much later.
     (SortedSet<string> Sources, long Lag) Feeding(string graphId, string propId)
     {
@@ -509,13 +509,13 @@ public sealed class Engine : IDisposable, IEngineInput
         Run(new Epoch { Id = ++epochId, Progress = true }, seq, "progress");
     }
 
-    /// <summary>A source reported lost events at an observed time: the master telemetry window containing it becomes Partial(sourceLoss).</summary>
+    /// <summary>A source reported lost events at an observed time: the master window containing it becomes Partial(sourceLoss).</summary>
     public void RecordLoss(long timeNs, long count, string reason = "sourceLoss")
     {
-        var periods = Master.Typed.Ops.SelectMany(o => o switch { TEmitEntity e => e.Sets, TEmitRel r => r.Sets, _ => [] }).Where(x => x.Telemetry).Select(x => x.Period).ToList();
+        var periods = Master.Typed.Ops.SelectMany(o => o switch { TEmitEntity e => e.Sets, TEmitRel r => r.Sets, _ => [] }).Where(x => x.Events).Select(x => x.Period).ToList();
         var period = periods.Count == 0 ? 60_000_000_000 : periods.Min();
         var ws = timeNs - ((timeNs % period) + period) % period;
-        Telemetry.MarkPartial(Master.Key, ws, reason, count);
+        Windows.MarkPartial(Master.Key, ws, reason, count);
         // a window with a loss mark is not covered (Def. 7.14): the graphs that fill take their fills of it back
         if (WantsProgress) Run(new Epoch { Id = ++epochId, Progress = true, Loss = ws }, 0, "loss");
     }
@@ -529,7 +529,7 @@ public sealed class Engine : IDisposable, IEngineInput
         Run(ep, seq, "advance");
     }
 
-    /// <summary>Epochs in which two identities merged, and the most merges one epoch had (Law 7.5 item 3 combines their telemetry at the sink).</summary>
+    /// <summary>Epochs in which two identities merged, and the most merges one epoch had (Law 7.5 item 3 combines their windows at the sink).</summary>
     public long EpochsWithMerge { get; private set; }
     public long MostMergesInOneEpoch { get; private set; }
 
@@ -567,9 +567,9 @@ public sealed class Engine : IDisposable, IEngineInput
                 foreach (var (port, from) in g.PortSources)
                     if (results.TryGetValue(from, out var r))
                     {
-                        if (!deltas.TryGetValue(from, out var d)) deltas[from] = d = new GraphDelta(r.Patch, byName[from].State, r.Telemetry);
+                        if (!deltas.TryGetValue(from, out var d)) deltas[from] = d = new GraphDelta(r.Patch, byName[from].State, r.Windows);
                         ep.Graphs[port] = d;
-                        any |= r.Patch is not null || r.Telemetry.Count > 0;
+                        any |= r.Patch is not null || r.Windows.Count > 0;
                     }
                 if (!any) continue;
             }
@@ -577,7 +577,7 @@ public sealed class Engine : IDisposable, IEngineInput
             results[g.Name] = Execute(g, ep, seq, cause);
         }
         // retention after every graph stepped: a Series retracts a window that leaves its look-back by reading it from the store of the graph it reads, which stepped before it
-        if (master.HasAdvance) foreach (var name in results.Keys) Telemetry.Retain(byName[name].Key, master.Lambda, options.TelemetryRetentionNs);
+        if (master.HasAdvance) foreach (var name in results.Keys) Windows.Retain(byName[name].Key, master.Lambda, options.WindowRetentionNs);
     }
 
     GraphResult Execute(GraphRuntime g, Epoch ep, long seq, string cause)
@@ -623,8 +623,8 @@ public sealed class Engine : IDisposable, IEngineInput
         var tCommit = System.Diagnostics.Stopwatch.GetTimestamp();
         var edits = g.Out.Flush(g.State);
         Charge("(flush elements)", ref a, ref t);
-        g.Out.FlushTelemetry(Telemetry, g.Key, ep.Id);
-        Charge("(flush telemetry)", ref a, ref t);
+        g.Out.FlushWindows(Windows, g.Key, ep.Id);
+        Charge("(flush windows)", ref a, ref t);
         Patch? patch = null;
         if (edits.Count > 0)
         {
@@ -644,9 +644,9 @@ public sealed class Engine : IDisposable, IEngineInput
         }
         if (keys is not null) OperatorMillis[keys[^1]] = OperatorMillis.GetValueOrDefault(keys[^1]) + System.Diagnostics.Stopwatch.GetElapsedTime(tCommit).TotalMilliseconds;
         // every step reads what its graph's windows changed by: its own samples, and the windows a merge of two identities moved in this step, which no sample announces
-        var changes = Telemetry.ClosedWindows(g.Key, g.TelemetryPosition, out var read);
-        g.TelemetryPosition = read;
-        Charge("(telemetry read)", ref a, ref t);
+        var changes = Windows.ClosedWindows(g.Key, g.WindowPosition, out var read);
+        g.WindowPosition = read;
+        Charge("(window read)", ref a, ref t);
         var result = new GraphResult(patch, changes, g.Head);
         var conflicts = g.Out.TakeChanged();
         if (patch is not null || changes.Count > 0 || conflicts.Count > 0) Committed?.Invoke(new CommitEvent(g.Name, patch, changes, ep.Lambda, seq, Interner) { Conflicts = conflicts });
@@ -665,12 +665,12 @@ public sealed class Engine : IDisposable, IEngineInput
     }
 
     /// <summary>
-    /// A digest of the observable output (T7): per graph, a set digest (AdHash) of its written pairs and its telemetry windows, tagged with the
+    /// A digest of the observable output (T7): per graph, a set digest (AdHash) of its written pairs and its windows, tagged with the
     /// graph's name; the engine's is the AdHash of the graphs' digests. No order of graphs, elements or windows matters.
     /// </summary>
     public string StateDigest() => StateDigests().State;
 
-    /// <summary>The state digest and, from the same pass, per graph dig(G) of Def. 3.5 (its written pairs, no telemetry), the digest a preview gives per graph.</summary>
+    /// <summary>The state digest and, from the same pass, per graph dig(G) of Def. 3.5 (its written pairs, no windows), the digest a preview gives per graph.</summary>
     public (string State, IReadOnlyList<(string GraphId, string Digest)> Graphs) StateDigests()
     {
         var all = new Digests.Set(); var sb = new StringBuilder(); var perGraph = new List<(string, string)>(graphs.Count);
@@ -679,10 +679,10 @@ public sealed class Engine : IDisposable, IEngineInput
             var set = g.State.PairSet();
             perGraph.Add((g.Name, set.Digest("")));
             var key = g.Key;
-            Telemetry.ScanGraph(key, (e, p, ws, v) =>
+            Windows.ScanGraph(key, (e, p, ws, v) =>
             {
                 sb.Clear().Append("w|").Append(Interner.Get(e)).Append('|').Append(Interner.Get(p)).Append('|').Append(ws).Append('|').Append(Norm.Decimal(v));
-                if (Telemetry.AuxOf(key, new WindowKey(e, p, ws)) is { } aux) sb.Append('|').Append(Norm.Decimal(aux.A)).Append('|').Append(Norm.Decimal(aux.B));          // only windows of `mean` and `last` with their pair
+                if (Windows.AuxOf(key, new WindowKey(e, p, ws)) is { } aux) sb.Append('|').Append(Norm.Decimal(aux.A)).Append('|').Append(Norm.Decimal(aux.B));          // only windows of `mean` and `last` with their pair
                 set.Add(sb);
             });
             all.Add(Encoding.UTF8.GetBytes(set.Digest(g.Name)));
@@ -700,12 +700,12 @@ public sealed class Engine : IDisposable, IEngineInput
     /// <summary>The state of one graph: its hot elements, output layers, counters and the state of every operator of its plan.</summary>
     public sealed class GraphStateRoot
     {
-        public string Name = ""; public long Head, TelemetryPosition, Skipped;
+        public string Name = ""; public long Head, WindowPosition, Skipped;
         public Graph State = null!; public OutputBuilder Out = null!; public OpContext Cx = null!; public List<PhysOp> Ops = [];
     }
     public sealed class StateRoot
     {
-        public Interner Interner = null!; public RuntimeFaults Faults = null!; public IdentityCatalog Identities = null!; public ITelemetryStore Telemetry = null!;
+        public Interner Interner = null!; public RuntimeFaults Faults = null!; public IdentityCatalog Identities = null!; public IWindowStore Windows = null!;
         public long EpochId, Lambda, InputRows; public List<GraphStateRoot> Graphs = [];
         public Dictionary<string, long> Covered = null!;
     }
@@ -713,8 +713,8 @@ public sealed class Engine : IDisposable, IEngineInput
     /// <summary>The objects that hold this engine's state, for a snapshot. Live objects, not a copy.</summary>
     public StateRoot StateRootOf() => new()
     {
-        Interner = Interner, Faults = Faults, Identities = Identities, Telemetry = Telemetry, EpochId = epochId, Lambda = lambda, InputRows = InputRows, Covered = covered,
-        Graphs = [.. graphs.Select(g => new GraphStateRoot { Name = g.Name, Head = g.Head, TelemetryPosition = g.TelemetryPosition, Skipped = g.Skipped, State = g.State, Out = g.Out, Cx = g.Cx, Ops = [.. g.Plan.Ops] })],
+        Interner = Interner, Faults = Faults, Identities = Identities, Windows = Windows, EpochId = epochId, Lambda = lambda, InputRows = InputRows, Covered = covered,
+        Graphs = [.. graphs.Select(g => new GraphStateRoot { Name = g.Name, Head = g.Head, WindowPosition = g.WindowPosition, Skipped = g.Skipped, State = g.State, Out = g.Out, Cx = g.Cx, Ops = [.. g.Plan.Ops] })],
     };
 
     /// <summary>After a snapshot was loaded into `StateRootOf()` of this (freshly built) engine: the scalars the root carried go back to the engine.</summary>
@@ -723,7 +723,7 @@ public sealed class Engine : IDisposable, IEngineInput
         epochId = root.EpochId; lambda = root.Lambda; InputRows = root.InputRows;
         foreach (var gs in root.Graphs)
         {
-            var g = byName[gs.Name]; g.Head = gs.Head; g.TelemetryPosition = gs.TelemetryPosition; g.Skipped = gs.Skipped;
+            var g = byName[gs.Name]; g.Head = gs.Head; g.WindowPosition = gs.WindowPosition; g.Skipped = gs.Skipped;
         }
     }
     public void Dispose() => store.Dispose();

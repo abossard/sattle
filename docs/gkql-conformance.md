@@ -17,7 +17,7 @@ flowchart LR
 | For | gkql |
 |---|---|
 | `⟦p⟧` (R1) | A program is a finite acyclic graph of verbs; wires carry weighted rows with named columns. `⟦p⟧` is the composition of the functions of its verbs along the wires (a loop in the wires is refused: recursion is the `fixpoint` verb). Every expression has a value on every row: a failing expression (division by zero, overflow, a missing property) is absent, absent propagates, a filter drops a row whose predicate is absent, and only `coalesce` and `isPresent` take an optional argument. |
-| `⊢ p` (R3) | Lowering refuses a malformed program; the checker then types the schema of every step, checks the wiring, and checks the sinks against the output ontology: declared, non abstract types and properties, required properties, edge endpoint types, one rule per property or relationship type where a rule is editable, telemetry keys no finer than the identity. A program with an error is not run. |
+| `⊢ p` (R3) | Lowering refuses a malformed program; the checker then types the schema of every step, checks the wiring, and checks the sinks against the output ontology: declared, non abstract types and properties, required properties, edge endpoint types, one rule per property or relationship type where a rule is editable, window keys no finer than the identity. A program with an error is not run. |
 | presentation (R6) | The lowering writes the kernel graph (one kernel operator per step, its ports and wires) from the program alone; the engine compiles it to one physical operator per step. The key functions below are read from the verb's fields. |
 | values | Decimals are numbers: 2.5 and 2.50 are one value and one key, and an operator that keeps one of several equal decimals keeps the number without trailing zeros (G5, which is #161). |
 | time (R8) | The clock is the only "now". A rows input may declare its `time` column and its `lateness` (Def. 6.1). |
@@ -40,7 +40,7 @@ One row per verb. "Fails" is the requirement that fails if the row is wrong.
 | `summarize` | K; per aggregate below | `κ` = the `by` columns; a row with an absent key is dropped | per key the state of each aggregate | R1, R6 |
 | `window` | L: a row goes to every window of `period`, one every `hop`, that holds `time(e)` | none | nothing | R8 |
 | `summarize` after `window` | K, then T | `κ` = (`by`, window start); `s` = window end, `u = ∞` | per key and window | R6, R8 |
-| `series` | J of element rows and telemetry windows, then T; with `fill`: K, J, L, T (see time) | `κ₁` = the element column, `κ₂` = the window's element; `s = −∞`, `u` = window start + `lookback` | per element its rows and `since` | R1, R6, R8 |
+| `series` | J of element rows and windows, then T; with `fill`: K, J, L, T (see time) | `κ₁` = the element column, `κ₂` = the window's element; `s = −∞`, `u` = window start + `lookback` | per element its rows and `since` | R1, R6, R8 |
 | `hysteresis` | K, not summarised: a state machine over the windows of a key, in window order | `κ` = the `by` columns; a window two rows of one key hold has no reading until one row holds it (G2) | per key its windows in the look-back and one carried state | R1, R6 |
 | `retain` | T | `s = −∞`, `u = time(e) + age`, against the clock | the rows by time | R8 |
 | `traverse` | J unrolled at most `max` times, then K | J: rows keyed by start, edges keyed by the frontier id; K: (start, reached id), keeping the least depth; `0 ≤ min ≤ max ≤ 64` and `max ≥ 1`, else refused | rows by start; depth per (start, id), both ways | R5, R6 |
@@ -62,7 +62,7 @@ One row per verb. "Fails" is the requirement that fails if the row is wrong.
 | `arg_max`, `arg_min` | no | the multiset of rows (order, values) | the greatest order, ties broken by the values |
 | `percentile(v, p)` | no | the multiset of values (Theorem 7.4 b) | nearest rank `max(1, ⌈p·n/100⌉)` over the rows of positive weight |
 
-Over telemetry windows only `count`, `sum`, `min`, `max` and `avg` are allowed.
+Over windows only `count`, `sum`, `min`, `max` and `avg` are allowed.
 
 ## Elements (R4, R2)
 
@@ -82,7 +82,7 @@ Merge (Def. 7.4), per graph (one program writes a graph): fragments of positive 
 | `fixpoint` | `{⊥}` and the closed list `order`, least first; a value outside the list at run time is `⊥` and counted. Refused: an empty order, a repeated value, a value of another type than the value column, a value column that is not Text, Integer, Decimal or Boolean | `h_{a,k}` = the greatest of the node's own values and of the images of its dependencies' values; cycles allowed, the result is the least solution. Refused: an image list without one entry per value of the order, an entry outside the order, a list that goes down, a list chooser that is not a Text column of the edge rows | `V_a = V`, a chain; `ht_a = |order|` |
 | `traverse` | not F: a bounded J and K, at most 64 rounds | | |
 
-`traverse` stays (D26 in #122): fixpoint expresses reach only by keying on (start, node), one edge row per start per edge, so its work grows with starts times edges, where `traverse` walks only the starts a change reaches: an added edge lowers depths from its far end on, a lost edge walks again each start whose walk visited an end of it. There is no `rollup` verb: a roll-up over telemetry is `summarize`, and a roll-up over a tree is `fixpoint`.
+`traverse` stays (D26 in #122): fixpoint expresses reach only by keying on (start, node), one edge row per start per edge, so its work grows with starts times edges, where `traverse` walks only the starts a change reaches: an added edge lowers depths from its far end on, a lost edge walks again each start whose walk visited an end of it. There is no `rollup` verb: a roll-up over windows is `summarize`, and a roll-up over a tree is `fixpoint`.
 
 The checker also refuses a `fixpoint` (R3) whose inputs are not data rows or are windowed, that names a key, value, `from` or `to` column its inputs lack, whose key is a list, a null or a relationship, or whose `from` and `to` are not of the key's type.
 
@@ -94,7 +94,7 @@ After a change `fixpoint` evaluates only the changed keys and the nodes that rea
 |---|---|
 | rows input with `time` and `lateness` | a row is late if `arr(e) > time(e) + lateness` (Def. 6.1); a late row or a late withdrawal is left out and counted under `lateRows` |
 | `window` | of `time(e)` only |
-| windowed `summarize` | T, `s` = window end, `u = ∞`; a window is kept until its end plus the largest lateness of its upstream rows inputs, or the host horizon (a number of window widths) when one of them declares none or none is upstream (D1 on #159), at most the telemetry retention; a row for a window past that is left out and counted under `lateRows` |
+| windowed `summarize` | T, `s` = window end, `u = ∞`; a window is kept until its end plus the largest lateness of its upstream rows inputs, or the host horizon (a number of window widths) when one of them declares none or none is upstream (D1 on #159), at most the window retention; a row for a window past that is left out and counted under `lateRows` |
 | `retain` | T, `s = −∞`, `u = time(e) + age` |
 | `series` | T, `u` = window start + `lookback`; `since` is the clock at the end of which the element first had rows, sampled at the end of each clock (D3 on #159) |
 | `series` with `fill` | the progress of a source is a recorded input, records (source, until), not a time: the greatest `until` per source (K), joined with the sources that feed the window (J), window end at or before `until` less the hop lag (L), and window end at or before the clock (T) |
@@ -112,4 +112,4 @@ Found by this note (second pass, listed on #159 before code):
 | G5 | decimals in `min`, `max`, `arg_max`, `arg_min`, keys, `distinct` | the output kept the digits of the first equal value that arrived | R1 | fixed with #161 (D7) |
 | G6 | `series` with `fill` | the progress of a source looked like a second time | R8 | not a gap: progress is a recorded input (D7); see time |
 | G7 | `series` no-data record | it sat at a window made from the clock | R8 | fixed (D8); no output changed, the window is not observable |
-| G8 | windowed `summarize`, `hysteresis` without a declared lateness | the state is dropped at a host horizon, not at a lateness of the program | R1 | moved to #142 (D1 (b), D10): a lateness is declared only on rows inputs, and a `hysteresis` reads telemetry, which has none |
+| G8 | windowed `summarize`, `hysteresis` without a declared lateness | the state is dropped at a host horizon, not at a lateness of the program | R1 | moved to #142 (D1 (b), D10): a lateness is declared only on rows inputs, and a `hysteresis` reads windows, which have none |

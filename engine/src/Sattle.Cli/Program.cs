@@ -271,9 +271,9 @@ public static class Program
             var byType = g.State.Entities.GroupBy(x => Ids.Name(x.Type)).Select(x => $"{x.Key}={x.Count():N0}")
                 .Concat(g.State.Rels.GroupBy(x => Ids.Name(x.Type)).Select(x => $"{x.Key}={x.Count():N0}")).OrderBy(x => x, StringComparer.Ordinal);
             var elementWindows = new HashSet<(int, long)>();
-            var samples = e.Telemetry.ScanGraph(g.Key, (el, _, ws, _) => elementWindows.Add((el, ws)));
-            var partial = e.Telemetry.PartialWindows(g.Key).Count;
-            output.WriteLine($"graph {g.Name}: revision {g.Head:N0}, {g.State.EntityCount:N0} entities, {g.State.RelCount:N0} relationships, telemetry samples {samples:N0} ({elementWindows.Count:N0} element-windows, {partial} partial window(s))");
+            var samples = e.Windows.ScanGraph(g.Key, (el, _, ws, _) => elementWindows.Add((el, ws)));
+            var partial = e.Windows.PartialWindows(g.Key).Count;
+            output.WriteLine($"graph {g.Name}: revision {g.Head:N0}, {g.State.EntityCount:N0} entities, {g.State.RelCount:N0} relationships, event samples {samples:N0} ({elementWindows.Count:N0} element-windows, {partial} partial window(s))");
             output.WriteLine("  " + string.Join(", ", byType));
         }
         var tree = e.Graphs.FirstOrDefault(g => g.Name == "serviceTree");
@@ -281,7 +281,7 @@ public static class Program
         {
             var idToName = tree.State.Entities.ToDictionary(x => x.Id, x => x.Props.Text("d:acme.svc/prop:name") ?? x.Props.Text("d:acme.svc/prop:namespace") ?? x.Id);
             var flows = new Dictionary<int, decimal>();
-            e.Telemetry.ScanGraph(tree.Key, (el, p, _, v) => { if (e.Interner.Get(p) == "d:acme.svc/prop:flows") flows[el] = flows.GetValueOrDefault(el) + v; });
+            e.Windows.ScanGraph(tree.Key, (el, p, _, v) => { if (e.Interner.Get(p) == "d:acme.svc/prop:flows") flows[el] = flows.GetValueOrDefault(el) + v; });
             var top = tree.State.Rels.Where(r => Ids.Name(r.Type) == "DependsOn").Select(r => (Rel: r, Flows: flows.GetValueOrDefault(e.Interner.TryFind(r.Id, out var h) ? h : -1))).OrderByDescending(x => x.Flows).Take(5).ToList();
             output.WriteLine($"service tree: {tree.State.Entities.Count(x => Ids.Name(x.Type) == "ServiceGroup"):N0} group(s), {tree.State.Entities.Count(x => Ids.Name(x.Type) == "ServiceNode"):N0} service(s), {tree.State.Rels.Count(r => Ids.Name(r.Type) == "DependsOn"):N0} dependencies, {tree.State.Rels.Count(r => Ids.Name(r.Type) == "Contains"):N0} containment edges");
             foreach (var (rel, f) in top) output.WriteLine($"  top dependency {idToName.GetValueOrDefault(rel.Source, rel.Source)} -> {idToName.GetValueOrDefault(rel.Target, rel.Target)}: {f:N0} flows, status {rel.Props.Text("d:acme.svc/prop:status") ?? "-"}");
@@ -289,8 +289,8 @@ public static class Program
         if (cosmos is not null) foreach (var (kind, (calls, ru)) in cosmos.Charges.OrderBy(x => x.Key)) output.WriteLine($"cosmos {kind}: {calls:N0} request(s), charge {ru:N1}");
         var c = e.Counters();          // the numbers `GET /health` serves under `counters`
         output.WriteLine($"identities: {c.Minted:N0} minted, {c.Aliased:N0} aliased, {c.Merged:N0} merged, {c.Conflicts:N0} conflict(s); runtime faults: {c.DivisionByZero} division by zero, {c.Overflow} overflow or canonicalization failure, {c.InvalidParameter} row(s) with threshold parameters that are no state machine; late rows dropped {c.LateRows}; skipped emits {e.Graphs.Sum(g => g.Cx.SkippedEmits):N0}, uniqueness rejections {e.Graphs.Sum(g => g.Out.Counts.Rejections)}");
-        output.WriteLine($"merges: {c.Merged:N0} in {e.EpochsWithMerge:N0} epoch(s) of {e.Epochs:N0}, at most {e.MostMergesInOneEpoch:N0} in one; telemetry windows written under two ids of one class {e.Graphs.Sum(g => g.Out.Counts.WindowsOfTwoIds):N0}, of them without a value by a merge conflict {e.Graphs.Sum(g => g.Out.Counts.MergeConflicts):N0}");
-        output.WriteLine($"conflicts: {e.Graphs.Sum(g => g.Out.Counts.PropertyConflicts):N0} property, {e.Graphs.Sum(g => g.Out.Counts.ElementConflicts):N0} element, {e.Graphs.Sum(g => g.Out.Counts.WindowConflicts) + e.Graphs.Sum(g => e.Telemetry.MergeConflicts(g.Key)):N0} telemetry window, {e.Graphs.Sum(g => g.Out.Counts.Rejections):N0} uniqueness" + string.Concat(e.Graphs.Where(g => g.Out.Counts.PropertyConflicts + g.Out.Counts.WindowConflicts + g.Out.Counts.Rejections > 0).Select(g => $"; {g.Name} {g.Out.Counts.PropertyConflicts}/{g.Out.Counts.WindowConflicts}/{g.Out.Counts.Rejections}")));
+        output.WriteLine($"merges: {c.Merged:N0} in {e.EpochsWithMerge:N0} epoch(s) of {e.Epochs:N0}, at most {e.MostMergesInOneEpoch:N0} in one; windows written under two ids of one class {e.Graphs.Sum(g => g.Out.Counts.WindowsOfTwoIds):N0}, of them without a value by a merge conflict {e.Graphs.Sum(g => g.Out.Counts.MergeConflicts):N0}");
+        output.WriteLine($"conflicts: {e.Graphs.Sum(g => g.Out.Counts.PropertyConflicts):N0} property, {e.Graphs.Sum(g => g.Out.Counts.ElementConflicts):N0} element, {e.Graphs.Sum(g => g.Out.Counts.WindowConflicts) + e.Graphs.Sum(g => e.Windows.MergeConflicts(g.Key)):N0} window, {e.Graphs.Sum(g => g.Out.Counts.Rejections):N0} uniqueness" + string.Concat(e.Graphs.Where(g => g.Out.Counts.PropertyConflicts + g.Out.Counts.WindowConflicts + g.Out.Counts.Rejections > 0).Select(g => $"; {g.Name} {g.Out.Counts.PropertyConflicts}/{g.Out.Counts.WindowConflicts}/{g.Out.Counts.Rejections}")));
         output.WriteLine("state digest " + e.StateDigest());
     }
 

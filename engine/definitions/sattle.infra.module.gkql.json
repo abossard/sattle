@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "imports": [],
   "entities": [
-    {"name": "Instance", "properties": [{"name": "site", "type": "Text"}, {"name": "namespace", "type": "Text"}, {"name": "name", "type": "Text", "label": true}, {"name": "phase", "type": "Text", "optional": true}, {"name": "ready", "type": "Boolean", "optional": true}, {"name": "account", "type": "Text", "optional": true}, {"name": "team", "type": "Text", "optional": true}, {"name": "warnings", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}]},
-    {"name": "Host", "properties": [{"name": "site", "type": "Text"}, {"name": "name", "type": "Text", "label": true}, {"name": "resourceId", "type": "Text", "optional": true}, {"name": "pool", "type": "Text", "optional": true}, {"name": "forwardRate", "type": "Decimal", "optional": true, "telemetry": {"temporality": "gauge", "combine": "max", "period": "1m"}}, {"name": "dropRate", "type": "Decimal", "optional": true, "telemetry": {"temporality": "gauge", "combine": "max", "period": "1m"}}]},
+    {"name": "Instance", "properties": [{"name": "site", "type": "Text"}, {"name": "namespace", "type": "Text"}, {"name": "name", "type": "Text", "label": true}, {"name": "phase", "type": "Text", "optional": true}, {"name": "ready", "type": "Boolean", "optional": true}, {"name": "account", "type": "Text", "optional": true}, {"name": "team", "type": "Text", "optional": true}, {"name": "warnings", "type": "Integer", "optional": true, "events": {"temporality": "delta", "combine": "sum", "period": "1m"}}]},
+    {"name": "Host", "properties": [{"name": "site", "type": "Text"}, {"name": "name", "type": "Text", "label": true}, {"name": "resourceId", "type": "Text", "optional": true}, {"name": "pool", "type": "Text", "optional": true}, {"name": "forwardRate", "type": "Decimal", "optional": true, "events": {"temporality": "gauge", "combine": "max", "period": "1m"}}, {"name": "dropRate", "type": "Decimal", "optional": true, "events": {"temporality": "gauge", "combine": "max", "period": "1m"}}]},
     {"name": "Unit", "properties": [{"name": "site", "type": "Text"}, {"name": "namespace", "type": "Text"}, {"name": "name", "type": "Text", "label": true}, {"name": "replicas", "type": "Integer", "optional": true}]},
     {"name": "Service", "properties": [{"name": "site", "type": "Text"}, {"name": "namespace", "type": "Text"}, {"name": "name", "type": "Text", "label": true}, {"name": "externalName", "type": "Text", "optional": true}, {"name": "address", "type": "Text", "optional": true}]},
     {"name": "Account", "properties": [{"name": "site", "type": "Text"}, {"name": "namespace", "type": "Text"}, {"name": "name", "type": "Text", "label": true}, {"name": "clientId", "type": "Text", "optional": true}]},
@@ -15,14 +15,14 @@
   ],
   "relationships": [
     {"name": "Configures", "from": "HostReference", "to": "Unit", "kind": "composition"},
-    {"name": "Sends", "from": "Instance", "to": "Destination", "kind": "communication", "properties": [{"name": "flows", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}, {"name": "drops", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}]},
+    {"name": "Sends", "from": "Instance", "to": "Destination", "kind": "communication", "properties": [{"name": "flows", "type": "Integer", "optional": true, "events": {"temporality": "delta", "combine": "sum", "period": "1m"}}, {"name": "drops", "type": "Integer", "optional": true, "events": {"temporality": "delta", "combine": "sum", "period": "1m"}}]},
     {"name": "RunsAs", "from": "Instance", "to": "Account", "kind": "dependency"},
     {"name": "Backs", "from": "Instance", "to": "Service", "kind": "composition"},
     {"name": "Selects", "from": "Service", "to": "Unit", "kind": "composition"},
     {"name": "RunsOn", "from": "Instance", "to": "Host", "kind": "composition"},
     {"name": "ControlledBy", "from": "Instance", "to": "Unit", "kind": "composition"},
     {"name": "About", "from": "WarningEvent", "to": "Instance", "kind": "support"},
-    {"name": "Calls", "from": "Instance", "to": "Instance", "kind": "communication", "properties": [{"name": "flows", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}, {"name": "drops", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}]}
+    {"name": "Calls", "from": "Instance", "to": "Instance", "kind": "communication", "properties": [{"name": "flows", "type": "Integer", "optional": true, "events": {"temporality": "delta", "combine": "sum", "period": "1m"}}, {"name": "drops", "type": "Integer", "optional": true, "events": {"temporality": "delta", "combine": "sum", "period": "1m"}}]}
   ],
   "identities": [
     {"name": "warningEvent", "type": "WarningEvent", "components": [{"name": "id", "type": "Text"}]},

@@ -180,7 +180,7 @@ static partial class Bench
         var g = new Graph(); var edits = new List<Edit>(n);
         for (var i = 0; i < n; i++) edits.Add(Edit.Create(new Entity($"e{i:D6}", "d:m/entity:Pod", Props.Of(("d:m/prop:name", Value.Text("pod-" + i)), ("d:m/prop:namespace", Value.Text("ns" + i % 50))))));
         g.Apply(edits);
-        var ts = new InMemoryTelemetryStore(); var key = new GraphKey("t", "g"); var batch = new Sample[n * props];
+        var ts = new InMemoryWindowStore(); var key = new GraphKey("t", "g"); var batch = new Sample[n * props];
         for (var w = 0; w < windows; w++)
         {
             for (var i = 0; i < batch.Length; i++) batch[i] = new Sample(i / props, i % props, w * Min, Min, (i * 7 + w) % 1000, w);
@@ -290,7 +290,7 @@ static partial class Bench
                 foreach (var env in CaptureReader.Read(capture))
                 {
                     if (pf == 0) pf = env.CapturedNs; pl = env.CapturedNs;
-                    // A later pass is later history only for telemetry: its samples are replayed with their event times moved forward by the offset, like the capture clock.
+                    // A later pass is later history only for events: its samples are replayed with their event times moved forward by the offset, like the capture clock.
                     // Structure (Kubernetes, Resource Graph, authoring) and evidence (Activity Log, audit, the Event Hubs copies) are loaded once: the same rows again would be the same objects and events a second time, not history.
                     if (pass > 0 && env.Source is not ("hubble" or "prometheus" or "azure-metrics" or "vnet-flow-log")) continue;
                     replay.TimeShiftNs = offset;

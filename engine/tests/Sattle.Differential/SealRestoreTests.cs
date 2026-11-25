@@ -3,7 +3,7 @@ using Sattle.Runtime;
 
 namespace Sattle.Differential;
 
-/// <summary>T-SEAL (premise S1 of Proposition 11.10): on every world's generated log, the engine state is sealed at a generated position and restored into a new engine; the restored engine equals the one that went on in every field (the whole state snapshot: interner, identity catalog, support counts, fold states, telemetry, sink support), and both continue input by input to equal states.</summary>
+/// <summary>T-SEAL (premise S1 of Proposition 11.10): on every world's generated log, the engine state is sealed at a generated position and restored into a new engine; the restored engine equals the one that went on in every field (the whole state snapshot: interner, identity catalog, support counts, fold states, windows, sink support), and both continue input by input to equal states.</summary>
 public class SealRestoreTests
 {
     public static TheoryData<string> WorldNames => [.. Worlds.All.Select(w => w.Name)];
@@ -23,7 +23,7 @@ public class SealRestoreTests
 
     /// <summary>A commit as text: graph, revision range, the edits, the window changes with their values (interned keys read back), and the conflicts.</summary>
     static string Text(CommitEvent c) => string.Join("|", c.GraphId, c.Patch is { } p ? $"{p.From}->{p.To}:" + string.Join(";", p.Edits.Select(e => $"{e.Key}:{e.Before}=>{e.After}")) : "-",
-        string.Join(";", c.Telemetry.Select(w => $"{c.Interner.Get(w.Key.Element)}/{c.Interner.Get(w.Key.Prop)}/{w.Key.WindowStart}:{w.Old}=>{w.New}")), string.Join(";", c.Conflicts.Select(x => x.Text)));
+        string.Join(";", c.Windows.Select(w => $"{c.Interner.Get(w.Key.Element)}/{c.Interner.Get(w.Key.Prop)}/{w.Key.WindowStart}:{w.Old}=>{w.New}")), string.Join(";", c.Conflicts.Select(x => x.Text)));
 
     /// <summary>A store that accepts every commit and keeps nothing: the engine's state is under test here, not the commit log.</summary>
     sealed class AcceptingStore : IGraphStore
@@ -45,7 +45,7 @@ public class SealRestoreTests
     {
         var w = Worlds.All.Single(x => x.Name == world);
         var space = w.Catalog.Spaces.Keys.Single();
-        var options = new EngineOptions { TelemetryRetentionNs = w.RetentionNs, StoreFactory = _ => new AcceptingStore() };
+        var options = new EngineOptions { WindowRetentionNs = w.RetentionNs, StoreFactory = _ => new AcceptingStore() };
         using var original = new Engine(w.Catalog, space, options);
         var log = w.Log(0, 30);
         for (var i = 0; i < log.Length; i++) Feed(original, log[i], i + 1);
@@ -69,7 +69,7 @@ public class SealRestoreTests
         {
             var log = w.Log(seed, 30);
             var cut = new Random(seed * 7 + world.Length).Next(1, log.Length);
-            var options = new EngineOptions { TelemetryRetentionNs = w.RetentionNs, StoreFactory = _ => new AcceptingStore() };
+            var options = new EngineOptions { WindowRetentionNs = w.RetentionNs, StoreFactory = _ => new AcceptingStore() };
             using var original = new Engine(w.Catalog, space, options);
             for (var i = 0; i < cut; i++) Feed(original, log[i], i + 1);
             Engine Restore(byte[] bytes) { var e = new Engine(w.Catalog, space, options); var r = e.StateRootOf(); StateSnapshot.Load(bytes, r); e.AdoptState(r); return e; }

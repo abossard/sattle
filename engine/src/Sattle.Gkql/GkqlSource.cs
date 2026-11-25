@@ -79,8 +79,8 @@ sealed class Refused(string at, string message, string? element) : Exception($"{
 }
 
 /// <summary>The rows on a wire: the port that carries them, their columns, and the element type of each column that holds an element.
-/// `Telemetry`: the rows are windows of telemetry (of a series, or a summary of them), so a summary of them keeps the windows.</summary>
-sealed record Rows(string Port, List<string> Cols, Dictionary<string, string> Types, bool Telemetry = false);
+/// `Windows`: the rows are windows (of a series, or a summary of them), so a summary of them keeps the windows.</summary>
+sealed record Rows(string Port, List<string> Cols, Dictionary<string, string> Types, bool Windows = false);
 
 // ---- calculation: program graph to operator facts
 
@@ -341,7 +341,7 @@ public static class Lowering
             var (width, hop) = (Duration(v.Id, w.Period), w.Hop is { } h ? Duration(v.Id, h) : (long?)null);
             var op = Op("Window", v.Id, [("timestampField", T(w.Time)), ("width", Value.Integer(width)), .. hop is { } step && step != width ? new[] { ("hop", Value.Integer(step)) } : [], ("late", T("revise"))]);
             B.Edge(r.Port, "wire", P(op, "in"));
-            return r with { Port = P(op, "out"), Cols = [.. r.Cols, "windowStart", "windowEnd"], Telemetry = false };
+            return r with { Port = P(op, "out"), Cols = [.. r.Cols, "windowStart", "windowEnd"], Windows = false };
         }
 
         Rows Distinct(VerbNode v, Rows r)
@@ -371,7 +371,7 @@ public static class Lowering
             B.Edge(op, "ofType", TypeOf(v.Id, View(p.Inputs.Single(i => i.Name == g).Ontology!), t.Edge, rel: true));
             B.Edge(port, "wire", P(op, "graph"));
             B.Edge(r.Port, "wire", P(op, "in"));
-            return new Rows(P(op, "out"), [.. r.Cols, t.To], new(r.Types) { [t.To] = start }, r.Telemetry);
+            return new Rows(P(op, "out"), [.. r.Cols, t.To], new(r.Types) { [t.To] = start }, r.Windows);
         }
 
         Rows Fixpoint(VerbNode v, List<(string Port, Rows Rows)> ins)
@@ -426,7 +426,7 @@ public static class Lowering
             B.Edge(r.Port, "wire", P(op, "in"));
             for (var i = 0; i < s.Read.Length; i++)
                 B.Contain(op, "read", $"#{i}", "FieldRef", i, [("path", T($"{s.Element}.{s.Read[i]}")), .. s.Fill is { } fill ? new[] { ("fill", Value.Decimal(fill)) } : []]);
-            return r with { Port = P(op, "out"), Cols = [.. r.Cols, "windowStart", "windowEnd", .. s.Read, .. s.Freshness is null ? Array.Empty<string>() : [TThreshold.NoDataColumn]], Telemetry = true };
+            return r with { Port = P(op, "out"), Cols = [.. r.Cols, "windowStart", "windowEnd", .. s.Read, .. s.Freshness is null ? Array.Empty<string>() : [TThreshold.NoDataColumn]], Windows = true };
         }
 
         Rows Threshold(VerbNode v, Rows r)
@@ -533,7 +533,7 @@ public static class Lowering
             B.Edge(r.Port, "wire", P(op, "in"));
             return new Rows(P(op, "out"), [.. cols.Select(c => c.Name)],
                 cols.Where(c => c.X is Ref { Path: var path } && r.Types.ContainsKey(path)).ToDictionary(c => c.Name, c => r.Types[((Ref)c.X).Path], StringComparer.Ordinal),
-                r.Telemetry && cols.Any(c => c is ("windowStart", Ref { Path: "windowStart" })));
+                r.Windows && cols.Any(c => c is ("windowStart", Ref { Path: "windowStart" })));
         }
 
         Rows Union(VerbNode v, List<(string Port, Rows Rows)> ins)
@@ -554,21 +554,21 @@ public static class Lowering
 
         static readonly string[] Aggregates = ["count", "countif", "count_distinct", "sum", "min", "max", "avg", "arg_max", "arg_min", "percentile"];
 
-        /// <summary>A summary of the rows by keys. Over telemetry windows it keeps the windows (a Rollup: `windowStart` is a key, of the window itself);
+        /// <summary>A summary of the rows by keys. Over windows it keeps the windows (a Rollup: `windowStart` is a key, of the window itself);
         /// over other rows `windowStart` is a key like any other. `arg_max(order, value)` is the value of the row with the greatest order; the
         /// arg_max and arg_min aggregates with one order read one row, the row of the first of them. `percentile(value, p)` is the value of nearest rank p, a literal from 0 to 100.</summary>
         Rows Summarize(VerbNode v, Rows r)
         {
             var by = v.By ?? [];
-            if (r.Telemetry && !(by.TryGetValue("windowStart", out var ws) && Read(v.Id, ws) is Ref { Path: "windowStart" }))
-                throw new Refused(v.Id, "a summary of telemetry windows keeps them: windowStart is a key, {\"ref\": \"windowStart\"}");
-            var op = Op(r.Telemetry ? "Rollup" : "Group", v.Id);
-            var next = new Rows(P(op, "out"), [], new(StringComparer.Ordinal), r.Telemetry);
+            if (r.Windows && !(by.TryGetValue("windowStart", out var ws) && Read(v.Id, ws) is Ref { Path: "windowStart" }))
+                throw new Refused(v.Id, "a summary of windows keeps them: windowStart is a key, {\"ref\": \"windowStart\"}");
+            var op = Op(r.Windows ? "Rollup" : "Group", v.Id);
+            var next = new Rows(P(op, "out"), [], new(StringComparer.Ordinal), r.Windows);
             foreach (var (name, x) in by)
             {
                 if (name != "windowStart") Column(v.Id, name);
                 var e = Read(v.Id, x);
-                if (!(r.Telemetry && name == "windowStart")) Write(v.Id, r, e, B.Contain(op, "key", name, "Assign", null, ("target", T(name))), "value", 0);
+                if (!(r.Windows && name == "windowStart")) Write(v.Id, r, e, B.Contain(op, "key", name, "Assign", null, ("target", T(name))), "value", 0);
                 next.Cols.Add(name);
                 if (e is Ref { Path: var path } && r.Types.TryGetValue(path, out var t)) next.Types[name] = t;
             }
@@ -591,7 +591,7 @@ public static class Lowering
                     ("percentile", _) => throw new Refused(v.Id, "percentile takes a value and p, a number from 0 to 100"),
                     _ => throw new Refused(v.Id, fn is "count" ? "count takes no value" : $"{fn} takes one value"),
                 };
-                if (r.Telemetry && engineFn is not ("count" or "sum" or "min" or "max" or "mean")) throw new Refused(v.Id, $"{fn} does not combine telemetry windows: count, sum, min, max or avg");
+                if (r.Windows && engineFn is not ("count" or "sum" or "min" or "max" or "mean")) throw new Refused(v.Id, $"{fn} does not combine windows: count, sum, min, max or avg");
                 List<(string, Value)> props = [("target", T(name)), ("fn", T(engineFn))];
                 if (fn == "percentile")
                     props.Add(("percent", Value.Decimal(call.Args[1] switch

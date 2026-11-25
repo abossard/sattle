@@ -160,7 +160,7 @@ public class TypeSoundnessTests
                 if (counters.DivisionByZero + counters.Overflow > 0) withFaults++;
                 var view = catalog.OntologyOf(e.Master.Typed.OutputModule);
                 var bad = Conformance.Check(e.Master.State, view).Where(d => d.IsError).ToList();
-                Assert.DoesNotContain(bad, d => d.Code is "UnknownType" or "AbstractType" or "UnknownProperty" or "ValueKind" or "EndpointType" or "TelemetryInGraph");   // C2, C3, C5
+                Assert.DoesNotContain(bad, d => d.Code is "UnknownType" or "AbstractType" or "UnknownProperty" or "ValueKind" or "EndpointType" or "EventsInGraph");   // C2, C3, C5
                 if (faults == 0) Assert.DoesNotContain(bad, d => d.Code == "RequiredProperty");                                                                    // C4
                 digests.Add(e.StateDigest());
             }

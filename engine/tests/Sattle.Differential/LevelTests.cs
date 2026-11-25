@@ -105,7 +105,7 @@ public class LevelTests
         var rels = g.Rels.Values.Where(r => r.Type.EndsWith(type, StringComparison.Ordinal)).ToDictionary(r => r.Id, r => names[r.Source] + " -> " + names[r.Target], StringComparer.Ordinal);
         return (
             [.. rels.Values.Order(StringComparer.Ordinal)],
-            [.. g.Telemetry.Where(t => rels.ContainsKey(t.Key.Element) && t.Key.Property.EndsWith("prop:calls", StringComparison.Ordinal)).Select(t => Window(rels[t.Key.Element], t.Key.Start, t.Value)).Order(StringComparer.Ordinal)],
+            [.. g.Windows.Where(t => rels.ContainsKey(t.Key.Element) && t.Key.Property.EndsWith("prop:calls", StringComparison.Ordinal)).Select(t => Window(rels[t.Key.Element], t.Key.Start, t.Value)).Order(StringComparer.Ordinal)],
             rels.ToImmutableDictionary(kv => kv.Value, kv => kv.Key));
     }
 
@@ -157,7 +157,7 @@ public class LevelTests
             // Proposition 5.11, where the image is a function
             if (oneImage || below.GroupsOf.Values.All(gs => gs.Count <= 1))
             {
-                var lifted = final.Graphs["level"].Telemetry.Where(t => level.Ids.ContainsValue(t.Key.Element) && t.Key.Property.EndsWith("prop:calls", StringComparison.Ordinal))
+                var lifted = final.Graphs["level"].Windows.Where(t => level.Ids.ContainsValue(t.Key.Element) && t.Key.Property.EndsWith("prop:calls", StringComparison.Ordinal))
                     .GroupBy(t => t.Key.Start).OrderBy(w => w.Key).Select(w => Total(w.Key, w.Sum(x => x.Value)));
                 Assert.Equal<string>(Conserved(below, oneImage), lifted);
             }

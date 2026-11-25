@@ -32,8 +32,8 @@ public static class TreeRoles
         role is "own" or "rolledUp" or "severity" or "kind" or "curatedBy" or "critical" or "hidden" or "mode" or "share";
     public static string? CountLabel(string role) => role.StartsWith(CountPrefix, StringComparison.Ordinal) ? role[CountPrefix.Length..] : null;
 }
-public sealed record Member(string Name, string? Was, bool Optional, VType Type, bool Nullable, string? Unit, TeleMod? Tele, string? Doc, Pos Pos, List<(Value Value, string Role)>? Roles = null, string? TreeRole = null, bool Label = false);
-public sealed record TeleMod(string Temporality, string Combine, long PeriodNs);
+public sealed record Member(string Name, string? Was, bool Optional, VType Type, bool Nullable, string? Unit, EventsMod? Events, string? Doc, Pos Pos, List<(Value Value, string Role)>? Roles = null, string? TreeRole = null, bool Label = false);
+public sealed record EventsMod(string Temporality, string Combine, long PeriodNs);
 
 public abstract record Decl(string? Doc, Pos Pos);
 public sealed record EntityDecl(bool Abstract, string Name, string? Was, List<Ref> Supers, List<Member> Members, string? Doc, Pos Pos) : Decl(Doc, Pos);

@@ -117,7 +117,7 @@ static readonly World Difference = Rows("difference by tags and a group", "Union
             Wire("items", "hits") + ", " + Wire("hits", "high") + ", " + Wire("high", "keys") + ", " + Wire("keys", "copy")), "filter predicate must be (Boolean, req, data)" },
         { "E2: a join on a measurement (P4)", View(HitSeries + ", " + Columns("measured", """ "k": {"ref": "i.k"}, "v": {"ref": "hits"}""") + ", " + Columns("ones", """ "k2": {"ref": "i.k"}, "g": {"ref": "i.g"}, "n": {"ref": "i.n"}, "v2": {"lit": 1}""")
             + """, {"id": "same", "verb": "join", "kind": "inner", "on": [{"left": "v", "right": "v2"}]}, """ + Copy,
-            Wire("items", "hits") + ", " + Wire("hits", "measured") + ", " + Wire("items", "ones") + ", " + Wire("measured", "same", "left") + ", " + Wire("ones", "same", "right") + ", " + Wire("same", "copy")), "join takes data rows: no windowed or telemetry input" },
+            Wire("items", "hits") + ", " + Wire("hits", "measured") + ", " + Wire("items", "ones") + ", " + Wire("measured", "same", "left") + ", " + Wire("ones", "same", "right") + ", " + Wire("same", "copy")), "join takes data rows: no windowed or event input" },
         { "E2: a group key that is a measurement (P4)", View(HitSeries + """, {"id": "byValue", "verb": "summarize", "by": {"k": {"ref": "i.k"}, "hits": {"ref": "hits"}, "windowStart": {"ref": "windowStart"}}, "aggregates": {"c": {"fn": "count"}}}""",
             Wire("items", "hits") + ", " + Wire("hits", "byValue")), "must be (κ, req, data)" },
         { "E6: verbs that read each other", View(Columns("x", """ "k": {"ref": "k"}""") + ", " + Columns("y", """ "k": {"ref": "k"}"""), Wire("x", "y") + ", " + Wire("y", "x")), "the wires make a loop" },

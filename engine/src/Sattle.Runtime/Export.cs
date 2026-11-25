@@ -6,7 +6,7 @@ using Sattle.Language;
 
 namespace Sattle.Runtime;
 
-/// <summary>The wire shapes of the canvas GraphSource seam (canvas/README.md): snapshot {descriptor, extent}, GraphPatch, OntologyDefinition, telemetry batches, graph space. Integer revisions are written as decimal strings (Rule 1.2).</summary>
+/// <summary>The wire shapes of the canvas GraphSource seam (canvas/README.md): snapshot {descriptor, extent}, GraphPatch, OntologyDefinition, window batches, graph space. Integer revisions are written as decimal strings (Rule 1.2).</summary>
 public sealed class CanvasExport(Engine engine, Catalog catalog, bool plain = false)
 {
     string Tenant => engine is null ? "lab" : engine.Tenant;
@@ -15,11 +15,11 @@ public sealed class CanvasExport(Engine engine, Catalog catalog, bool plain = fa
     readonly Dictionary<string, List<Patch>> patches = [];
     readonly Dictionary<string, List<(Patch? P, IReadOnlyList<WindowChange> T, long Lambda)>> events = [];
 
-    /// <summary>Subscribe before the first ingest to record patch and telemetry history per graph.</summary>
+    /// <summary>Subscribe before the first ingest to record patch and window history per graph.</summary>
     public void Attach() => engine.Committed += e =>
     {
         if (!events.TryGetValue(e.GraphId, out var l)) events[e.GraphId] = l = [];
-        l.Add((e.Patch, e.Telemetry, e.Lambda));
+        l.Add((e.Patch, e.Windows, e.Lambda));
         if (e.Patch is not null) { if (!patches.TryGetValue(e.GraphId, out var p)) patches[e.GraphId] = p = []; p.Add(e.Patch); }
     };
 
@@ -221,11 +221,11 @@ public sealed class CanvasExport(Engine engine, Catalog catalog, bool plain = fa
         };
     }
 
-    /// <summary>Telemetry as sparse columnar batches, one per (window, property, target). Ticks are window ordinals: the engine's telemetry is indexed by window start, not by revision (a seam mismatch, see README).</summary>
-    public IEnumerable<JsonNode> TelemetryBatches(GraphRuntime g)
+    /// <summary>Windows as sparse columnar batches, one per (window, property, target). Ticks are window ordinals: the engine's windows are indexed by window start, not by revision (a seam mismatch, see README).</summary>
+    public IEnumerable<JsonNode> WindowBatches(GraphRuntime g)
     {
         var dump = new List<(int Element, int Prop, long Ws, decimal Value)>();
-        engine.Telemetry.ScanGraph(g.Key, (e, p, ws, v) => dump.Add((e, p, ws, v)));
+        engine.Windows.ScanGraph(g.Key, (e, p, ws, v) => dump.Add((e, p, ws, v)));
         dump.Sort();          // by element, property, window: the order of the ids in a batch
         var windows = dump.Select(x => x.Ws).Distinct().Order().ToList();
         if (windows.Count == 0) yield break;
@@ -243,18 +243,18 @@ public sealed class CanvasExport(Engine engine, Catalog catalog, bool plain = fa
         }
     }
 
-    /// <summary>The largest value of each telemetry property over every window of a graph, by property id: the scale of a meter.</summary>
+    /// <summary>The largest value of each event property over every window of a graph, by property id: the scale of a meter.</summary>
     Dictionary<string, decimal> LargestValues(GraphRuntime g)
     {
         var maxOf = new Dictionary<string, decimal>(StringComparer.Ordinal);
-        engine.Telemetry.ScanGraph(g.Key, (_, p, _, v) => { var id = engine.Interner.Get(p); maxOf[id] = maxOf.TryGetValue(id, out var m) ? Math.Max(m, v) : v; });
+        engine.Windows.ScanGraph(g.Key, (_, p, _, v) => { var id = engine.Interner.Get(p); maxOf[id] = maxOf.TryGetValue(id, out var m) ? Math.Max(m, v) : v; });
         return maxOf;
     }
 
     public JsonNode Meters(GraphRuntime g)
     {
         var view = catalog.OntologyOf(OutputModule(g));
-        var tele = view.Props.Values.Where(p => p.Role == "telemetry" && Ids.ModuleOf(p.Id) != Ids.KernelModule).OrderBy(p => p.Id, StringComparer.Ordinal).ToList();
+        var tele = view.Props.Values.Where(p => p.Role == "events" && Ids.ModuleOf(p.Id) != Ids.KernelModule).OrderBy(p => p.Id, StringComparer.Ordinal).ToList();
         var edgeProps = view.Types.Values.Where(t => t.IsRel).SelectMany(t => t.OwnProps.Keys).ToHashSet();
         var maxOf = LargestValues(g);
         return new JsonArray([.. tele.Select(p =>
@@ -295,7 +295,7 @@ public sealed class CanvasExport(Engine engine, Catalog catalog, bool plain = fa
         return new JsonObject { ["schemaVersion"] = "1.0", ["id"] = space.Name, ["master"] = new JsonObject { ["graph"] = Id(master.Name), ["ingestionProjection"] = Projection(master) }, ["projections"] = new JsonArray([.. derived]) };
     }
 
-    /// <summary>The meter declarations of a graph: every telemetry property of its ontology with unit, temporality, combine, period, the largest value seen (for scaling) and the warn line of a threshold on it, and the thresholds themselves. `GET /graphs/{g}/meters` and `NAME.meters.json` of `replay --out`.</summary>
+    /// <summary>The meter declarations of a graph: every event property of its ontology with unit, temporality, combine, period, the largest value seen (for scaling) and the warn line of a threshold on it, and the thresholds themselves. `GET /graphs/{g}/meters` and `NAME.meters.json` of `replay --out`.</summary>
     public JsonNode MetersDocument(GraphRuntime rt)
     {
         var g = rt.Name;
@@ -303,7 +303,7 @@ public sealed class CanvasExport(Engine engine, Catalog catalog, bool plain = fa
             var maxOf = LargestValues(rt);
             var edgeProps = view.Types.Values.Where(t => t.IsRel).SelectMany(t => t.OwnProps.Keys).ToHashSet();
             var thresholds = rt.Typed.Ops.OfType<TThreshold>().Select(t => (Op: t, Meter: t.Value is TField f ? f.Name : null)).ToList();
-            var tele = view.Props.Values.Where(p => p.Role == "telemetry" && Ids.ModuleOf(p.Id) == rt.Typed.OutputModule || p.Role == "telemetry" && Ids.ModuleOf(p.Id) != Ids.KernelModule && rt.Typed.Ops.OfType<TEmitEntity>().Any(e => e.Sets.Any(s => s.PropId == p.Id)) ).OrderBy(p => p.Id, StringComparer.Ordinal).ToList();
+            var tele = view.Props.Values.Where(p => p.Role == "events" && Ids.ModuleOf(p.Id) == rt.Typed.OutputModule || p.Role == "events" && Ids.ModuleOf(p.Id) != Ids.KernelModule && rt.Typed.Ops.OfType<TEmitEntity>().Any(e => e.Sets.Any(s => s.PropId == p.Id)) ).OrderBy(p => p.Id, StringComparer.Ordinal).ToList();
             var meters = new JsonArray([.. tele.Select(p =>
             {
                 var warn = thresholds.Where(t => t.Meter == p.Name && t.Op.AboveBy is null).Select(t => (double?)(double)t.Op.Above).FirstOrDefault();
@@ -332,7 +332,7 @@ public sealed class CanvasExport(Engine engine, Catalog catalog, bool plain = fa
             return new JsonObject { ["meters"] = meters, ["thresholds"] = ths, ["defaults"] = new JsonObject() };
     }
 
-    /// <summary>Writes the NDJSON and JSON files the canvas StaticSource reads: manifest.json, space.json, per graph ontology, snapshot, patches and telemetry.</summary>
+    /// <summary>Writes the NDJSON and JSON files the canvas StaticSource reads: manifest.json, space.json, per graph ontology, snapshot, patches and windows.</summary>
     public void WriteFiles(string dir, TypedSpace space)
     {
         Directory.CreateDirectory(dir);
@@ -346,7 +346,7 @@ public sealed class CanvasExport(Engine engine, Catalog catalog, bool plain = fa
             Write(Path.Combine(dir, $"{g.Name}.final.snapshot.json"), Snapshot(g));
             File.WriteAllLines(Path.Combine(dir, $"{g.Name}.patches.ndjson"), PatchesOf(g.Name).Select(p => Patch(p).ToJsonString()));
             File.WriteAllText(Path.Combine(dir, $"{g.Name}.patches.json"), new JsonArray([.. PatchesOf(g.Name).Select(p => Patch(p))]).ToJsonString());
-            File.WriteAllLines(Path.Combine(dir, $"{g.Name}.telemetry.ndjson"), TelemetryBatches(g).Select(b => b.ToJsonString()));
+            File.WriteAllLines(Path.Combine(dir, $"{g.Name}.windows.ndjson"), WindowBatches(g).Select(b => b.ToJsonString()));
             var entry = new JsonObject { ["ontology"] = $"{g.Name}.ontology.json", ["snapshot"] = $"{g.Name}.snapshot.json", ["patches"] = $"{g.Name}.patches.json", ["description"] = DescriptionOf(g) };
             // what the live engine serves for the same graph: `GET /lineage` of every element (complete), `GET /lineage/reverse` of every element that is part of something, the rendered document
             Write(Path.Combine(dir, $"{g.Name}.meters.json"), MetersDocument(g)); entry["meters"] = $"{g.Name}.meters.json";

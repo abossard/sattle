@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "imports": [],
   "entities": [
-    {"name": "Meter", "properties": [{"name": "k", "type": "Text"}, {"name": "pairs", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}, {"name": "total", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}]}
+    {"name": "Meter", "properties": [{"name": "k", "type": "Text"}, {"name": "pairs", "type": "Integer", "optional": true, "events": {"temporality": "delta", "combine": "sum", "period": "1m"}}, {"name": "total", "type": "Integer", "optional": true, "events": {"temporality": "delta", "combine": "sum", "period": "1m"}}]}
   ],
   "identities": [
     {"name": "meter", "type": "Meter", "components": [{"name": "k", "type": "Text"}]}

@@ -10,7 +10,7 @@ using Sattle.Language;
 
 namespace Sattle.Runtime;
 
-/// <summary>A snapshot of the running state of an engine (and of a host): the object graph reachable from a root, written field by field, and loaded back into the freshly constructed objects of an engine built from the same definitions. What is configuration (compiled expressions, typed definitions, layouts, delegates, stores) is not written: the fresh engine already has it. What is state (group tables, window accumulators, join indexes, identity bindings, element layers, telemetry windows, the hot graphs, the interner) is.
+/// <summary>A snapshot of the running state of an engine (and of a host): the object graph reachable from a root, written field by field, and loaded back into the freshly constructed objects of an engine built from the same definitions. What is configuration (compiled expressions, typed definitions, layouts, delegates, stores) is not written: the fresh engine already has it. What is state (group tables, window accumulators, join indexes, identity bindings, element layers, windows, the hot graphs, the interner) is.
 /// The snapshot is tied to the build that wrote it (the module version id of this assembly is in the header of the seal): a seal that this build cannot load is not loaded, and the journal is replayed instead.</summary>
 public static class StateSnapshot
 {

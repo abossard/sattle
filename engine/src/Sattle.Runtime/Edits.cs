@@ -215,13 +215,13 @@ public sealed partial class SpaceHost
             {
                 var sink = tp.Ops.OfType<TEmitEntity>().FirstOrDefault(s => !s.Update && s.TypeId == en.Type) ?? throw Reject("NotEditable", $"no rule emits {TypeLabel(Catalog, en.Type)}", g, en.Id);
                 var rule = RuleNamed(tp, sink.Rule ?? "");
-                // properties set by an update emit of another rule are read-only; telemetry never
+                // properties set by an update emit of another rule are read-only; event properties never
                 if (e.Before is Entity b0 && e.After is Entity a0)
                     foreach (var (k, v) in a0.Props.Items.Where(kv => !(b0.Props.Get(kv.Key)?.Equals(kv.Value) ?? false)).Concat(b0.Props.Items.Where(kv => a0.Props.Get(kv.Key) is null)))
                     {
                         var owner = tp.Ops.OfType<TEmitEntity>().Where(s => s.TypeId == en.Type && s.Sets.Any(x => x.PropId == k)).Select(s => s.Rule).FirstOrDefault();
                         var pi = Catalog.OntologyOf(tp.OutputModule).Props.GetValueOrDefault(k);
-                        if (pi?.Role == "telemetry") throw Reject("TelemetryNotEditable", $"{pi.Name} is telemetry", g, en.Id);
+                        if (pi?.Role == "events") throw Reject("EventsNotEditable", $"{pi.Name} is an event property", g, en.Id);
                         if (owner is not null && RuleNamed(tp, owner).Class == "readonly") throw Reject("ReadOnlyByRule", $"property {pi?.Name} is owned by rule {owner}", g, en.Id, owner);
                     }
                 var policy = rule.Policy;
@@ -341,7 +341,7 @@ public sealed partial class SpaceHost
     {
         var types = owned is not null ? [owned.EntityTypeId, owned.RelTypeId] : tp.Rules.Where(r => r.Class is "lens" or "bijective").SelectMany(r => tp.Ops.Where(o => (o is TEmitEntity { Update: false } ee && ee.Rule == r.Name) || (o is TEmitRel { Update: false } er && er.Rule == r.Name))
             .Select(o => o is TEmitEntity x ? x.TypeId : ((TEmitRel)o).TypeId)).ToList();
-        var ownedProps = tp.Ops.OfType<TEmitEntity>().Where(e => e.Rule is not null && tp.Rules.First(r => r.Name == e.Rule).Class is "lens" or "bijective").SelectMany(e => e.Sets.Where(s => !s.Telemetry).Select(s => s.PropId)).ToHashSet();
+        var ownedProps = tp.Ops.OfType<TEmitEntity>().Where(e => e.Rule is not null && tp.Rules.First(r => r.Name == e.Rule).Class is "lens" or "bijective").SelectMany(e => e.Sets.Where(s => !s.Events).Select(s => s.PropId)).ToHashSet();
         string? Sig(Element e) => e switch
         {
             Entity en => en.Id + "|" + string.Join(",", en.Props.Items.Where(kv => ownedProps.Contains(kv.Key)).Select(kv => kv.Key + "=" + Jcs.Encode(kv.Value))),

@@ -86,8 +86,8 @@ var t1 = new List<double>(); var t2 = new List<double>();
 for (var run = 0; run < 5; run++) { var sw = Stopwatch.StartNew(); Config1(); t1.Add(sw.Elapsed.TotalMilliseconds * 1e6 / arr.Length); sw.Restart(); Config2(); t2.Add(sw.Elapsed.TotalMilliseconds * 1e6 / arr.Length); }
 Console.WriteLine($"aggregation without parsing, ns per flow (median of 5, in-memory struct array, dictionary of tuples): configuration 1 {Median(t1):F1}, configuration 2 {Median(t2):F1}");
 
-// ---- compare configuration 1 with the engine's Calls telemetry
-// engine: relationship id -> (srcNs, srcPod, dstNs, dstPod) from the final snapshot and the references; telemetry per relationship id and window offset
+// ---- compare configuration 1 with the engine's Calls windows
+// engine: relationship id -> (srcNs, srcPod, dstNs, dstPod) from the final snapshot and the references; windows per relationship id and window offset
 var snap = JsonDocument.Parse(File.ReadAllText(Path.Combine(engineOut, "master.final.snapshot.json"))).RootElement.GetProperty("extent");
 var podOf = new Dictionary<string, (string Ns, string Name)>();
 foreach (var e in snap.GetProperty("entities").EnumerateArray())
@@ -114,7 +114,7 @@ foreach (var r in snap.GetProperty("relationships").EnumerateArray())
 }
 var eng = new Dictionary<(string, string, string, string, long), (double Flows, double Drops)>(); var engWindows = new SortedSet<long>();
 var engAllFlows = new SortedDictionary<long, double>(); var engAllDrops = new SortedDictionary<long, double>();
-foreach (var line in File.ReadLines(Path.Combine(engineOut, "master.telemetry.ndjson")))
+foreach (var line in File.ReadLines(Path.Combine(engineOut, "master.windows.ndjson")))
 {
     using var d = JsonDocument.Parse(line); var r = d.RootElement;
     var prop = r.GetProperty("property").GetString(); if (prop is not ("sattle.infra.flows" or "sattle.infra.drops")) continue;
@@ -146,6 +146,6 @@ var byWinFlows = c1.GroupBy(k => k.Key.Item5 - myMin + engMin).ToDictionary(g =>
 var windowsEqual = engAllFlows.Count(kv => byWinFlows.GetValueOrDefault(kv.Key) == kv.Value && byWinDrops.GetValueOrDefault(kv.Key) == engAllDrops.GetValueOrDefault(kv.Key)); var windowsTotal = engAllFlows.Count;
 Console.WriteLine($"per-window totals over all {callsRels} engine Calls relationships (resolved or not) against configuration 1: equal in {windowsEqual} of {windowsTotal} windows; engine total flows {engAllFlows.Values.Sum():N0}, drops {engAllDrops.Values.Sum():N0}; configuration 1 flows {byWinFlows.Values.Sum():N0}, drops {byWinDrops.Values.Sum():N0}");
 var sumMine = c1.Values.Sum(v => v.Item1); var sumEng = eng.Values.Sum(v => v.Flows);
-Console.WriteLine($"total flows: configuration 1 {sumMine:N0}, engine telemetry (resolved pairs) {sumEng:N0}; drops {c1.Values.Sum(v => v.Item2):N0} vs {eng.Values.Sum(v => v.Drops):N0}");
+Console.WriteLine($"total flows: configuration 1 {sumMine:N0}, engine windows (resolved pairs) {sumEng:N0}; drops {c1.Values.Sum(v => v.Item2):N0} vs {eng.Values.Sum(v => v.Drops):N0}");
 
 struct Flow { public long Sec; public bool Dropped, Reply; public int SrcNs, SrcPod, DstNs, DstPod, SrcWl, DstWl, Port; }

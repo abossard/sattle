@@ -2,12 +2,12 @@ using Sattle.Core;
 
 namespace Sattle.Runtime;
 
-/// <summary>Which rows support each telemetry window a projection writes. `Write` takes the rows of a step, `Flush` adds them to what supports each window and writes the samples that set or delete the window in the store, `Move` lets the support follow a merged element. A window that exactly one row writes, the normal case, keeps nothing here: the store holds its value.</summary>
+/// <summary>Which rows support each window a projection writes. `Write` takes the rows of a step, `Flush` adds them to what supports each window and writes the samples that set or delete the window in the store, `Move` lets the support follow a merged element. A window that exactly one row writes, the normal case, keeps nothing here: the store holds its value.</summary>
 sealed class WindowSupport(Interner it, ConflictSet conflicts)
 {
     readonly List<(WindowKey Key, TVal Value, long Weight, long Period, long Own)> tele = [];
 
-    /// <summary>A telemetry row of the step: the window it writes, its value and weight, and the id it was written under before any link (`own`, Law 7.5 item 3); `combine` is the property's combine rule.</summary>
+    /// <summary>A event row of the step: the window it writes, its value and weight, and the id it was written under before any link (`own`, Law 7.5 item 3); `combine` is the property's combine rule.</summary>
     public void Write(WindowKey key, TVal value, long weight, long period, long own, string? combine)
     {
         tele.Add((key, value, weight, period, own));
@@ -30,10 +30,10 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
     /// <summary>Windows written under more than one own id: the measure of how often Law 7.5 item 3 combines.</summary>
     public long WindowsOfTwoIds => byOwn.Count(w => w.Value.Count > 1);
 
-    static TVal? StoredOf(ITelemetryStore store, GraphKey g, WindowKey key) => store.ValueOf(g, key) is { } v ? new TVal(v, store.AuxOf(g, key)) : null;
+    static TVal? StoredOf(IWindowStore store, GraphKey g, WindowKey key) => store.ValueOf(g, key) is { } v ? new TVal(v, store.AuxOf(g, key)) : null;
 
     /// <summary>The support of each window of (element, property) by value, all written under `own`: what `sharedWindows` holds, else the stored value as one row.</summary>
-    IEnumerable<(WindowKey Key, Dictionary<TVal, long> Support)> SupportsOf(ITelemetryStore store, GraphKey g, int elem, int prop)
+    IEnumerable<(WindowKey Key, Dictionary<TVal, long> Support)> SupportsOf(IWindowStore store, GraphKey g, int elem, int prop)
     {
         var keys = new HashSet<WindowKey>(sharedWindows.Keys.Where(k => k.Element == elem && k.Prop == prop));
         foreach (var pt in store.ReadWindow(g, [elem], [prop], long.MinValue, long.MaxValue)[0].Points) keys.Add(new WindowKey(elem, prop, pt.WindowStart));
@@ -42,7 +42,7 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
     }
 
     /// <summary>(element, property) gets a second own id: its windows so far were all written under `sole`.</summary>
-    void BecomeMulti(ITelemetryStore store, GraphKey g, (int Elem, int Prop) ep, long sole)
+    void BecomeMulti(IWindowStore store, GraphKey g, (int Elem, int Prop) ep, long sole)
     {
         foreach (var (k, support) in SupportsOf(store, g, ep.Elem, ep.Prop).ToList())
         {
@@ -53,7 +53,7 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
     }
 
     /// <summary>The windows of a merged element follow it. First the support of each window moves: under one own id when only one ever wrote the pair, else per own id. Then the store moves the values (`MoveElement`). Last each moved window is set to what its supporting rows give, the same rule a write follows (`Settle`), so the result does not depend on whether the link came before the rows or after them. Returns the samples that correct the store.</summary>
-    public List<Sample> Move(ITelemetryStore store, GraphKey g, int from, int to, Func<int, string?> combine, long inputId)
+    public List<Sample> Move(IWindowStore store, GraphKey g, int from, int to, Func<int, string?> combine, long inputId)
     {
         var moved = MoveSupport(store, g, from, to);
         store.MoveElement(g, from, to, combine);
@@ -63,7 +63,7 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
     }
 
     /// <summary>A split: the rows of `from` whose own id `which` holds move to `to`, and the rest stay. Both sides keep their support per own id, so each window of either is set to what its rows give (Law 7.5 item 3).</summary>
-    public List<Sample> Move(ITelemetryStore store, GraphKey g, int from, int to, Func<long, bool> which, long inputId)
+    public List<Sample> Move(IWindowStore store, GraphKey g, int from, int to, Func<long, bool> which, long inputId)
     {
         for (var i = 0; i < tele.Count; i++) if (tele[i].Key.Element == from && which(tele[i].Own)) tele[i] = tele[i] with { Key = tele[i].Key with { Element = to } };
         var touched = new List<WindowKey>();
@@ -92,7 +92,7 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
         return res;
     }
 
-    List<WindowKey> MoveSupport(ITelemetryStore store, GraphKey g, int from, int to)
+    List<WindowKey> MoveSupport(IWindowStore store, GraphKey g, int from, int to)
     {
         var moved = new List<WindowKey>();
         // a row of this step that has not reached the store yet follows its element
@@ -152,8 +152,8 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
     }
     [ThreadStatic] static FlushState? flushOfThread;
 
-    /// <summary>The telemetry writes of the step: per window the weights of the step are added to what supports the window, and the window is set in the store to the value its supporting rows give, or deleted when none is left. The windows settle and are written in the order their first row came.</summary>
-    public void Flush(ITelemetryStore store, GraphKey g, long inputId)
+    /// <summary>The window writes of the step: per window the weights of the step are added to what supports the window, and the window is set in the store to the value its supporting rows give, or deleted when none is left. The windows settle and are written in the order their first row came.</summary>
+    public void Flush(IWindowStore store, GraphKey g, long inputId)
     {
         if (tele.Count == 0) return;
         var fs = flushOfThread ??= new();
@@ -219,7 +219,7 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
 
     /// <summary>One window after rows came or went (`byRow`: own id, value and weight, no weight 0), or after a merge moved its support (`moved`, no rows): the rows are added to what supports the window, and the window is set to the value its supporting rows give, or deleted when they give none. `scratch` is a working list.
     /// A window has a conflict only while its support is kept here: a conflict needs two values, and a support of two values is kept. So a window without kept support has no conflict to clear, and its subject is not written.</summary>
-    void Settle(ITelemetryStore store, GraphKey g, WindowKey key, List<(long Own, TVal Value, long Weight)> byRow, long per, long inputId, List<Sample> res, bool moved, List<(TVal Value, long Weight)> scratch)
+    void Settle(IWindowStore store, GraphKey g, WindowKey key, List<(long Own, TVal Value, long Weight)> byRow, long per, long inputId, List<Sample> res, bool moved, List<(TVal Value, long Weight)> scratch)
     {
         if (byRow.Count == 0 && !moved) return;
         if (multiOwn.Contains((key.Element, key.Prop)))
@@ -274,7 +274,7 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
             var rule = combineOf.GetValueOrDefault(key.Prop);
             value = values[0];
             foreach (var next in values.Skip(1))
-                value = value is { } acc && InMemoryTelemetryStore.Combine(rule, acc.V, acc.Aux, next.V, next.Aux) is { } c ? new TVal(c.Value, c.Aux) : null;
+                value = value is { } acc && InMemoryWindowStore.Combine(rule, acc.V, acc.Aux, next.V, next.Aux) is { } c ? new TVal(c.Value, c.Aux) : null;
             if (value is null) { MergeConflicts++; conflict = new Conflict("window", it.Get(key.Element), it.Get(key.Prop), key.WindowStart, [.. values.Distinct().OrderBy(x => x.V).Select(x => Norm.Decimal(x.V))]); }
         }
         conflicts.Note(subject, conflict);
