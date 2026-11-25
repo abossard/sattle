@@ -3,6 +3,7 @@
 //   scrub.mjs build  <captureDir> <fixturesDir>   sample every source, scrub, write; also space-arguments.json
 //   scrub.mjs tutorial <captureDir> <fixturesDir> scrub the full ARG inventory and its matched Azure Monitor observations
 //   scrub.mjs verify <captureDir> <fixturesDir>   fail if any identifying value of the capture survives in the fixtures
+//   scrub.mjs recording <recordingDir> <outDir>    scrub a collector recording (lab/collector), names from SCRUB_NAMES
 // Optional extra values to scrub (for example the signed-in user) come in SCRUB_LITERALS, one per line; the capture
 // itself already names its tenant, subscription, resources and people.
 // Aliases are HMACs under a local secret salt (captures/.scrub-salt, gitignored): the same input always maps to
@@ -245,11 +246,41 @@ async function verify(captureDir, fixturesDir) {
   console.log('OK: no identifying value of the capture found in fixtures');
 }
 
+// A collector recording (lab/collector, --record): every value as text, the names come from SCRUB_NAMES (one per
+// line: cluster, resource group, nodes, apps) and SCRUB_LITERALS. Fails when one of them, an id of the recording
+// or a public address survives; reports counts only.
+async function recording(recordingDir, outDir) {
+  const list = (v) => (process.env[v] ?? '').split('\n').map((x) => x.trim()).filter(Boolean);
+  const names = list('SCRUB_NAMES');
+  const literals = list('SCRUB_LITERALS');
+  const scrub = makeScrubber({ salt: saltFor(recordingDir), names, clusters: names, literals });
+  const deny = new Set([...names, ...literals].map((x) => x.toLowerCase()));
+  const ids = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+  let records = 0;
+  let found = 0;
+  for (const file of walkFiles(recordingDir)) {
+    const rows = [];
+    for await (const line of lines(file)) {
+      for (const id of line.match(ids) ?? []) deny.add(id.toLowerCase());
+      rows.push(JSON.stringify(scrub(JSON.parse(line))));
+    }
+    const text = rows.join('\n').toLowerCase();
+    found += [...deny].filter((d) => text.includes(d)).length;
+    found += (text.match(/(?<![\d.])\d{1,3}(?:\.\d{1,3}){3}(?![\d.])/g) ?? []).filter((ip) => !/^(10\.|127\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|198\.1[89]\.|0\.)/.test(ip)).length;
+    const out = join(outDir, relative(recordingDir, file));
+    mkdirSync(dirname(out), { recursive: true });
+    writeFileSync(out, rows.map((r) => `${r}\n`).join(''));
+    records += rows.length;
+  }
+  console.log(`${records} records scrubbed, ${deny.size} names and ids checked`);
+  if (found) { console.error(`FAIL: ${found} names, ids or public addresses survive`); process.exit(1); }
+}
+
 // Run as a program, also from a path with spaces or through a link
 const isMain = () => { try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url); } };
 if (isMain()) {
   const [cmd, captureDir, fixturesDir] = process.argv.slice(2);
-  const actions = { build, tutorial, verify };
-  if (!actions[cmd] || !captureDir || !fixturesDir) { console.error('usage: scrub.mjs build|tutorial|verify <captureDir> <fixturesDir>'); process.exit(2); }
+  const actions = { build, tutorial, verify, recording };
+  if (!actions[cmd] || !captureDir || !fixturesDir) { console.error('usage: scrub.mjs build|tutorial|verify|recording <captureDir> <fixturesDir>'); process.exit(2); }
   await actions[cmd](resolve(captureDir), resolve(fixturesDir));
 }

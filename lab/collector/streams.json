@@ -1,0 +1,10 @@
+[
+  {"name": "app-requests", "plugin": "log-analytics", "rows": "RequestRow", "table": "AppRequests",
+   "columns": ["TimeGenerated", "AppRoleName", "Name", "Success", "ResultCode", "DurationMs", "_ItemId"], "key": ["_ItemId"]},
+  {"name": "container-cpu", "plugin": "prometheus", "rows": "SampleRow", "step": 60,
+   "query": "sum by (namespace, pod) (rate(container_cpu_usage_seconds_total{container!=\"\"}[2m]))", "labels": ["namespace", "pod"]},
+  {"name": "container-memory", "plugin": "prometheus", "rows": "SampleRow", "step": 60,
+   "query": "sum by (namespace, pod) (container_memory_working_set_bytes{container!=\"\"})", "labels": ["namespace", "pod"]},
+  {"name": "node-usage", "plugin": "kubernetes-metrics", "rows": "UsageRow", "kind": "nodes"},
+  {"name": "pod-usage", "plugin": "kubernetes-metrics", "rows": "UsageRow", "kind": "pods"}
+]
