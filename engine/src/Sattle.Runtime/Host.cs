@@ -24,11 +24,6 @@ public sealed class HostError(string code, string message, int status = 422, Jso
 public sealed record HostOptions
 {
     public string Tenant { get; init; } = "lab";
-    /// <summary>Closed windows a Group keeps revisable behind the frontier (the engine's late horizon). 3 for a live source, which must bound its state; a recorded input is finite and is served as `replay` runs it (no late horizon), so serving a capture gives the replay result. Null is no late horizon. It is part of what a run computes, so it is stored in the journal header and in every seal.</summary>
-    public int? LateHorizonWindows { get; init; } = 3;
-
-    /// <summary>The late horizon a journal header or a seal recorded: the number, none where it recorded none, 3 where the record is older than the field.</summary>
-    internal static int? StoredLateHorizon(JsonNode record) => record.AsObject().TryGetPropertyValue("lateHorizon", out var stored) ? stored?.GetValue<int>() : 3;
     public string? SpaceName { get; init; }
     /// <summary>Reads the projections that are written in another language than a module's text, in definition files of their own (one source per language, `ProjectionSources` for several). Every catalog the host builds uses it: at the start, for a definition commit, for a draft, and at a restart. Without one, a definition file that is no module text is an error of the load.</summary>
     public IProjectionSource? Projections { get; init; }
@@ -194,8 +189,6 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     public string Mode => live is null ? "replay" : "live";
     /// <summary>What opening this space did, when its store already had a journal; null for a space that was started new.</summary>
     public Restart? Restart { get; private set; }
-    /// <summary>The late horizon the space runs with (a restart takes it from the store).</summary>
-    public int? LateHorizonWindows => options.LateHorizonWindows;
     /// <summary>The recorded input has ended.</summary>
     public bool Done => phase == Phase.Finished;
     public long InputRows => inputRows;
@@ -242,7 +235,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         HookEngine();
     }
 
-    EngineOptions EngineOpts(int gen) => new() { Tenant = options.Tenant, LateHorizonWindows = options.LateHorizonWindows, StoreFactory = durable is null ? options.StoreFactory : _ => { var v = new DurableView(durable, gen, () => phase == Phase.Replaying); views.Add(v); return v; } };
+    EngineOptions EngineOpts(int gen) => new() { Tenant = options.Tenant, StoreFactory = durable is null ? options.StoreFactory : _ => { var v = new DurableView(durable, gen, () => phase == Phase.Replaying); views.Add(v); return v; } };
 
     Engine NewEngine(Catalog cat) => new(cat, spaceId, EngineOpts(generation), interner);
 
@@ -341,7 +334,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         {
             var given = files ?? throw new ArgumentException("definitions are needed to start a new journal");
             var host = new SpaceHost(given, options, LoadDefinitions(given, options.Projections), store, Phase.Running, 0, null);
-            j.JournalAppend(new Entry.Header(options.Tenant, options.LateHorizonWindows, host.Space.Name, host.Mode, host.DefinitionFiles()).Text(host.interner));
+            j.JournalAppend(new Entry.Header(options.Tenant, host.Space.Name, host.Mode, host.DefinitionFiles()).Text(host.interner));
             host.journalPos = 1;
             return host;
         }
@@ -358,7 +351,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         }
         var entries = j.JournalRead().ToList();
         var h = (Entry.Header)Entry.Parse(entries[0], _ => throw new InvalidDataException("the journal does not start with its header"), new Interner());
-        var restored = new SpaceHost(h.Files, options with { Tenant = h.Tenant, LateHorizonWindows = h.LateHorizon, SpaceName = h.Space }, LoadDefinitions(h.Files, options.Projections), store, Phase.Replaying, 0, null);
+        var restored = new SpaceHost(h.Files, options with { Tenant = h.Tenant, SpaceName = h.Space }, LoadDefinitions(h.Files, options.Projections), store, Phase.Replaying, 0, null);
         restored.journalPos = 1;
         var check = options.VerifyJournal ? j.SealLatest() : null;
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -479,7 +472,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             var meta = new JsonObject
             {
                 ["position"] = journalPos, ["format"] = SealFormat, ["build"] = BuildId, ["kernel"] = Kernel.CompiledDigest, ["digest"] = Engine.StateDigest(), ["catalogDigest"] = Catalog.Graph.Digest(), ["generation"] = generation,
-                ["tenant"] = options.Tenant, ["lateHorizon"] = options.LateHorizonWindows, ["space"] = Space.Name, ["mode"] = Mode, ["seq"] = Seq,
+                ["tenant"] = options.Tenant, ["space"] = Space.Name, ["mode"] = Mode, ["seq"] = Seq,
                 ["live"] = liveOptions,
                 ["sources"] = Entry.FilesText(DefinitionFiles()),
                 ["heads"] = new JsonObject(Engine.Graphs.Select(g => KeyValuePair.Create(g.Name, (JsonNode?)g.Head))),
@@ -503,7 +496,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             var sw = System.Diagnostics.Stopwatch.StartNew();
             var snapshot = StateSnapshot.Open(seal.Data);
             var loadMs = sw.ElapsedMilliseconds;
-            host = new SpaceHost(files, options with { Tenant = m["tenant"]!.GetValue<string>(), LateHorizonWindows = HostOptions.StoredLateHorizon(m), SpaceName = m["space"]!.GetValue<string>() }, LoadDefinitions(files, options.Projections), store, Phase.Replaying, m["generation"]!.GetValue<int>(), snapshot.Texts);
+            host = new SpaceHost(files, options with { Tenant = m["tenant"]!.GetValue<string>(), SpaceName = m["space"]!.GetValue<string>() }, LoadDefinitions(files, options.Projections), store, Phase.Replaying, m["generation"]!.GetValue<int>(), snapshot.Texts);
             if (host.Catalog.Graph.Digest() != m["catalogDigest"]!.GetValue<string>()) { rejected = "the definitions give another catalog than the one sealed"; host.Dispose(); return null; }
             if (m["live"]?.GetValue<string>() is { } liveJson) host.Apply(new Entry.LiveStart(Entry.ParseOptions(liveJson)));
             var root = host.StateRootOf();

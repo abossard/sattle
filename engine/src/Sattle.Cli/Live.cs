@@ -89,6 +89,6 @@ static class Live
         });
         Console.WriteLine($"live stopped after {(DateTimeOffset.UtcNow - started).TotalSeconds:F0} s ({reason}): {counts.Consumed:N0} events, {counts.Duplicates} duplicate(s), {counts.Rejected} rejected, position {host.SourcePosition("eventhub:" + hub)}");
         Console.WriteLine($"state digest {host.StateDigest()}");
-        Console.WriteLine($"replay with: sattle replay {outDir} --no-flush --late-horizon 3   (add the same --advance-every and --lateness if the live run set them)");
+        Console.WriteLine($"replay with: sattle replay {outDir} --no-flush   (add the same --advance-every and --lateness if the live run set them)");
     }
 }

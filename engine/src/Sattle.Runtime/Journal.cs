@@ -25,7 +25,7 @@ public sealed record SealRecord(long Position, string Meta, byte[] Data);
 public closed record Entry
 {
     /// <summary>The first entry: what the space was started with.</summary>
-    public sealed record Header(string Tenant, int? LateHorizon, string Space, string Mode, IReadOnlyList<SourceFile> Files) : Entry;
+    public sealed record Header(string Tenant, string Space, string Mode, IReadOnlyList<SourceFile> Files) : Entry;
     /// <summary>A batch of source rows.</summary>
     public sealed record Rows(string Source, long Seq, Batch Batch) : Entry;
     /// <summary>Logical time moves on to `Lambda`.</summary>
@@ -63,7 +63,7 @@ public closed record Entry
     /// <summary>The stored form. Rows carry their texts, so the interner that numbered them is needed.</summary>
     public string Text(Interner it) => this switch
     {
-        Header h => new JsonObject { ["k"] = "h", ["tenant"] = h.Tenant, ["lateHorizon"] = h.LateHorizon, ["space"] = h.Space, ["mode"] = h.Mode, ["generation"] = 0, ["files"] = FilesJson(h.Files) }.ToJsonString(),
+        Header h => new JsonObject { ["k"] = "h", ["tenant"] = h.Tenant, ["space"] = h.Space, ["mode"] = h.Mode, ["generation"] = 0, ["files"] = FilesJson(h.Files) }.ToJsonString(),
         Rows r => BatchCodec.Encode(r.Source, r.Seq, r.Batch, it),
         Advance a => $"{{\"k\":\"a\",\"l\":{a.Lambda.ToString(CultureInfo.InvariantCulture)},\"q\":{a.Seq.ToString(CultureInfo.InvariantCulture)}}}",
         Progress g => new JsonObject { ["k"] = "g", ["s"] = g.Source, ["u"] = g.Until, ["q"] = g.Seq }.ToJsonString(),
@@ -91,7 +91,7 @@ public closed record Entry
         long N(string name) => r.GetProperty(name).GetInt64();
         return kind switch
         {
-            'h' => new Header(S("tenant"), HostOptions.StoredLateHorizon(JsonNode.Parse(text)!), S("space"), S("mode"), ParseFiles(JsonNode.Parse(text)!["files"]!)),
+            'h' => new Header(S("tenant"), S("space"), S("mode"), ParseFiles(JsonNode.Parse(text)!["files"]!)),
             'a' => new Advance(N("l"), N("q")),
             'g' => new Progress(S("s"), N("u"), N("q")),
             'l' => new Loss(N("t"), N("n"), S("r")),

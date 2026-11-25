@@ -125,7 +125,7 @@ static partial class Bench
     /// <summary>Times a replay and its window closes. With --timing-only, skip the per-record, per-ingest and per-operator counters. With --census, also measure what each structure retains.</summary>
     public static int Phases(Program.Options o)
     {
-        var options = new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 };
+        var options = new EngineOptions { Tenant = "lab" };
         if (o.Get("graph-workers") is { } count)
         {
             if (!int.TryParse(count, out int workers) || workers < 1)

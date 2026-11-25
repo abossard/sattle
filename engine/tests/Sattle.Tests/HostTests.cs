@@ -15,10 +15,7 @@ public class HostTests
     static readonly Lazy<(IReadOnlyList<SourceFile> Files, SpaceHost.LoadedDefinitions Loaded)> Shared = new(() => { var f = Catalog.ReadDirectory(Repo.Definitions); return (f, SpaceHost.LoadDefinitions(f, Repo.Projections)); });
 
     /// <summary>A host on the example definitions. The checked catalog is loaded once per test run (loading costs more than a host), every host gets its own engine and state.</summary>
-    public static SpaceHost NewHost() => NewHost(lateHorizon: 3);
-
-    /// <summary>The same with another late horizon: 1,000,000 windows for a recorded input whose every window stays revisable, as `sattle replay` sets it.</summary>
-    public static SpaceHost NewHost(int? lateHorizon) => new(Shared.Value.Files, new HostOptions { Projections = Repo.Projections, LateHorizonWindows = lateHorizon }, Shared.Value.Loaded);
+    public static SpaceHost NewHost() => new(Shared.Value.Files, new HostOptions { Projections = Repo.Projections }, Shared.Value.Loaded);
 
     /// <summary>Services 0 to 2, flows instance-0 to instance-1 with 10 percent drops for 3 windows, then none: the health status degrades and recovers.</summary>
     internal static void Drive(SpaceHost h, int windows = 9)
@@ -121,7 +118,7 @@ public class HostTests
     [InlineData("preview")]
     public void Beyond_the_row_cap_without_a_journal_a_reactivation_is_refused_and_changes_nothing(string call)
     {
-        using var h = new SpaceHost(Shared.Value.Files, new HostOptions { Projections = Repo.Projections, LateHorizonWindows = 3, InputRowCap = 10 }, Shared.Value.Loaded);
+        using var h = new SpaceHost(Shared.Value.Files, new HostOptions { Projections = Repo.Projections, InputRowCap = 10 }, Shared.Value.Loaded);
         Drive(h);
         var file = h.ProjectionFile("acme.svc.serviceDeps");
         var edited = Text(file).Replace("\"above\": {\"lit\": 0.05}, \"below\": {\"lit\": 0.02}, \"enterAfter\": {\"lit\": 3}, \"exitAfter\": {\"lit\": 3}", "\"above\": {\"lit\": 0.05}, \"below\": {\"lit\": 0.0}, \"enterAfter\": {\"lit\": 3}, \"exitAfter\": {\"lit\": 30}");
@@ -438,7 +435,7 @@ public class HostTests
     [Fact]
     public async Task A_subscriber_that_applies_every_window_batch_holds_the_windows_the_range_read_answers()
     {
-        using var h = new SpaceHost(EstateTests.Files(demo: false), new HostOptions { Projections = Repo.Projections, LateHorizonWindows = 3 });
+        using var h = new SpaceHost(EstateTests.Files(demo: false), new HostOptions { Projections = Repo.Projections });
         var sub = h.Subscribe(["master"], false, null);
         var replica = new SortedDictionary<string, double>(StringComparer.Ordinal);
         var reading = Task.Run(async () =>

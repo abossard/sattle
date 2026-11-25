@@ -53,7 +53,7 @@ public static class Scenarios
     static readonly System.Collections.Concurrent.ConcurrentDictionary<(string, int), Lazy<Summary>> Summaries = new();
 
     static ReplayTests.Run Replay(string dir, int chunk) =>
-        ReplayTests.Replay(dir, chunk, o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 });
+        ReplayTests.Replay(dir, chunk, o: new EngineOptions { Tenant = "lab" });
 
     /// <summary>The run of `dir` at chunk 100000, with its engine.</summary>
     public static ReplayTests.Run Run(string dir) => Runs.GetOrAdd(dir, d => new Lazy<ReplayTests.Run>(() => Gated(() => Replay(d, Full)))).Value;

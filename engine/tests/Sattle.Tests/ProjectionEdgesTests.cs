@@ -180,7 +180,7 @@ public class ProjectionEdgesTests
         files.AddRange(moduleFiles);
         var cat = new Catalog(Repo.Projections); var res = cat.Load(files, updatePins: true);
         Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
-        return ReplayTests.Replay(dir, 200, o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 }, cat: cat);
+        return ReplayTests.Replay(dir, 200, o: new EngineOptions { Tenant = "lab" }, cat: cat);
     }
 
     /// <summary>One step from the instances straight to the capabilities: the composition of the two lifts, written as one.</summary>
@@ -253,7 +253,7 @@ public class ProjectionEdgesTests
         var dir = Copy(["storefront|ordering", "ordering", "data-platform"], false, null);        // web realizes two capabilities
         try
         {
-            var e = ReplayTests.Replay(dir, o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 });
+            var e = ReplayTests.Replay(dir, o: new EngineOptions { Tenant = "lab" });
             var lifted = Summed(e, "capabilities", "callFlows", "capabilities");
             var service = Summed(e, "serviceTree", "flows", "serviceTree");
             Assert.Equal(["Ordering -> Data platform"], lifted.Keys.ToList());                      // web has two images: its edge is not lifted to either; api to db is
@@ -274,7 +274,7 @@ public class ProjectionEdgesTests
         {
             // a host, for the windows of two graphs by their start: the replay's files number the windows of each graph on their own. The default late horizon:
             // the status is folded over the windows, and a window is folded when the clock passes its end plus the horizon (#151 D5)
-            using var h = HostTests.NewHost(lateHorizon: 3);
+            using var h = HostTests.NewHost();
             h.RunCapture(dir, new ReplayOptions { ChunkRows = 2000, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000});
             var edge = Assert.Single(h.Relationships("capabilities", "DependsOn"))["id"].Id();
             Dictionary<string, decimal> Of(string prop) => h.Windows("capabilities", prop).Where(x => x.Element == edge).ToDictionary(x => x.Window, x => x.Value);

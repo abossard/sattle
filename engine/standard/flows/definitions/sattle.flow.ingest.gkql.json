@@ -4,8 +4,8 @@
   "description": "Keep source-identified spans and counts in closed event-time minutes. A parent reference may point outside the graph.",
   "history": 120,
   "inputs": [
-    {"name": "spans", "rows": "sattle.flow.SpanRow"},
-    {"name": "counts", "rows": "sattle.flow.OperationCountRow"},
+    {"name": "spans", "rows": "sattle.flow.SpanRow", "time": "time", "lateness": "3m"},
+    {"name": "counts", "rows": "sattle.flow.OperationCountRow", "time": "time", "lateness": "3m"},
     {"name": "claims", "rows": "sattle.flow.FlowClaimRow"}
   ],
   "parameters": [],

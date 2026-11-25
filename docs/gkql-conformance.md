@@ -20,7 +20,7 @@ flowchart LR
 | `⊢ p` (R3) | Lowering refuses a malformed program; the checker then types the schema of every step, checks the wiring, and checks the sinks against the output ontology: declared, non abstract types and properties, required properties, edge endpoint types, one rule per property or relationship type where a rule is editable, window keys no finer than the identity. A program with an error is not run. |
 | presentation (R6) | The lowering writes the kernel graph (one kernel operator per step, its ports and wires) from the program alone; the engine compiles it to one physical operator per step. The key functions below are read from the verb's fields. |
 | values | Decimals are numbers: 2.5 and 2.50 are one value and one key, and an operator that keeps one of several equal decimals keeps the number without trailing zeros (G5, which is #161). |
-| time (R8) | The clock is the only "now". A rows input may declare its `time` column and its `lateness` (Def. 6.1). |
+| time (R8) | The clock is the only "now". A program declares a lateness where it reads events (Def. 6.1): a rows input its `time` column and its `lateness`, a `series` that a `fold` reads its `lateness`. |
 
 ## Verbs
 
@@ -94,12 +94,12 @@ After a change `fixpoint` evaluates only the changed keys and the nodes that rea
 |---|---|
 | rows input with `time` and `lateness` | a row is late if `arr(e) > time(e) + lateness` (Def. 6.1); a late row or a late withdrawal is left out and counted under `lateRows` |
 | `window` | of `time(e)` only |
-| windowed `summarize` | T, `s` = window end, `u = ∞`; a window is kept until its end plus the largest lateness of its upstream rows inputs, or the host horizon (a number of window widths) when one of them declares none or none is upstream (D1 on #159), at most the window retention; a row for a window past that is left out and counted under `lateRows` |
+| windowed `summarize` | T, `s` = window end, `u = ∞`; a window is kept until its end plus the largest lateness of its upstream rows inputs (Cor. 6.5); a program where one of them declares none, or none is upstream, is refused, and so is a lateness beyond the window retention (#169 D1); a row for a window past that is left out and counted under `lateRows` |
 | `retain` | T, `s = −∞`, `u = time(e) + age` |
 | `series` | T, `u` = window start + `lookback`; `since` is the clock at the end of which the element first had rows, sampled at the end of each clock (D3 on #159) |
 | `series` with `fill` | the progress of a source is a recorded input, records (source, until), not a time: the greatest `until` per source (K), joined with the sources that feed the window (J), window end at or before `until` less the hop lag (L), and window end at or before the clock (T) |
 | `series` with `freshness` | the no-data record of an element: T with `s = S + freshness`, `S` the later of `since` and the end of its newest record, until a newer record; it sits at the window that holds `S + freshness`. A roll-up in no data: K by the roll-up key, at the greatest window of its members' records |
-| `fold` | `s` = the close of the transition's window, `u = ∞`; the fold is a function of its present rows (#151 D6): a row added or withdrawn at a closed window, or a policy row withdrawn, changes the key's transitions from that window on (Prop. 6.7 (2)); the policy of a window is the present row of greatest `since` below its close (the clock at which the row entered, kept while the row is present at the end of each clock, #151 D4) |
+| `fold` | `s` = the close of the transition's window, `u = ∞`; window `n` closes at its end plus λ, the lateness of its `window` or the `lateness` of the `series` it reads, and a fold without one is refused (#169 D1); the fold is a function of its present rows (#151 D6): a row added or withdrawn at a closed window, or a policy row withdrawn, changes the key's transitions from that window on (Prop. 6.7 (2)); the policy of a window is the present row of greatest `since` below its close (the clock at which the row entered, kept while the row is present at the end of each clock, #151 D4) |
 
 ## Gaps
 
@@ -112,4 +112,4 @@ Found by this note (second pass, listed on #159 before code):
 | G5 | decimals in `min`, `max`, `arg_max`, `arg_min`, keys, `distinct` | the output kept the digits of the first equal value that arrived | R1 | fixed with #161 (D7) |
 | G6 | `series` with `fill` | the progress of a source looked like a second time | R8 | not a gap: progress is a recorded input (D7); see time |
 | G7 | `series` no-data record | it sat at a window made from the clock | R8 | fixed (D8); no output changed, the window is not observable |
-| G8 | windowed `summarize`, `fold` without a declared lateness | the state is dropped at a host horizon, not at a lateness of the program | R1 | moved to #142 (D1 (b), D10): a lateness is declared only on rows inputs, and a `fold` reads windows, which have none |
+| G8 | windowed `summarize`, `fold` without a declared lateness | the state is dropped at a host horizon, not at a lateness of the program | R1 | fixed with #169 (D1): a rows input upstream of a `window` and a `series` read by a `fold` declare the lateness; there is no host horizon |

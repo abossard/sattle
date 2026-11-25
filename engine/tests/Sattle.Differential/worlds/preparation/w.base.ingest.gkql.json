@@ -2,7 +2,7 @@
   "graph": "ingest",
   "ontology": "w.base",
   "history": 0,
-  "inputs": [{"name": "samples", "rows": "w.base.R"}],
+  "inputs": [{"name": "samples", "rows": "w.base.R", "time": "t", "lateness": "3m"}],
   "parameters": [],
   "verbs": [
     {"id": "samples", "verb": "rows", "source": "samples"},

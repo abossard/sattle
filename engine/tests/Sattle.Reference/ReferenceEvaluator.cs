@@ -14,12 +14,7 @@ public sealed record ProgressInput(string Source, long Until) : Input;
 public sealed record LossInput(long Time) : Input;
 
 /// <summary>`WindowRetentionNs`: the declared retention of the series of the space (Def. 7.13).</summary>
-/// <summary>`LateHorizonWindows` null: no late horizon.</summary>
-public sealed record Settings(string Tenant = "lab", int? LateHorizonWindows = 3, long WindowRetentionNs = 48L * 3_600_000_000_000)
-{
-    /// <summary>The late horizon of a window of this width as a time, the greatest time when there is none.</summary>
-    public System.Int128 Horizon(long width) => LateHorizonWindows is { } n ? (System.Int128)width * n : long.MaxValue;
-}
+public sealed record Settings(string Tenant = "lab", long WindowRetentionNs = 48L * 3_600_000_000_000);
 
 /// <summary>Every graph of a space after a prefix of the input log.</summary>
 public sealed record SpaceFacts(ImmutableSortedDictionary<string, GraphFacts> Graphs, long? Frontier);
@@ -159,7 +154,7 @@ public static class ReferenceEvaluator
                         var window = Upstream<TWindow>(plan, group) ?? throw new Undefined($"Group {group.Name} closes windows and has no Window upstream");
                         var rows = In("in");
                         var accepted = rows.Rows.Minus(p.SeenInput.GetValueOrDefault(slot, ZSet.Empty))
-                            .Where(r => OnTime(window, settings, ((InstantValue)rows.Reader(r.Row)("windowStart")).Ns, frontierBefore))
+                            .Where(r => OnTime(window, ((InstantValue)rows.Reader(r.Row)("windowStart")).Ns, frontierBefore))
                             .Aggregate(p.Accepted.GetValueOrDefault(slot, ZSet.Empty), (z, r) => z.Add(r.Row, r.Weight));
                         p = p with { SeenInput = p.SeenInput.SetItem(slot, rows.Rows), Accepted = p.Accepted.SetItem(slot, accepted) };
                         var closed = ZSet.Of(accepted.Where(r => frontier is not null && ((InstantValue)rows.Reader(r.Row)("windowStart")).Ns + window.WidthNs <= frontier));
@@ -168,7 +163,7 @@ public static class ReferenceEvaluator
                     }
                 case TFold fold:
                     {
-                        var (width, hop, lateness) = Windows(plan, fold, settings);
+                        var (width, hop, lateness) = Windows(plan, fold);
                         var (result, carried) = Denotation.Fold(fold, In("in"), In("policy"), width, hop, lateness, frontierBefore, frontier, p.Carried.GetValueOrDefault(slot, Denotation.Carried.None));
                         p = p with { Carried = p.Carried.SetItem(slot, carried) };
                         outs = outs.SetItem(op.Name, result);
@@ -228,24 +223,18 @@ public static class ReferenceEvaluator
     }
 
     /// <summary>Def. 6.4 for a fold: the windows of its nearest Window (width, hop, windows start on the grid of the hop) or Series (width and hop its period), and
-    /// the lateness λ that closes them, the time the engine keeps such a window revisable: the Window's lateness, else the late horizon, at most the retention.</summary>
-    static (long Width, long Hop, long Lateness) Windows(TypedProjection plan, TFold fold, Settings s)
-    {
-        long Revisable(long width, long? lateness) => (long)System.Int128.Min(lateness ?? s.Horizon(width), s.WindowRetentionNs);
-        return Upstream<TOp>(plan, fold, o => o is TWindow or TSeries) switch
+    /// the lateness λ that closes them, as the program declares it: the largest lateness of the rows inputs of the Window (Cor. 6.5), or the Series' own (#169 D1).</summary>
+    static (long Width, long Hop, long Lateness) Windows(TypedProjection plan, TFold fold) =>
+        Upstream<TOp>(plan, fold, o => o is TWindow or TSeries) switch
         {
-            TWindow w => (w.WidthNs, w.HopNs, Revisable(w.WidthNs, w.LatenessNs)),
-            TSeries x => (x.PeriodNs, x.PeriodNs, Revisable(x.PeriodNs, null)),
+            TWindow w => (w.WidthNs, w.HopNs, w.LatenessNs ?? throw new Undefined($"Fold {fold.Name}: its Window declares no lateness")),
+            TSeries x => (x.PeriodNs, x.PeriodNs, x.LatenessNs ?? throw new Undefined($"Fold {fold.Name}: its Series declares no lateness")),
             _ => throw new Undefined($"Fold {fold.Name} has no Window or Series upstream"),
         };
-    }
 
-    /// <summary>Premise B2 and Def. 7.6: a row counts for its window unless the window was beyond the late horizon; a row for a closed window revises it.</summary>
-    static bool OnTime(TWindow w, Settings s, long windowStart, long? frontierAtPosition)
-    {
-        if (frontierAtPosition is not { } frontier) return true;
-        var end = windowStart + w.WidthNs;
-        var beyondHorizon = end + System.Int128.Min(w.LatenessNs ?? s.Horizon(w.WidthNs), s.WindowRetentionNs) <= frontier;      // revisable for the smaller of the inputs' lateness (Cor. 6.5), else the late horizon, and the retention (Def. 7.13)
-        return !beyondHorizon;
-    }
+    /// <summary>Premise B2, Cor. 6.5: a row counts for its window unless the clock had reached the window's end plus the lateness of its inputs; a row for a
+    /// closed window revises it.</summary>
+    static bool OnTime(TWindow w, long windowStart, long? frontierAtPosition) =>
+        frontierAtPosition is not { } frontier
+        || (System.Int128)windowStart + w.WidthNs + (w.LatenessNs ?? throw new Undefined($"Window {w.Name} declares no lateness")) > frontier;
 }

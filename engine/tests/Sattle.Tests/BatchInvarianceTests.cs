@@ -48,7 +48,7 @@ public class BatchInvarianceTests
         var a = Capture(Lines(instancesFirst: true)); var b = Capture(Lines(instancesFirst: false));
         try
         {
-            var opts = new EngineOptions { LateHorizonWindows = 1_000_000 };
+            var opts = new EngineOptions { };
             var first = ReplayTests.Replay(a, chunk, o: opts);
             var second = ReplayTests.Replay(b, chunk, o: opts);
             var i0 = first.Engine.Identities; var i1 = second.Engine.Identities;
@@ -120,17 +120,17 @@ public class BatchInvarianceTests
         Assert.Equal(5m, Changes(e).Single().Value);                           // one window of 5, not 3 or 2
     }
 
-    /// <summary>B2: a row for a window whose state is gone (beyond the late horizon of three widths) used to create a new window that replaced the value emitted earlier. It is dropped, counted, and changes nothing.</summary>
+    /// <summary>B2: a row for a window whose state is gone (beyond its input's lateness of 3 minutes) used to create a new window that replaced the value emitted earlier. It is dropped, counted, and changes nothing.</summary>
     [Theory]
     [InlineData(1, 10)] [InlineData(4, 10)] [InlineData(1, 30)] [InlineData(2, 5)]
-    public void A_row_for_a_window_beyond_the_late_horizon_is_dropped_and_counted_and_never_replaces_what_was_emitted(int lateRows, int laterMinutes)
+    public void A_row_for_a_window_beyond_its_lateness_is_dropped_and_counted_and_never_replaces_what_was_emitted(int lateRows, int laterMinutes)
     {
         using var e = NewHost();
         Resources(e);
         Activity(e, 2, Resource, 0, 3);
         e.Advance(T0 + 2 * Min, 10);                                               // the window closes with 3
         Assert.Equal(3m, Changes(e).Single().Value);
-        e.Advance(T0 + laterMinutes * Min, 11);                                    // beyond the horizon: the window's state is dropped
+        e.Advance(T0 + laterMinutes * Min, 11);                                    // beyond the lateness: the window's state is dropped
         Activity(e, 3, Resource, 5_000_000_000L, lateRows);                     // late rows for it
         e.Advance(T0 + (laterMinutes + 2) * Min, 12);
         Assert.Equal(3m, Changes(e).Single().Value);
@@ -144,7 +144,7 @@ public class BatchInvarianceTests
          "rows": [{"name": "R", "fields": [{"name": "k", "type": "Text"}, {"name": "t", "type": "Instant"}]}]}
         """;
     const string WideIngest = """
-        {"graph": "ingest", "ontology": "d", "inputs": [{"name": "a", "rows": "d.R"}], "parameters": [],
+        {"graph": "ingest", "ontology": "d", "inputs": [{"name": "a", "rows": "d.R", "time": "t", "lateness": "LATENESS"}], "parameters": [],
          "verbs": [
            {"id": "a", "verb": "rows", "source": "a"},
            {"id": "windows", "verb": "window", "window": {"time": "t", "period": "WIDTH"}},
@@ -160,17 +160,17 @@ public class BatchInvarianceTests
                    "graphs": [{"name": "master", "projection": "d.ingest", "master": true, "inputs": {"a": "a"}}]}}
         """;
 
-    /// <summary>Code review 2, defect 17: a window of any width takes its row and closes, with no late horizon (a replay) and with one of 1,000,000 windows. Before, the width times 1,000,000 passed the greatest time from 2 h 33 min on, so every row counted as too late and was dropped.</summary>
+    /// <summary>Code review 2, defect 17: a window of any width takes its row and closes, whatever lateness its input declares up to the retention (48 h).
+    /// Before, the width times a late horizon of 1,000,000 windows passed the greatest time from 2 h 33 min on, so a window was never revisable and every row was late (#169: the lateness is the program's, `end + λ` is computed without overflow).</summary>
     [Theory]
-    [InlineData("1h", null)] [InlineData("3h", null)] [InlineData("168h", null)]
-    [InlineData("1h", 1_000_000)] [InlineData("2h", 1_000_000)] [InlineData("3h", 1_000_000)] [InlineData("24h", 1_000_000)] [InlineData("168h", 1_000_000)]
-    [InlineData("168h", int.MaxValue)]
-    public void A_window_of_any_width_takes_its_rows_and_closes_whatever_the_late_horizon(string width, int? horizon)
+    [InlineData("1h", "0s")] [InlineData("3h", "1h")] [InlineData("168h", "1m")]
+    [InlineData("1h", "48h")] [InlineData("2h", "48h")] [InlineData("24h", "48h")] [InlineData("168h", "48h")]
+    public void A_window_of_any_width_takes_its_rows_and_closes_whatever_the_lateness(string width, string lateness)
     {
         var cat = new Sattle.Language.Catalog(Repo.Projections);
-        List<Sattle.Language.SourceFile> files = [new("d.module.gkql.json", Wide), new("d.ingest.gkql.json", WideIngest.Replace("WIDTH", width)), new("ds.module.gkql.json", WideSpace)];
+        List<Sattle.Language.SourceFile> files = [new("d.module.gkql.json", Wide), new("d.ingest.gkql.json", WideIngest.Replace("WIDTH", width).Replace("LATENESS", lateness)), new("ds.module.gkql.json", WideSpace)];
         Assert.Empty(cat.Load(files, updatePins: true).Diagnostics.Where(x => x.IsError).Select(x => x.ToString()));
-        using var h = new SpaceHost(files, new HostOptions { Projections = Repo.Projections, LateHorizonWindows = horizon });
+        using var h = new SpaceHost(files, new HostOptions { Projections = Repo.Projections });
         var w = Norm.DurationNs(width); var start = 1_794_300_000_000_000_000 / w * w;
         h.Advance(start + 1, 1);                                 // a replay advances before its first row
         var rw = new RowWriter(h.RowLayout("a"), h.Interner);
@@ -181,10 +181,10 @@ public class BatchInvarianceTests
         Assert.Single(h.Engine.Master.State.Entities);
     }
 
-    /// <summary>The other side of B2: a late row inside the horizon revises the window (the horizon is the only thing that decides).</summary>
+    /// <summary>The other side of B2: a late row inside its input's lateness revises the window (the lateness is the only thing that decides).</summary>
     [Theory]
     [InlineData(1)] [InlineData(2)]
-    public void A_row_for_a_window_inside_the_late_horizon_revises_it(int lateRows)
+    public void A_row_for_a_window_inside_its_lateness_revises_it(int lateRows)
     {
         using var e = NewHost();
         Resources(e);

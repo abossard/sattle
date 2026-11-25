@@ -12,7 +12,7 @@ public class LineageTests
 
     static SpaceHost Serve(string dir)
     {
-        var h = new SpaceHost(EstateFiles(), new HostOptions { Projections = Repo.Projections, LateHorizonWindows = 1_000_000 });
+        var h = new SpaceHost(EstateFiles(), new HostOptions { Projections = Repo.Projections });
         new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 200, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000}).Run(dir);
         h.Finish();
         return h;
@@ -220,7 +220,7 @@ public class LineageTests
         space["space"]!["graphs"]!.AsArray().Add(new JsonObject { ["name"] = "byGroup", ["projection"] = "bg.pairs", ["inputs"] = new JsonObject { ["master"] = "master" } });
         files[i] = files[i] with { Text = space.ToJsonString() };
         files.AddRange([new SourceFile("acme.bygroup.module.gkql.json", ByGroup), new SourceFile("acme.bygroup.pairs.gkql.json", Pairs)]);
-        var h = new SpaceHost(files, new HostOptions { Projections = Repo.Projections, LateHorizonWindows = 1_000_000 });
+        var h = new SpaceHost(files, new HostOptions { Projections = Repo.Projections });
         using (h)
         {
             new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 200, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000}).Run(Estate);

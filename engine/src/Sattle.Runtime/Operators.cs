@@ -64,16 +64,8 @@ public sealed class OpContext(Interner it, RuntimeFaults faults, IdentityCatalog
     public GraphKey Graph { get; } = graph;
     public OutputBuilder Out { get; } = output;
     public long LateDropped, SkippedEmits;
-    /// <summary>The late horizon: how many widths after its end a closed window stays revisable. Null is no horizon: the window stays revisable while it is retained (a recording is finite, so a replay sets none).</summary>
-    public long? LateHorizonFactor = 3;
-    /// <summary>The retention of windows (Def. 7.13). A window is revisable for the smaller of this and the late horizon: a row for a window that is no longer kept must not write it again.</summary>
-    public long RetentionNs = long.MaxValue;
-    /// <summary>The late horizon of a window of this width as a time; the greatest time when there is none or the product is beyond it.</summary>
-    public long HorizonOf(long width) => LateHorizonFactor is { } n ? Clamp((Int128)width * n) : long.MaxValue;
-    /// <summary>How long after its end a window of this width stays revisable: the lateness of its inputs when they declare one (Ch. 6, Cor. 6.5), else the late horizon.</summary>
-    public long RevisableFor(long width, long? lateness = null) => Math.Min(lateness ?? HorizonOf(width), RetentionNs);
-    /// <summary>Whether a window of this width that ended at `end` can no longer be revised at this frontier.</summary>
-    public bool PastRevision(long end, long width, long frontier, long? lateness = null) => (Int128)end + RevisableFor(width, lateness) <= frontier;
+    /// <summary>Whether a window that ended at `end` can no longer be revised at this frontier: its end plus the lateness its program declares (Ch. 6, Cor. 6.5, #169 D1).</summary>
+    public static bool PastRevision(long end, long frontier, long lateness) => (Int128)end + lateness <= frontier;
     public static long Clamp(Int128 time) => time > long.MaxValue ? long.MaxValue : (long)time;
 }
 
@@ -894,14 +886,14 @@ sealed class WindowedGroupOp : AggregatingOp
 {
     sealed class W(KeyTable t, long end) { public KeyTable Table = t; public long End = end; public bool Closed; }
     readonly SortedDictionary<long, W> windows = [];
-    readonly long width; readonly long? lateness; readonly int wsKey, outWs;
+    readonly long width, lateness; readonly int wsKey, outWs;
     readonly int[] keyOutNoWs;
     long frontier = long.MinValue;
     readonly int nKeys;
     readonly List<(W Win, long Ws)> revised = [];
     readonly string name;
 
-    public WindowedGroupOp(TGroup t, long width, Layout inLayout, OpContext cx, bool withCompanions = false, long? lateness = null)
+    public WindowedGroupOp(TGroup t, long width, long lateness, Layout inLayout, OpContext cx, bool withCompanions = false)
         : base(t, t.Keys.Where(k => !(k.Name == "windowStart")).ToList(), t.Aggs, inLayout, cx, [.. t.Keys.Where(k => k.Name != "windowStart").Select(k => k.Name)], false, withCompanions)
     {
         this.width = width; this.lateness = lateness; name = t.Name;
@@ -933,7 +925,7 @@ sealed class WindowedGroupOp : AggregatingOp
                     if (!windows.TryGetValue(ws, out cur))
                     {
                         // beyond the allowed lateness the window's state is gone: a row for it is dropped, never a new window that would replace what was emitted
-                        if (cx.PastRevision(ws + width, width, frontier, lateness)) { cx.LateDropped++; cur = null; curWs = long.MinValue; continue; }
+                        if (OpContext.PastRevision(ws + width, frontier, lateness)) { cx.LateDropped++; cur = null; curWs = long.MinValue; continue; }
                         cur = new W(NewTable(), ws + width); windows[ws] = cur; if (cur.End <= frontier) cur.Closed = true;
                     }
                     curWs = ws;
@@ -971,7 +963,7 @@ sealed class WindowedGroupOp : AggregatingOp
                 foreach (var slot in t.Slots())
                     if (t.Cnt(slot) > 0) WriteRow(bb, t, slot, 1, ws, ws + width, outWs, -1);
             }
-            foreach (var ws in windows.Where(w => cx.PastRevision(w.Value.End, width, frontier, lateness)).Select(w => w.Key).ToList())
+            foreach (var ws in windows.Where(w => OpContext.PastRevision(w.Value.End, frontier, lateness)).Select(w => w.Key).ToList())
             {
                 windows.Remove(ws);
             }
@@ -1091,7 +1083,7 @@ sealed class RollupOp : AggregatingOp
 
 /// <summary>Fold (Ch. 6, Def. 6.5): per key a state over its windows in order, silent ones too, selected at the clock (Def. 6.2, s = close, u = ∞).
 /// Windows follow Def. 6.4 on the grid of the hop of the nearest Window upstream, or the period of a Series: window `ws` is [ws, ws + width) and closes at
-/// `close = ws + width + λ`, λ the Window's lateness, else the late horizon. The output at a clock is the transitions of the present rows whose window has
+/// `close = ws + width + λ`, λ the lateness its program declares for these windows (#169 D1). The output at a clock is the transitions of the present rows whose window has
 /// closed: a key's first window that is not silent and has a policy, and every window whose shown state differs from the one before. The policy of a window
 /// is the present policy row (told apart as a whole row) of greatest `since` below its close, `since` being the clock the row entered at (#151 D4), kept
 /// while the row is present at the end of each clock.

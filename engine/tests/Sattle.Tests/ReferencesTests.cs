@@ -41,7 +41,7 @@ public class ReferencesTests
 
     static (SpaceHost Host, JsonNode Space) Serve(string dir, List<SourceFile> files)
     {
-        var h = new SpaceHost(files, new HostOptions { Projections = Repo.Projections, LateHorizonWindows = 1_000_000 });
+        var h = new SpaceHost(files, new HostOptions { Projections = Repo.Projections });
         new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 200, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000}).Run(dir);
         h.Finish();
         return (h, h.SpaceInfo());
@@ -163,7 +163,7 @@ public class ReferencesTests
             var (h, _) = Serve(dir, files);
             using (h)
             {
-                var run = ReplayTests.Replay(dir, o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 });
+                var run = ReplayTests.Replay(dir, o: new EngineOptions { Tenant = "lab" });
                 run.Read(x => { x.WriteFiles(outDir, Repo.LoadExamples(out _).Spaces.Values.Single()); return 0; });
                 var manifest = JsonNode.Parse(File.ReadAllText(Path.Combine(outDir, "manifest.json")))!["graphs"]!.AsObject();
                 Assert.All(manifest, g =>

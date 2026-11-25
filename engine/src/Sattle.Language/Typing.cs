@@ -101,12 +101,13 @@ public sealed record TMap(string Name, string Id, IReadOnlyDictionary<string, Sr
 public sealed record TGroup(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, IReadOnlyList<(string Name, TExpr Value)> Keys, IReadOnlyList<TAgg> Aggs, bool ClosesWindows)
     : TOp(Name, Id, "Group", Inputs, Out);
 public sealed record TRetain(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string TimeField, long AgeNs) : TOp(Name, Id, "Retain", Inputs, Out);
-/// <summary>`LatenessNs`: the largest lateness of the rows ports upstream when every one of them declares one (Ch. 6, Cor. 6.5): a window stays revisable that long after its end. Null: the host's late horizon.</summary>
+/// <summary>`LatenessNs`: the largest lateness of the rows ports upstream when every one of them declares one (Ch. 6, Cor. 6.5): a window stays revisable that long after its end. Null when one of them declares none or none is upstream: the checker refuses a windowed Group or a Fold over it (#169 D1).</summary>
 public sealed record TWindow(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string TimeField, long WidthNs, long HopNs, long? LatenessNs = null) : TOp(Name, Id, "Window", Inputs, Out);
 /// <summary>`Fill`: the value a covered window without a stored record has (Def. 7.15), or null.</summary>
 public sealed record TSeriesRead(string Var, string PropId, string OutName, string ValueKind, decimal? Fill = null);
-/// <summary>`TtlNs`: the time to live (Def. 7.16). With it the output has the column `noData`: true on the one record an element in no data has, which carries no values.</summary>
-public sealed record TSeries(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string GraphPort, IReadOnlyList<TSeriesRead> Reads, long WithinNs, long PeriodNs, string TargetVar, long? TtlNs = null)
+/// <summary>`TtlNs`: the time to live (Def. 7.16). With it the output has the column `noData`: true on the one record an element in no data has, which carries no values.
+/// `LatenessNs`: how long after its end a window the series reads can still change (Def. 6.4), declared where the program reads the graph; a Fold over the series closes its windows by it (#169 D1).</summary>
+public sealed record TSeries(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string GraphPort, IReadOnlyList<TSeriesRead> Reads, long WithinNs, long PeriodNs, string TargetVar, long? TtlNs = null, long? LatenessNs = null)
     : TOp(Name, Id, "Series", Inputs, Out)
 {
     /// <summary>The column a Series with a time to live adds and a Rollup passes on.</summary>
@@ -158,6 +159,18 @@ public sealed class TypedProjection
     IReadOnlySet<string>? entityTypes;
     public required IReadOnlyList<TRule> Rules { get; init; }
     public TPort Port(string name) => Ports.First(p => p.Name == name);
+    /// <summary>The windows a windowed Group or a Fold reads (Def. 6.4): the period of the nearest Series upstream along `in`, else the nearest Window, and the
+    /// lateness λ that closes them, `end + λ`. λ is null when the program declares none; the checker refuses that (#169 D1).</summary>
+    public (long Width, long Hop, long? Lateness) WindowsOf(TOp op)
+    {
+        for (var cur = op; cur.Inputs.TryGetValue("in", out var src) && !src.IsPort;)
+        {
+            cur = Ops.First(o => o.Name == src.Name);
+            if (cur is TSeries s) return (s.PeriodNs, s.PeriodNs, s.LatenessNs);
+            if (cur is TWindow w) return (w.WidthNs, w.HopNs, w.LatenessNs);
+        }
+        return Ops.OfType<TWindow>().First(x => x.Out.Window == op.Out.Window) is var win ? (win.WidthNs, win.HopNs, win.LatenessNs) : default;
+    }
 }
 
 public sealed record TSource(string Name, string Adapter, string RowTypeId);

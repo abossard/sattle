@@ -8,7 +8,7 @@ public class RatingPolicyTests
 {
     static readonly string Example = Path.Combine(Repo.Root, "engine", "examples", "kiln");
 
-    static SpaceHost Open(int enterAfter, int? lateHorizonWindows = 3)
+    static SpaceHost Open(int enterAfter)
     {
         var files = Catalog.ReadDirectory(Example);
         var i = files.FindIndex(f => f.Path.EndsWith("workshop.rating.gkql.json", StringComparison.Ordinal));
@@ -17,7 +17,7 @@ public class RatingPolicyTests
         var crossing = policy["verbs"]!.AsArray().Single(v => (string?)v!["id"] == "crossingPolicy")!;      // the policy rows of the fold (#151 D4)
         crossing["columns"]!["enterAfter"] = new JsonObject { ["lit"] = enterAfter };
         files[i] = files[i] with { Text = policy.ToJsonString() };
-        var host = new SpaceHost(files, new HostOptions { SpaceName = "kiln", Projections = Repo.Projections, LateHorizonWindows = lateHorizonWindows });
+        var host = new SpaceHost(files, new HostOptions { SpaceName = "kiln", Projections = Repo.Projections });
         host.StartLive(new ReplayOptions { LatenessNs = 0 });
         return host;
     }

@@ -5,7 +5,7 @@
   "history": 120,
   "inputs": [
     {"name": "resources", "rows": "tutorial.ResourceRow"},
-    {"name": "metrics", "rows": "tutorial.ResourceMetricRow"},
+    {"name": "metrics", "rows": "tutorial.ResourceMetricRow", "time": "time", "lateness": "3m"},
     {"name": "network", "rows": "tutorial.AzureNetworkRow"},
     {"name": "pods", "rows": "tutorial.PodRow"},
     {"name": "deployments", "rows": "tutorial.DeploymentRow"},

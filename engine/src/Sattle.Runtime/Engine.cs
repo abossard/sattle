@@ -15,9 +15,7 @@ public sealed record EngineOptions
     /// <summary>The store the engine commits its patches to. The default keeps the head number of each graph only (`HeadOnlyGraphStore`); a durable store keeps the history.</summary>
     public Func<string, IGraphStore> StoreFactory { get; init; } = _ => new HeadOnlyGraphStore();
     public Func<IWindowStore> WindowStoreFactory { get; init; } = () => new InMemoryWindowStore();
-    /// <summary>Closed windows stay revisable for this many window widths (allowed lateness, Def. 7.6). Null is no late horizon: a closed window stays revisable while it is retained.</summary>
-    public int? LateHorizonWindows { get; init; } = 3;
-    /// <summary>The declared retention of every series of the space (Def. 7.13): a closed window is kept while its end is after the logical frontier minus this age. Until the definitions declare it per series it is one age for the space. A window is revisable for the smaller of this and the late horizon.</summary>
+    /// <summary>The declared retention of every series of the space (Def. 7.13): a closed window is kept while its end is after the logical frontier minus this age. Until the definitions declare it per series it is one age for the space. A lateness or a look-back longer than this is refused.</summary>
     public long WindowRetentionNs { get; init; } = 48L * 3_600_000_000_000;
     /// <summary>When set, only these graphs and the graphs they derive from are activated (a staged evaluation of one view needs no other graph).</summary>
     public IReadOnlySet<string>? Only { get; init; }
@@ -78,28 +76,6 @@ public static class PlanCompiler
                 return (new(cols, group), [.. carry]);
             default: return (new(own, null), []);
         }
-    }
-
-    /// <summary>The Window whose windows a Group closes: the nearest one upstream of it.</summary>
-    static TWindow WindowOf(TypedProjection tp, TOp op)
-    {
-        for (var cur = op; cur.Inputs.TryGetValue("in", out var src) && !src.IsPort;)
-        {
-            cur = tp.Ops.First(o => o.Name == src.Name);
-            if (cur is TWindow w) return w;
-        }
-        return tp.Ops.OfType<TWindow>().First(x => x.Out.Window == op.Out.Window);
-    }
-
-    /// <summary>The nearest Series upstream of an operator along its `in` inputs (its `within` and its period); null when it reads no Series.</summary>
-    static TSeries? SeriesOf(TypedProjection tp, TOp op)
-    {
-        for (var cur = op; cur.Inputs.TryGetValue("in", out var src) && !src.IsPort;)
-        {
-            cur = tp.Ops.First(o => o.Name == src.Name);
-            if (cur is TSeries s) return s;
-        }
-        return null;
     }
 
     /// <summary>
@@ -220,8 +196,8 @@ public static class PlanCompiler
                 case TWindow w: op = new WindowOp(w, inL, cx); strategies.Add($"{w.Name}: Window, linear, window assignment"); break;
                 case TGroup g when g.ClosesWindows:
                     {
-                        var win = WindowOf(tp, g);
-                        op = new WindowedGroupOp(g, win.WidthNs, inL, cx, withCompanions, win.LatenessNs);
+                        var (width, _, lambda) = tp.WindowsOf(g);
+                        op = new WindowedGroupOp(g, width, lambda!.Value, inL, cx, withCompanions);
                         strategies.Add($"{g.Name}: Group over windows, per-window hash accumulators, windows close on the logical frontier, a late row revises its window");
                         break;
                     }
@@ -230,9 +206,8 @@ public static class PlanCompiler
                 case TRollup r: op = new RollupOp(r, inL, cx, withCompanions); strategies.Add($"{r.Name}: Rollup, per (key, window) accumulators, decomposable sum"); break;
                 case TFold fo:
                     {
-                        var (width, hop, lambda) = SeriesOf(tp, fo) is { } series ? (series.PeriodNs, series.PeriodNs, cx.RevisableFor(series.PeriodNs))
-                            : WindowOf(tp, fo) is var w ? (w.WidthNs, w.HopNs, cx.RevisableFor(w.WidthNs, w.LatenessNs)) : default;
-                        op = new FoldOp(fo, inL, InputLayout(fo, "policy"), cx, width, hop, lambda);
+                        var (width, hop, lambda) = tp.WindowsOf(fo);
+                        op = new FoldOp(fo, inL, InputLayout(fo, "policy"), cx, width, hop, lambda!.Value);
                         strategies.Add($"{fo.Name}: Fold, per key a state over its windows in order, selected when the clock reaches a window's close; a change at a closed window steps the key again from that window");
                         break;
                     }
@@ -261,7 +236,7 @@ public static class PlanCompiler
             if (chain.Count > 1) chains.Add(chain);
         }
         var digest = Digests.Of("[\"" + EngineVersion + "\",\"" + catalog.Modules.GetValueOrDefault(tp.Module)?.Digest + "\",\"" + tp.Id + "\"]");
-        var bound = "Series and Rollup state is bounded by look-back / period windows per key; Group by open windows plus " + (cx.LateHorizonFactor is { } horizon ? horizon + " closed windows" : "the closed windows that are retained") + "; Match, Join-free, holds no state beyond the input graph.";
+        var bound = "Series and Rollup state is bounded by look-back / period windows per key; Group and Fold by open windows plus the closed windows within the lateness the program declares; Match, Join-free, holds no state beyond the input graph.";
         return new CompiledProjection { Typed = tp, Ops = ops, Info = new PlanInfo(tp.Name, digest, strategies, chains, bound) };
     }
 }
@@ -399,9 +374,12 @@ public sealed class Engine : IDisposable, IEngineInput
             var tp = ProjectionOf(next);
             var key = new GraphKey(this.options.Tenant, next.Name);
             var outb = new OutputBuilder(Interner);
-            var cx = new OpContext(Interner, Faults, Identities, this.options.Tenant, tp.OutputModule, key, outb) { LateHorizonFactor = this.options.LateHorizonWindows, RetentionNs = this.options.WindowRetentionNs };
+            var cx = new OpContext(Interner, Faults, Identities, this.options.Tenant, tp.OutputModule, key, outb);
             foreach (var series in tp.Ops.OfType<TSeries>().Where(x => x.WithinNs > this.options.WindowRetentionNs))
                 throw new InvalidOperationException($"graph {next.Name}: {series.Name} reads {Norm.DurationText(series.WithinNs)} back, and windows are retained for {Norm.DurationText(this.options.WindowRetentionNs)} (Def. 7.13)");
+            foreach (var op in tp.Ops.Where(x => x is TFold or TGroup { ClosesWindows: true }))
+                if (tp.WindowsOf(op).Lateness is { } late && late > this.options.WindowRetentionNs)
+                    throw new InvalidOperationException($"graph {next.Name}: {op.Name} keeps a window revisable for {Norm.DurationText(late)} after its end, and windows are retained for {Norm.DurationText(this.options.WindowRetentionNs)} (Def. 7.13)");
             var gr = new GraphRuntime { Name = next.Name, Key = key, Plan = PlanCompiler.Compile(tp, catalog, cx, next.Bindings.Where(kv => active.Any(x => x.Name == kv.Value)).ToDictionary(kv => kv.Key, kv => ProjectionOf(active.First(x => x.Name == kv.Value)).EntityTypes), this.options.TraceGraphs?.Contains(next.Name) == true), IsMaster = next.Master, Ingests = tp.Purpose == "ingestion", Cx = cx, Out = outb, State = new Graph(Interner) };
             foreach (var (port, from) in next.Bindings) gr.PortSources[port] = from;
             graphs.Add(gr); byName[next.Name] = gr;

@@ -667,6 +667,15 @@ The text editor of a projection reads and checks its `.kql` text through these c
 - **Digest per graph.** Each entry of `GET /health` `graphs` has `digest`: the graph's digest at its head (Def. 3.5, the `digest` of a preview's graphs), from the pass that makes the state digest. The catalog's too.
 - **Telemetry port (no wire change).** `ITelemetryStore.ScanGraph` hands every window of a graph in a range to a visitor, also the windows of an element that left; without a visitor it counts them and allocates nothing. `SeriesCount`, `PartialWindows` and `MergeConflicts` are on the port. `InMemoryTelemetryStore.Dump` and `WindowCount` are gone.
 
+## Version 3.68: lateness declared where a program reads events, no host late horizon (#169)
+- **Semantics (paper Ch. 6, Def. 6.4, Cor. 6.5).** A windowed `summarize` keeps a window revisable until its end plus the largest lateness of the rows inputs upstream of its `window`. A `fold` closes window `ws` at `ws + width + λ`, λ that of its `window`, or the `lateness` of the `series` it reads. No state is dropped at a horizon of the host (#169 D1).
+- **gkql.** Every rows input upstream of a `window` names its `time` and `lateness`. `series` takes `lateness`: `{"element": "m", "property": "reading", "lookback": "2h", "lateness": "3m"}`. A program without them is refused at check: `Group`: "x closes windows of rows input a, which declares no time and lateness"; `Fold`: "f folds the windows of series s, which declares no lateness". A series no fold reads needs none.
+- **Retention.** A lateness longer than the window retention is refused when the graph is activated, as a look-back is (Def. 7.13).
+- **Kernel.** `Series` gains `lateness:I?`.
+- **Command line.** `--late-horizon` is gone from `replay`, `serve` and `--live`; a command line that still names it runs as without it.
+- **Store.** The journal header and the seal no longer write `lateHorizon`; the field of an older store is ignored when it is read.
+- **Wire.** No HTTP or WebSocket field changes; the canvas client needs no change.
+
 ## Version 3.67: one keyed fold over ordered windows, no Threshold (#151)
 - **Kernel.** The operator `Threshold` is gone. `Fold : Operator | show:T` reads window rows on `in` and policy rows on `policy` and writes `out`. Slots: `key` (Assign, one or more), `observe` (Aggregate, `fn` `count`, `min` or `max`, with a `value`), `policy` (FieldRef, one or more, ordered), `state` (`FoldState | target:T`, one or more, ordered, each with `start` and `next`, one Expr each). The kernel digest is `sha256:52598d41a007067d92e67f6c43a9e54cd29e7135b7d29113ec1869de69d451f7`.
 - **gkql.** The verb `hysteresis` is gone; a program with it is refused (`unknown verb 'hysteresis'`). The verb `fold` takes `{"by", "observe", "policy", "state", "show"}` and two wires, to `in` and to `policy` (README). Its output has one row per transition: the keys, `windowStart`, `windowEnd`, `from` (at a key's first window the shown state of `start`), `to`, the observed values, the policy columns and `since`. The state a key shows now is a `summarize` with `arg_max(windowStart, to)`.

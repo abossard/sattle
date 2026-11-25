@@ -18,7 +18,7 @@ public static class Program
 {
     const string Usage = """
         sattle check  [--defs DIR] [--update-pins] [--plan]
-        sattle replay CAPTURE [--defs DIR] [--overlay FILE] [--space NAME] [--speed N] [--advance-every 60s] [--lateness 60s] [--late-horizon WINDOWS] [--chunk N]
+        sattle replay CAPTURE [--defs DIR] [--overlay FILE] [--space NAME] [--speed N] [--advance-every 60s] [--lateness 60s] [--chunk N]
                               [--store memory|sqlite=PATH|cosmos=ENDPOINT[,db=NAME][,drop]] [--until RFC3339] [--out DIR]
         sattle serve  CAPTURE [replay options] [--port 5080] [--write-definitions] [--store sqlite=PATH|cosmos=ENDPOINT[,db=NAME]] [--seal-every ENTRIES] [--no-seal] [--verify-journal] [--retain-patches N] [--retain-events N]
         sattle serve  --store sqlite=PATH|cosmos=ENDPOINT[,db=NAME] [--port 5080]       (restart from the journal of the store, no capture needed)
@@ -232,7 +232,6 @@ public static class Program
         var opts = new EngineOptions
         {
             Tenant = "lab",
-            LateHorizonWindows = LateHorizonFor(o),   // a replay is finite: keep every window revisable so history is not dropped as too late (a live source keeps 3; `serve` of a capture uses the same value as `replay`)
             StoreFactory = _ => store.StartsWith("sqlite=", StringComparison.Ordinal) ? new SqliteGraphStore(store["sqlite=".Length..]) : store.StartsWith("cosmos=", StringComparison.Ordinal) ? OpenCosmos(store["cosmos=".Length..]) : new HeadOnlyGraphStore(),
         };
         var engine = new Engine(cat, spaceId, opts);
@@ -294,14 +293,12 @@ public static class Program
         output.WriteLine("state digest " + e.StateDigest());
     }
 
-    /// <summary>The late horizon of a run: `--late-horizon` when given, 3 for a live source (it must bound its state), none for a recorded capture, whether it is replayed or served: serving a capture is a replay.</summary>
-    public static int? LateHorizonFor(Options o) => int.TryParse(o.Get("late-horizon"), out var lh) ? lh : o.Flags.Contains("live") ? 3 : null;
 
     // ---- serve ----
 
     /// <summary>The options `serve` builds its host with.</summary>
     public static Sattle.Runtime.HostOptions HostOptionsFor(Options o, IDurableStore? durable) =>
-        new Sattle.Runtime.HostOptions { LateHorizonWindows = LateHorizonFor(o), SpaceName = o.Get("space"), SealEvery = o.Flags.Contains("no-seal") ? 0 : long.TryParse(o.Get("seal-every"), out var se) ? se : durable is null ? 0 : 5000, UseSeal = !o.Flags.Contains("verify-journal") && !o.Flags.Contains("no-seal"), VerifyJournal = o.Flags.Contains("verify-journal"), RetainPatches = int.TryParse(o.Get("retain-patches"), out var rp) ? rp : 2_000, RetainEvents = int.TryParse(o.Get("retain-events"), out var re) ? re : 20_000, Projections = Program.Projections };
+        new Sattle.Runtime.HostOptions { SpaceName = o.Get("space"), SealEvery = o.Flags.Contains("no-seal") ? 0 : long.TryParse(o.Get("seal-every"), out var se) ? se : durable is null ? 0 : 5000, UseSeal = !o.Flags.Contains("verify-journal") && !o.Flags.Contains("no-seal"), VerifyJournal = o.Flags.Contains("verify-journal"), RetainPatches = int.TryParse(o.Get("retain-patches"), out var rp) ? rp : 2_000, RetainEvents = int.TryParse(o.Get("retain-events"), out var re) ? re : 20_000, Projections = Program.Projections };
 
     static int Serve(Options o, string capture, TextWriter output)
     {

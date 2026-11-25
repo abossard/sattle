@@ -2,7 +2,7 @@
   "graph": "ingest",
   "ontology": "w",
   "history": 0,
-  "inputs": [{"name": "a", "rows": "w.R"}, {"name": "b", "rows": "w.R"}],
+  "inputs": [{"name": "a", "rows": "w.R", "time": "t", "lateness": "9m"}, {"name": "b", "rows": "w.R"}],
   "parameters": [],
   "verbs": [
     {"id": "a", "verb": "rows", "source": "a"},

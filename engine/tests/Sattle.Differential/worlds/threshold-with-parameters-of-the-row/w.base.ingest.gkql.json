@@ -4,7 +4,7 @@
   "history": 0,
   "inputs": [
     {"name": "a", "rows": "w.base.R"},
-    {"name": "b", "rows": "w.base.R"},
+    {"name": "b", "rows": "w.base.R", "time": "t", "lateness": "3m"},
     {"name": "edges", "rows": "w.base.EdgeRow"}
   ],
   "parameters": [],

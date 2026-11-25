@@ -19,7 +19,7 @@ public class CheckerTests
         """;
 
     const string Ingest = """
-        {"graph": "ingest", "ontology": "t", "inputs": [{"name": "a", "rows": "t.R"}], "parameters": [],
+        {"graph": "ingest", "ontology": "t", "inputs": [{"name": "a", "rows": "t.R", "time": "t", "lateness": "3m"}], "parameters": [],
          "verbs": [
            {"id": "a", "verb": "rows", "source": "a"},
            {"id": "items", "verb": "nodes", "rule": "observed", "target": {"nodes": [{"var": "i", "label": "Item", "id": {"identity": "item", "args": [{"ref": "k"}]}, "props": {"k": {"ref": "k"}, "g": {"ref": "g"}}}]}},
@@ -113,7 +113,7 @@ public class CheckerTests
 
     /// <summary>The windows of `value` over three minutes with the further series options `series`, a fold over them (silence is its silent windows, #151 D3), and a sink.</summary>
     static SourceFile[] Quiet(string series, string value = "hits") => View(
-        Items + ", {\"id\": \"series\", \"verb\": \"series\", \"graph\": \"master\", \"series\": {\"element\": \"i\", \"property\": \"" + value + "\", \"lookback\": \"3m\"" + series + "}}, "
+        Items + ", {\"id\": \"series\", \"verb\": \"series\", \"graph\": \"master\", \"series\": {\"element\": \"i\", \"property\": \"" + value + "\", \"lookback\": \"3m\", \"lateness\": \"3m\"" + series + "}}, "
         + Fold("state", "k", value) + ", "
         + """{"id": "out", "verb": "nodes", "target": {"nodes": [{"var": "o", "label": "Out", "id": {"identity": "out", "args": [{"ref": "k"}]}, "props": {"k": {"ref": "k"}, "flag": {"ref": "state"}}}]}}""",
         string.Join(", ", FromItems, Wire("fields", "series"), FoldWires("state", "series", "fields"), Wire("state", "out")));
@@ -140,10 +140,10 @@ public class CheckerTests
         wires ?? string.Join(", ", FromItems, Wire("fields", "e"), Wire("fields", "f"), Wire("e", "f", "edges"), Wire("f", "out")));
     const string ByG = "\"edges\": {\"from\": \"src\", \"to\": \"dst\"}, \"through\": {\"by\": \"by\", \"maps\": {\"x\": ";
 
-    /// <summary>The base alone, its rows input `a` with the further fields `fields` (a time column and a lateness).</summary>
+    /// <summary>The base alone, its rows input `a` with the further fields `fields` (a time column and a lateness, or none) in place of its own.</summary>
     static SourceFile[] Late(string fields) =>
     [
-        new("t.module.gkql.json", Base), new("t.ingest.gkql.json", Ingest.Replace("\"rows\": \"t.R\"}", "\"rows\": \"t.R\", " + fields + "}", StringComparison.Ordinal)),
+        new("t.module.gkql.json", Base), new("t.ingest.gkql.json", Ingest.Replace("\"rows\": \"t.R\", \"time\": \"t\", \"lateness\": \"3m\"}", "\"rows\": \"t.R\"" + (fields.Length > 0 ? ", " + fields : "") + "}", StringComparison.Ordinal)),
         new("s.module.gkql.json", Space("", "t").Replace(", ]", "]", StringComparison.Ordinal)),
     ];
 
@@ -240,7 +240,7 @@ public class CheckerTests
         { "a key and a column of the transitions of a fold of one name", View("""
             {"id": "items", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "i", "label": "Item"}]}},
             {"id": "keys", "verb": "project", "columns": {"i": {"ref": "i"}, "to": {"ref": "i.k"}}},
-            {"id": "series", "verb": "series", "graph": "master", "series": {"element": "i", "property": "hits", "lookback": "3m"}},
+            {"id": "series", "verb": "series", "graph": "master", "series": {"element": "i", "property": "hits", "lookback": "3m", "lateness": "3m"}},
             """ + Fold("level", "to", "hits") + ", " + """
             {"id": "out", "verb": "nodes", "target": {"nodes": [{"var": "o", "label": "Out", "id": {"identity": "out", "args": [{"ref": "to"}]}, "props": {"k": {"ref": "to"}}}]}}
             """, string.Join(", ", Wire("items", "keys"), Wire("keys", "series"), FoldWires("level", "series", "keys"), Wire("level", "out"))), "Fold", "two columns are named 'to'" },
@@ -266,6 +266,8 @@ public class CheckerTests
         { "a fixpoint whose order is empty", Fixpoint("\"value\": \"g\", \"order\": [], \"edges\": {\"from\": \"src\", \"to\": \"dst\"}"), "Program", "the order lists the values, least first" },
         { "a fixpoint without its edge rows", Fixpoint("\"value\": \"g\", \"order\": [\"a\"], \"edges\": {\"from\": \"src\", \"to\": \"dst\"}", string.Join(", ", FromItems, Wire("fields", "e"), Wire("fields", "f"), Wire("f", "out"))),
             "Program", "a fixpoint has one wire to in, the node rows, and one to edges, the edge rows" },
+        { "a window over a rows input that declares no lateness (#169 D1)", Late(""), "Group", "sums_1 closes windows of rows input a, which declares no time and lateness" },
+        { "a fold over a series that declares no lateness (#169 D1)", Quiet("").Select(f => f with { Text = f.Text.Replace("\"lookback\": \"3m\", \"lateness\": \"3m\"", "\"lookback\": \"3m\"", StringComparison.Ordinal) }).ToArray(), "Fold", "folds the windows of series series_1, which declares no lateness" },
         { "a rows input with a lateness and no time column", Late("\"lateness\": \"1m\""), "Program", "a rows input names its time column and its lateness together" },
         { "a rows input with a time column and no lateness", Late("\"time\": \"t\""), "Program", "a rows input names its time column and its lateness together" },
         { "a lateness that is no duration", Late("\"time\": \"t\", \"lateness\": \"soon\""), "Program", "'soon' is not a duration" },
@@ -350,7 +352,7 @@ public class CheckerTests
         files = [.. files, new("v.read.gkql.json", Program("read", "v", """[{"name": "view", "ontology": "v"}]""", """
             {"id": "beats", "verb": "graph-match", "graph": "view", "pattern": {"nodes": [{"var": "b", "label": "Beat"}]}},
             {"id": "keys", "verb": "project", "columns": {"b": {"ref": "b"}, "k": {"ref": "b.k"}}},
-            {"id": "series", "verb": "series", "graph": "view", "series": {"element": "b", "property": "beats", "lookback": "3m", "freshness": "2m", "fill": 0}},
+            {"id": "series", "verb": "series", "graph": "view", "series": {"element": "b", "property": "beats", "lookback": "3m", "freshness": "2m", "fill": 0, "lateness": "3m"}},
             """ + Fold("state", "k", "beats") + ", " + """
             {"id": "out", "verb": "nodes", "target": {"nodes": [{"var": "o", "label": "Out", "id": {"identity": "out", "args": [{"ref": "k"}]}, "props": {"k": {"ref": "k"}, "flag": {"ref": "state"}}}]}}
             """, string.Join(", ", Wire("beats", "keys"), Wire("keys", "series"), FoldWires("state", "series", "keys"), Wire("state", "out"))))];

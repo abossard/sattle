@@ -617,6 +617,69 @@ public class DifferentialTests
         Assert.Equal(late, e.Counters().LateRows);
     }
 
+    /// <summary>A world whose every declared lateness of 3 minutes, on its rows inputs and its series, is `minutes` instead.</summary>
+    static World WithLateness(World w, int minutes) => w with
+    {
+        Name = $"{w.Name}, lateness {minutes}m",
+        Files = [.. w.Files.Select(f => f with { Text = f.Text.Replace("\"lateness\": \"3m\"", $"\"lateness\": \"{minutes}m\"", StringComparison.Ordinal) })],
+    };
+
+    /// <summary>#169 A3 (Ch. 6, Def. 6.1, Cor. 6.5): window 0 ([0, 1m)) of `a` with a declared lateness λ. Its state is held while the clock is below its end plus λ
+    /// and no longer, whatever order the rows arrive in: a row of minute 0 that arrives at the last clock before that revises it, one that arrives at that clock is
+    /// late and left out. `{e}` is the clock 1m + λ − 1m. The reference agrees with the engine under every cut and with the rows of each batch reversed.</summary>
+    [Theory]
+    [MemberData(nameof(LatenessAndArrival))]
+    public void A_window_is_held_until_its_end_plus_the_declared_lateness_and_no_longer(int lambda, string order, string changes, long late)
+    {
+        Assert.NotEmpty(order);
+        var w = WithLateness(Worlds.Windowed, lambda);
+        var e = lambda;                                                         // the last clock (in minutes) below end + λ = 1 + λ
+        Sattle.Reference.Input[] log = [.. changes.Replace("{e+1}", (e + 1).ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal)
+            .Replace("{e}", e.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal).Split(' ').Select(LatenessInput)];
+        Assert.Null(Differential.FirstMismatch(w, log, 1, reordered: false));
+        Assert.Null(Differential.FirstMismatch(w, log, 1, reordered: true));
+        using var engine = new Engine(w.Catalog, w.Catalog.Spaces.Keys.Single(), new EngineOptions { WindowRetentionNs = w.RetentionNs });
+        // the windows whose state the windowed Group holds: its open ones and its closed ones within the lateness
+        var group = engine.Master.Plan.Ops.Single(o => o.GetType().Name == "WindowedGroupOp");
+        var field = group.GetType().GetField("windows", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        int Held() => ((System.Collections.ICollection)field.GetValue(group)!).Count;
+        var (seq, rowsIn) = (0L, false);
+        foreach (var input in log)
+        {
+            if (input is Sattle.Reference.AdvanceInput a)
+            {
+                engine.Advance(a.Frontier, ++seq);
+                Assert.True(Held() == (rowsIn && a.Frontier < (1 + lambda) * Logs.Minute ? 1 : 0), $"clock {a.Frontier / Logs.Minute}m: {Held()} windows held");
+            }
+            else { EngineRun.Ingest(engine, [(Sattle.Reference.RowInput)input], ++seq); rowsIn = true; }
+        }
+        Assert.Equal(late, engine.Counters().LateRows);
+    }
+
+    public static TheoryData<int, string, string, long> LatenessAndArrival()
+    {
+        var data = new TheoryData<int, string, string, long>();
+        foreach (var lambda in new[] { 0, 1, 3, 10 })
+        {
+            data.Add(lambda, "on time, then the clock passes the close", "+a:k0@0 +a:k1@0 !{e} !{e+1}", 0);
+            data.Add(lambda, "a row at the last clock before the close revises", "+a:k1@0 !{e} +a:k0@0 !{e+1}", 0);
+            data.Add(lambda, "the clock first, then both rows at the last clock", "!{e} +a:k0@0 +a:k1@0 !{e+1}", 0);
+            data.Add(lambda, "a row at the close is late and left out", "+a:k1@0 !{e+1} +a:k0@0 !{e+1}", 1);
+        }
+        return data;
+    }
+
+    /// <summary>#169 A3: the reference agrees with the engine under every cut for a windowed Group and a Fold over a series, whatever lateness they declare.</summary>
+    [Theory]
+    [InlineData("window late revise", 0)] [InlineData("window late revise", 1)] [InlineData("window late revise", 10)]
+    [InlineData("threshold", 0)] [InlineData("threshold", 1)] [InlineData("threshold", 10)]
+    public void The_reference_agrees_under_every_cut_whatever_lateness_is_declared(string world, int lambda)
+    {
+        var w = WithLateness(Worlds.All.First(x => x.Name == world), lambda);
+        foreach (var seed in Enumerable.Range(0, 4))
+            Assert.Null(Differential.FirstMismatch(w, w.Log(seed, 14), seed, reordered: seed % 2 == 1)?.ToString());
+    }
+
     /// <summary>Review: Identity.cs:165 with Exprs.cs:107. An identity is allocated for the rows a sink emits (Def. 5.9), not for rows a Filter rejected.</summary>
     [Fact]
     public void A_row_that_a_filter_rejected_mints_no_identity()

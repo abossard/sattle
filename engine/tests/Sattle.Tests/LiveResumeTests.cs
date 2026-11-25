@@ -6,7 +6,7 @@ namespace Sattle.Tests;
 
 /// <summary>Proposition 10.7 and 10.8, the live input. A live run killed and restarted from its store resumes its source after the last position the space saw: nothing is processed twice (the position is journaled with the envelope, before it is processed), nothing is lost, an envelope delivered again is dropped by its key, and the state is the state of a run that was never interrupted. A kill at each step between receiving an envelope and having processed it leaves a state and a recording the next start makes whole. A replay of the recording ends in the digest of the live run. Tested with a fake source that has the contract of Event Hubs (positions, at least once delivery); against real Event Hubs only the source adapter differs and it is not exercised here.</summary>
 [Trait("Category", "Slow")]
-public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
+public class LiveResumeTests
 {
     const long Min = 60_000_000_000;
     internal sealed class Crash : Exception;
@@ -296,18 +296,16 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
             Assert.Equal(expected.Count, counts.Consumed);
             Assert.Equal(expected.Select(Payload), CaptureReader.Read(dir).Select(e => e.Payload.GetRawText()));      // and the recording is read in that order, not in capture-time order
             Assert.True(counts.Duplicates > 0 && counts.Rejected > 0, $"duplicates {counts.Duplicates}, rejected {counts.Rejected}");
-            // LV2, LV3: the replay of the recording with the live horizon ends in the live digest
-            string Replayed(int horizon)
+            // LV2, LV3: the replay of the recording ends in the live digest (both close windows at the lateness the program declares)
+            string Replayed()
             {
                 var cat = new Catalog(Repo.Projections); Assert.DoesNotContain(cat.Load(files, updatePins: true).Diagnostics, d => d.IsError);
                 var space = cat.Spaces.Keys.Single();
-                using var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab", LateHorizonWindows = horizon });
+                using var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab" });
                 new Replay(engine, cat.Spaces[space], AdapterRegistry.Create(cat.Spaces[space], cat), ro).Run(dir);
                 return engine.StateDigest();
             }
-            Assert.Equal(live, Replayed(3));
-            var other = Replayed(1);          // a horizon of one window drops rows the live run still revised: the replay is reported equal or different, it is not the live state by definition
-            output.WriteLine(other == live ? "a replay with a late horizon of 1 window gives the live digest" : $"a replay with a late horizon of 1 window gives another digest ({other}, live {live})");
+            Assert.Equal(live, Replayed());
         }
         finally { Directory.Delete(dir, true); }
     }
@@ -344,7 +342,7 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
             Assert.Equal(arrival.Where(a => seen.Add(a)).ToList(), File.ReadAllLines(path));
             var cat = new Catalog(Repo.Projections); Assert.DoesNotContain(cat.Load(files, updatePins: true).Diagnostics, d => d.IsError);
             var space = cat.Spaces.Keys.Single();
-            using var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab", LateHorizonWindows = 3 });
+            using var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab" });
             new Replay(engine, cat.Spaces[space], AdapterRegistry.Create(cat.Spaces[space], cat), Ro with { FlushAtEnd = false }).Run(dir);
             Assert.Equal(h.StateDigest(), engine.StateDigest());
         }

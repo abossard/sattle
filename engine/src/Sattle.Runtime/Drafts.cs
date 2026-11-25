@@ -284,8 +284,8 @@ public sealed partial class SpaceHost
             var sw = Stopwatch.StartNew();
             var include = (body["include"]?.AsArray().Select(x => x!.GetValue<string>()).ToHashSet()) ?? ["counts", "diff"];
             var want = (body["graphs"]?.AsArray().Select(x => x!.GetValue<string>()).ToHashSet()) ?? cand.Spaces[newSpace].Graphs.Select(g => g.Name).ToHashSet();
-            // own in-memory stores: the live ones are not touched; the late horizon of the live engine
-            var (activated, rows, complete) = Reactivate(cand, newSpace, new EngineOptions { Tenant = options.Tenant, LateHorizonWindows = options.LateHorizonWindows, TraceGraphs = include.Contains("rows") ? want : null }, maxRows);
+            // own in-memory stores: the live ones are not touched
+            var (activated, rows, complete) = Reactivate(cand, newSpace, new EngineOptions { Tenant = options.Tenant, TraceGraphs = include.Contains("rows") ? want : null }, maxRows);
             using var fresh = activated;
             var exp = new CanvasExport(fresh, cand);
             var limit = int.TryParse(body["limit"]?.GetValue<string>(), out var lm) ? lm : 5000;

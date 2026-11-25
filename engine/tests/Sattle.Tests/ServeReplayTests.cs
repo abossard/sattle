@@ -5,24 +5,24 @@ using Sattle.Runtime;
 
 namespace Sattle.Tests;
 
-/// <summary>Serving a recorded capture is a replay: `sattle serve CAPTURE` ends in the state `sattle replay CAPTURE` computes. Only a live source needs the short late horizon.</summary>
+/// <summary>Serving a recorded capture is a replay: `sattle serve CAPTURE` ends in the state `sattle replay CAPTURE` computes. Neither has a late horizon of the host: a window stays revisable for the lateness its program declares (#169).</summary>
 public class ServeReplayTests
 {
     static string Estate => EstateTests.EstateDir;
 
+    /// <summary>#169 A1: the command line sets no late horizon. A replay given the former option `--late-horizon` ends in the state of a replay without it.</summary>
     [Theory]
-    [InlineData(new[] { "replay", "X" }, null)] [InlineData(new[] { "serve", "X" }, null)] [InlineData(new[] { "serve", "X", "--live" }, 3)]
-    [InlineData(new[] { "serve", "X", "--late-horizon", "7" }, 7)] [InlineData(new[] { "replay", "X", "--late-horizon", "3" }, 3)]
-    public void There_is_no_late_horizon_for_a_recorded_capture_served_or_replayed_and_3_for_a_live_source(string[] args, int? expected) =>
-        Assert.Equal(expected, Program.LateHorizonFor(Program.Options.Parse(args)));
+    [InlineData("1")] [InlineData("3")] [InlineData("1000000")]
+    public void A_replay_ends_in_one_state_whatever_late_horizon_its_command_line_names(string horizon) =>
+        Assert.Equal(Digests(Estate).Replayed, Digests(Estate, "--late-horizon", horizon).Replayed);
 
     /// <summary>The digest `sattle replay` ends in, and the digest of a host built the way `sattle serve` builds it, for the same capture.</summary>
-    static (string Replayed, string Served) Digests(string dir)
+    static (string Replayed, string Served) Digests(string dir, params string[] more)
     {
-        var r = Program.Options.Parse(["replay", dir]);
+        var r = Program.Options.Parse(["replay", dir, .. more]);
         var cat = Repo.CatalogFor(dir, out var res); Assert.Empty(res.Diagnostics);
         var space = cat.Spaces.Keys.Single();
-        var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab", LateHorizonWindows = Program.LateHorizonFor(r) });
+        var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab" });
         new Replay(engine, cat.Spaces[space], AdapterRegistry.Create(cat.Spaces[space], cat), Program.ReplayOptionsOf(r)).Run(dir);
         return (engine.StateDigest(), Served(dir));
     }
@@ -68,16 +68,17 @@ public class ServeReplayTests
         finally { Directory.Delete(defs, true); Directory.Delete(cap, true); }
     }
 
+    /// <summary>A stored run restarts in its state, from a seal or from the journal alone; neither records a late horizon (#169).</summary>
     [Theory]
-    [InlineData(1_000_000)] [InlineData(7)] [InlineData(null)]
-    public void A_stored_run_restarts_with_the_late_horizon_it_ran_with(int? horizon)
+    [InlineData(50)] [InlineData(0)]
+    public void A_stored_run_restarts_in_its_state_from_a_seal_or_the_journal(long sealEvery)
     {
         var store = Path.Combine(Path.GetTempPath(), "sattle-horizon-" + Guid.NewGuid().ToString("N") + ".db");
         try
         {
             string digest;
             using (var g = new SqliteGraphStore(store))
-            using (var h = SpaceHost.OpenDurable(g, Repo.DefinitionFilesFor(Estate), new HostOptions { Projections = Repo.Projections, LateHorizonWindows = horizon, SealEvery = 50 }))
+            using (var h = SpaceHost.OpenDurable(g, Repo.DefinitionFilesFor(Estate), new HostOptions { Projections = Repo.Projections, SealEvery = sealEvery }))
             {
                 new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 100, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000}).Run(Estate);
                 h.Finish(); digest = h.StateDigest();
@@ -85,7 +86,6 @@ public class ServeReplayTests
             using var g2 = new SqliteGraphStore(store);
             using var again = SpaceHost.OpenDurable(g2, null, new HostOptions { Projections = Repo.Projections, VerifyJournal = true });
             Assert.NotNull(again.Restart);
-            Assert.Equal(horizon, again.LateHorizonWindows);
             Assert.Equal(digest, again.StateDigest());
         }
         finally { foreach (var f in Directory.GetFiles(Path.GetTempPath(), Path.GetFileName(store) + "*")) File.Delete(f); }

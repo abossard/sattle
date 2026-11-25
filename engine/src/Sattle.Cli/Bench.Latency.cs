@@ -65,7 +65,7 @@ static partial class Bench
             if (res.HasErrors) throw new InvalidOperationException(string.Join("\n", res.Diagnostics));
             Space = Cat.Spaces.Keys.First();
             var adapters = AdapterRegistry.Create(Cat.Spaces[Space], Cat);
-            Engine = new Engine(Cat, Space, new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000, StoreFactory = factory });
+            Engine = new Engine(Cat, Space, new EngineOptions { Tenant = "lab", StoreFactory = factory });
             Input = new TimingInput(Engine);
             var ro = Program.ReplayOptionsOf(Program.Options.Parse([]));
             Replay = new Replay(Input, Cat.Spaces[Space], adapters, new ReplayOptions { ChunkRows = chunkRows, AdvanceEveryNs = ro.AdvanceEveryNs, LatenessNs = ro.LatenessNs, FlushAtEnd = true, Speed = 0 });
@@ -299,7 +299,7 @@ static partial class Bench
                 replay.FlushPending(); replay.RequireRead();
                 if (pass == 0) { first = pf; last = pl; span = last - first; }
                 var logical = (pl + offset - first) / 1e9;
-                Console.WriteLine($"pass {pass + 1}: logical span {logical / 3600:F2} h, {host.InputRows:N0} rows, journal {store.JournalCount:N0} entries, late rows dropped {host.Engine.Graphs.Sum(g => g.Cx.LateDropped):N0} (rows older than the late horizon inside their own pass are dropped in every pass alike), master {host.Engine.Master.State.EntityCount:N0} entities and {host.Engine.Master.State.RelCount:N0} relationships, of them evidence kept by `retain` ({string.Join(", ", host.Engine.Master.State.Entities.Where(x => Sattle.Core.Ids.Name(x.Type) is "ActivityEvent" or "WarningEvent" or "AuditEvent").GroupBy(x => Sattle.Core.Ids.Name(x.Type)).OrderBy(g => g.Key).Select(g => $"{g.Key} {g.Count():N0}"))}; they age out as the passes move the frontier), wall {wall.Elapsed.TotalSeconds:F0} s");
+                Console.WriteLine($"pass {pass + 1}: logical span {logical / 3600:F2} h, {host.InputRows:N0} rows, journal {store.JournalCount:N0} entries, late rows dropped {host.Engine.Graphs.Sum(g => g.Cx.LateDropped):N0} (rows later than their input's lateness inside their own pass are dropped in every pass alike), master {host.Engine.Master.State.EntityCount:N0} entities and {host.Engine.Master.State.RelCount:N0} relationships, of them evidence kept by `retain` ({string.Join(", ", host.Engine.Master.State.Entities.Where(x => Sattle.Core.Ids.Name(x.Type) is "ActivityEvent" or "WarningEvent" or "AuditEvent").GroupBy(x => Sattle.Core.Ids.Name(x.Type)).OrderBy(g => g.Key).Select(g => $"{g.Key} {g.Count():N0}"))}; they age out as the passes move the frontier), wall {wall.Elapsed.TotalSeconds:F0} s");
                 if (logical >= hours * 3600) break;
             }
             host.Finish();

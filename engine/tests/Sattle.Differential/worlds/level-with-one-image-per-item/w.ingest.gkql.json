@@ -4,7 +4,7 @@
   "history": 0,
   "inputs": [
     {"name": "belongs", "rows": "w.BelongsRow"},
-    {"name": "calls", "rows": "w.CallRow"},
+    {"name": "calls", "rows": "w.CallRow", "time": "t", "lateness": "3m"},
     {"name": "items", "rows": "w.ItemRow"}
   ],
   "parameters": [],

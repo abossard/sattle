@@ -24,7 +24,7 @@ public class RetentionTests
     static Result Run(Catalog cat, string dir, int chunk)
     {
         var space = cat.Spaces.Keys.Single();
-        var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab", LateHorizonWindows = 3 });
+        var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab" });
         var adapters = AdapterRegistry.Create(cat.Spaces[space], cat);
         var stats = new Replay(engine, cat.Spaces[space], adapters, new ReplayOptions { ChunkRows = chunk, AdvanceEveryNs = Min, LatenessNs = Min}).Run(dir);
         return new Result(engine, stats.LastCaptureNs / Min * Min + Min + Min);   // the advance of FlushAtEnd

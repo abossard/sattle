@@ -4,7 +4,7 @@
   "history": 0,
   "inputs": [
     {"name": "flows", "rows": "w.FlowRow"},
-    {"name": "loads", "rows": "w.LoadRow"},
+    {"name": "loads", "rows": "w.LoadRow", "time": "t", "lateness": "3m"},
     {"name": "instances", "rows": "w.InstanceRow"}
   ],
   "parameters": [],

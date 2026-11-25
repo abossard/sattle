@@ -13,7 +13,7 @@ public class FlowDiscoveryTests
     sealed class Space : IDisposable
     {
         public readonly SpaceHost Host = new(Catalog.ReadDirectory(DirectoryOf("definitions")),
-            new HostOptions { Projections = Repo.Projections, SpaceName = "flowDiscovery", LateHorizonWindows = 2 });
+            new HostOptions { Projections = Repo.Projections, SpaceName = "flowDiscovery" });
         int seq;
 
         public Space() => Host.StartLive(new ReplayOptions { LatenessNs = 0 });

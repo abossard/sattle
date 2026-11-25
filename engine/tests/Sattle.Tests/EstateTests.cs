@@ -74,7 +74,7 @@ public class EstateTests
              "verbs": [
                {"id": "hosts", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "nd", "label": "Host"}]}},
                {"id": "named", "verb": "project", "columns": {"nd": {"ref": "nd"}, "c": {"ref": "nd.name"}}},
-               {"id": "drops", "verb": "series", "graph": "master", "series": {"element": "nd", "property": "dropRate", "lookback": "24h"}},
+               {"id": "drops", "verb": "series", "graph": "master", "series": {"element": "nd", "property": "dropRate", "lookback": "24h", "lateness": "3m"}},
                {"id": "warn", "verb": "summarize", "by": {"c": {"ref": "c"}, "windowStart": {"ref": "windowStart"}},
                 "aggregates": {"m": {"fn": "avg", "args": [{"ref": "dropRate"}]}, "n": {"fn": "count"}, "s": {"fn": "sum", "args": [{"ref": "dropRate"}]}, "v": {"fn": "max", "args": [{"ref": "dropRate"}]}}},
                {"id": "warnOnPolicy", "verb": "extend", "columns": {"above": {"lit": 0.01}, "below": {"lit": 0.005}, "enterAfter": {"lit": 2}, "exitAfter": {"lit": 2}}},
@@ -139,7 +139,7 @@ public class EstateTests
 
     /// <summary>The estate as the tests read it: the scenario run the assembly shares, and one more replay with the demo module. The tests read the graphs as they are served.</summary>
     static readonly Lazy<ReplayTests.Run> Plain = new(() => Scenarios.Run(Repo.Estate));
-    static readonly Lazy<ReplayTests.Run> WithDemo = new(() => ReplayTests.Replay(Estate, 50, o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 3 }, cat: LoadCatalog(demo: true)));
+    static readonly Lazy<ReplayTests.Run> WithDemo = new(() => ReplayTests.Replay(Estate, 50, o: new EngineOptions { Tenant = "lab" }, cat: LoadCatalog(demo: true)));
 
     [Theory]
     [InlineData("master")] [InlineData("serviceTree")] [InlineData("capabilities")] [InlineData("readiness")] [InlineData("readinessReport")]

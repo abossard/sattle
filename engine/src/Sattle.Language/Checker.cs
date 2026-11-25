@@ -186,12 +186,41 @@ public sealed class ProjectionChecker(Graph defs)
         var forward = d.Bool(pid, "forward");
         if (forward == (rules.Count > 0)) Err("P3", pid, forward ? "a forward projection must have no rules" : "a projection with no rules must be declared forward");
         if (d.Text(pid, "purpose") == "ingestion" && forward) Err("P3", pid, "an ingestion projection cannot be forward");
-        return new TypedProjection
+        var tp = new TypedProjection
         {
             Id = pid, Name = d.Text(pid, "name") ?? Ids.Name(pid), Module = module, Purpose = d.Text(pid, "purpose") ?? "view", Forward = forward,
             Retain = (int)d.Int(pid, "retain"), OutputModule = outMod, Ports = ports, Ops = typed, Rules = rules, Params = [.. paramKinds.Select(kv => (kv.Key, kv.Value, paramDefaults.GetValueOrDefault(kv.Key)))],
         };
+        LatenessDeclared(tp);
+        return tp;
     }
+
+    /// <summary>#169 D1: a windowed Group or a Fold keeps a window until its end plus the lateness its program declares (Ch. 6, Def. 6.4, Cor. 6.5), and a program
+    /// that declares none is refused: every rows input upstream of the Window names its time and its lateness, a Series that a Fold reads names its lateness.</summary>
+    void LatenessDeclared(TypedProjection tp)
+    {
+        foreach (var op in tp.Ops.Where(x => x is TFold or TGroup { ClosesWindows: true }))
+        {
+            if (tp.WindowsOf(op).Lateness is not null) continue;
+            var series = Upstream(op, tp).OfType<TSeries>().FirstOrDefault();
+            if (series is not null) { Err(op.Kind, op.Id, $"{op.Name} folds the windows of series {series.Name}, which declares no lateness"); continue; }
+            var window = Upstream(op, tp).OfType<TWindow>().FirstOrDefault();
+            var undeclared = window is null ? [] : RowsPortsUpstream(window, tp).Where(p => p.LatenessNs is null).Select(p => p.Name).Distinct().ToList();
+            Err(op.Kind, op.Id, undeclared.Count > 0
+                ? $"{op.Name} closes windows of rows input{(undeclared.Count > 1 ? "s" : "")} {string.Join(", ", undeclared)}, which declare{(undeclared.Count > 1 ? "" : "s")} no time and lateness"
+                : $"{op.Name} closes windows of no rows input that declares a time and a lateness");
+        }
+    }
+
+    static IEnumerable<TOp> Upstream(TOp op, TypedProjection tp)
+    {
+        for (var cur = op; cur.Inputs.TryGetValue("in", out var src) && !src.IsPort;)
+            yield return cur = tp.Ops.First(o => o.Name == src.Name);
+    }
+
+    static IEnumerable<TPort> RowsPortsUpstream(TOp op, TypedProjection tp) =>
+        op.Inputs.Values.SelectMany(s => s.IsPort ? tp.Ports.Where(p => p.Name == s.Name && p.Kind == "rows")
+            : tp.Ops.FirstOrDefault(o => o.Name == s.Name) is { } up ? RowsPortsUpstream(up, tp) : []);
 
 
     TPolicy? Policy(string rule)
@@ -727,7 +756,7 @@ public sealed class ProjectionChecker(Graph defs)
             cols.Add(new Col(r.OutName, new FType(KindOfProp(p, view), true, Role.Events(p.Temporality!, p.Period))));
         }
         if (ttl is not null) cols.Add(new Col(TSeries.NoDataColumn, new FType(Ty.Boolean, true, Role.Events("gauge", period))));
-        return new TSeries(name, op, inputs, R.With(cols, period), gsrc.Name, reads, within, period, target, ttl);
+        return new TSeries(name, op, inputs, R.With(cols, period), gsrc.Name, reads, within, period, target, ttl, d.Prop(op, "lateness") is IntegerValue lv ? (long)lv.N : null);
     }
 
     // ---- emits -----------------------------------------------------------------------------------------

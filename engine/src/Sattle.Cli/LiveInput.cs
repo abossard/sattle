@@ -16,7 +16,7 @@ public interface ILiveSource
 
 public sealed record LiveCounts(long Consumed, long Duplicates, long Rejected);
 
-/// <summary>The file (or other medium) that keeps every consumed envelope in order, so a run can be replayed (`sattle replay <live-out> --no-flush --late-horizon 3`).</summary>
+/// <summary>The file (or other medium) that keeps every consumed envelope in order, so a run can be replayed (`sattle replay <live-out> --no-flush`).</summary>
 public interface ILiveRecording
 {
     long Count { get; }

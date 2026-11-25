@@ -10,7 +10,7 @@
   "parameters": [],
   "verbs": [
     {"id": "bizCapability_1", "verb": "summarize", "by": {"capability": {"ref": "capability"}}, "aggregates": {"serviceCount": {"fn": "count"}}},
-    {"id": "calls_1", "verb": "series", "graph": "tree", "series": {"element": "dependency", "lookback": "24h", "properties": ["flows", "drops"]}},
+    {"id": "calls_1", "verb": "series", "graph": "tree", "series": {"element": "dependency", "lookback": "24h", "lateness": "3m", "properties": ["flows", "drops"]}},
     {"id": "calls_2", "verb": "summarize", "by": {"fromCapability": {"ref": "fromCapability"}, "toCapability": {"ref": "toCapability"}, "windowStart": {"ref": "windowStart"}}, "aggregates": {"callDrops": {"fn": "sum", "args": [{"ref": "drops"}]}, "callFlows": {"fn": "sum", "args": [{"ref": "flows"}]}}},
     {"id": "calls_3", "verb": "project", "columns": {"fromCapability": {"ref": "fromCapability"}, "toCapability": {"ref": "toCapability"}, "windowStart": {"ref": "windowStart"}, "callFlows": {"ref": "callFlows"}, "callDrops": {"ref": "callDrops"}, "callDropRatio": {"fn": "iff", "args": [{"fn": ">", "args": [{"ref": "callFlows"}, {"lit": 0}]}, {"fn": "/", "args": [{"ref": "callDrops"}, {"ref": "callFlows"}]}, {"lit": 0.0}]}}},
     {"id": "capabilities_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "BizCapability", "id": {"ref": "capability"}, "props": {"name": {"ref": "capability.name"}}}]}, "rule": "capabilities"},

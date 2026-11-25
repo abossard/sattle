@@ -156,7 +156,7 @@ public class AuthoredGraphTests
          "identities": [{"name": "level", "type": "Level", "components": [{"name": "k", "type": "Text"}]}],
          "rows": [{"name": "LevelRow", "fields": [{"name": "k", "type": "Text"}, {"name": "time", "type": "Instant"}, {"name": "v", "type": "Decimal"}]}]}
         """, """
-        {"inputs": [{"name": "levels", "rows": "t.base.LevelRow"}],
+        {"inputs": [{"name": "levels", "rows": "t.base.LevelRow", "time": "time", "lateness": "3m"}],
          "verbs": [{"id": "levelRows", "verb": "rows", "source": "levels"},
                    {"id": "minutes", "verb": "window", "window": {"time": "time", "period": "1m"}},
                    {"id": "highest", "verb": "summarize", "by": {"k": {"ref": "k"}, "windowStart": {"ref": "windowStart"}}, "aggregates": {"level": {"fn": "max", "args": [{"ref": "v"}]}}},

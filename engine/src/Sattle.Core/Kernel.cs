@@ -87,7 +87,7 @@ public static class KernelTable
         T("Traverse : Operator | direction:T minDepth:I maxDepth:I start:T target:T"), T("Window : Operator | timestampField:T width:I hop:I? late:T"), T("Retain : Operator | timestampField:T age:I"),
         T("Values : Operator |"), T("Fixpoint : Operator | key:T valueField:T order:Any from:T to:T by:T?"), T("FixpointMap | when:T image:Any"),
         T("EmitEntity : Operator | mode:T"), T("EmitRelationship : Operator | mode:T key:T retype:T"), T("Link : Operator |"),
-        T("Series : Operator | within:I ttl:I?"), T("Rollup : Operator |"), T("Delta : Operator | target:T"),
+        T("Series : Operator | within:I ttl:I? lateness:I?"), T("Rollup : Operator |"), T("Delta : Operator | target:T"),
         T("Fold : Operator | show:T"), T("FoldState | target:T"),
         T("PatternNode | var:T side:T? create:B?"), T("PatternEdge | var:T? minHops:I? maxHops:I? side:T? create:B?"),
         T("FieldRef : Expr | path:T fill:D?"), T("Literal : Expr | value:Any"), T("Call : Expr |"), T("IdOf : Expr |"),
@@ -349,5 +349,5 @@ public static class Kernel
 
     /// <summary>Digest of the kernel graph. The compiled constant is checked by a test (section 2.8, step 2).</summary>
     public static string ComputeDigest() => Graph.Digest();
-    public const string CompiledDigest = "sha256:52598d41a007067d92e67f6c43a9e54cd29e7135b7d29113ec1869de69d451f7";
+    public const string CompiledDigest = "sha256:ad091fd0873c07cadedd791cfdf037acf1b8b9750906b53c483c99c179d65b0f";
 }

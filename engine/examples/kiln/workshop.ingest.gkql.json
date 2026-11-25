@@ -4,7 +4,7 @@
   "description": "Record temperature samples, dependencies and task evidence on the master graph.",
   "history": 100,
   "inputs": [
-    {"name": "readings", "rows": "workshop.Reading"},
+    {"name": "readings", "rows": "workshop.Reading", "time": "at", "lateness": "3m"},
     {"name": "requirements", "rows": "workshop.Dependency"},
     {"name": "jobs", "rows": "workshop.TaskEvent"},
     {"name": "clock", "rows": "workshop.Clock"}

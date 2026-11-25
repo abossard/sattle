@@ -206,7 +206,7 @@ public class RestartTests
     [InlineData("sequenceStep", """{"k":"s"}""")]
     [InlineData("commit", """{"k":"c","e":12,"t":{"acme.svc":"module acme.svc @ 1.0.0;","acme.svc.serviceDeps.gkql.json":null}}""")]
     [InlineData("commitRefused", """{"k":"x"}""")]
-    [InlineData("header", """{"k":"h","tenant":"lab","lateHorizon":null,"space":"operations","mode":"replay","generation":0,"files":[{"p":"a.sattle","t":"module a @ 1.0.0;"}]}""")]
+    [InlineData("header", """{"k":"h","tenant":"lab","space":"operations","mode":"replay","generation":0,"files":[{"p":"a.sattle","t":"module a @ 1.0.0;"}]}""")]
     public void A_journal_entry_has_the_stored_form_it_always_had_and_reads_back(string kind, string stored)
     {
         Entry entry = kind switch
@@ -222,13 +222,24 @@ public class RestartTests
             "sequenceStep" => new Entry.SequenceStep(),
             "commit" => new Entry.Commit(12, new Dictionary<string, string?> { ["acme.svc"] = "module acme.svc @ 1.0.0;", ["acme.svc.serviceDeps.gkql.json"] = null }),
             "commitRefused" => new Entry.CommitRefused(),
-            _ => new Entry.Header("lab", null, "operations", "replay", [new Sattle.Language.SourceFile("a.sattle", "module a @ 1.0.0;")]),
+            _ => new Entry.Header("lab", "operations", "replay", [new Sattle.Language.SourceFile("a.sattle", "module a @ 1.0.0;")]),
         };
         var it = new Interner();
         Assert.Equal(stored, entry.Text(it));
         var back = Entry.Parse(stored, _ => throw new InvalidOperationException("no rows here"), it);
         Assert.Equal(entry.GetType(), back.GetType());
         Assert.Equal(stored, back.Text(it));
+    }
+
+    /// <summary>#169: the host late horizon is gone; the header of an older journal, which recorded one, reads to the header of today and is written without it.</summary>
+    [Theory]
+    [InlineData("null")] [InlineData("3")] [InlineData("1000000")]
+    public void An_older_journal_header_with_a_late_horizon_reads_without_it(string horizon)
+    {
+        var older = $$"""{"k":"h","tenant":"lab","lateHorizon":{{horizon}},"space":"operations","mode":"replay","generation":0,"files":[{"p":"a.sattle","t":"module a @ 1.0.0;"}]}""";
+        var it = new Interner();
+        var back = Assert.IsType<Entry.Header>(Entry.Parse(older, _ => throw new InvalidOperationException("no rows here"), it));
+        Assert.Equal("""{"k":"h","tenant":"lab","space":"operations","mode":"replay","generation":0,"files":[{"p":"a.sattle","t":"module a @ 1.0.0;"}]}""", back.Text(it));
     }
 
     /// <summary>The journal a served space writes (rows, advances, progress, a definition commit, a live input with a flush and a skipped envelope, the end) reads back entry by entry to the text that was stored.</summary>

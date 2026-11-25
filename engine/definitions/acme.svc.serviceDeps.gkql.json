@@ -36,7 +36,7 @@
     {"id": "flows_1", "verb": "project", "columns": {"src": {"ref": "service"}, "site": {"ref": "site"}, "namespace": {"ref": "namespace"}}},
     {"id": "flows_2", "verb": "project", "columns": {"src1": {"ref": "src"}, "site": {"ref": "site"}, "namespace": {"ref": "namespace"}}},
     {"id": "flows_3", "verb": "join", "kind": "inner", "on": [{"left": "src", "right": "src1"}]},
-    {"id": "flows_4", "verb": "series", "graph": "master", "series": {"element": "call", "lookback": "24h", "properties": ["flows", "drops"]}},
+    {"id": "flows_4", "verb": "series", "graph": "master", "series": {"element": "call", "lookback": "24h", "lateness": "3m", "properties": ["flows", "drops"]}},
     {"id": "flows_5", "verb": "summarize", "by": {"site": {"ref": "site"}, "dst": {"ref": "dst"}, "namespace": {"ref": "namespace"}, "src": {"ref": "src"}, "windowStart": {"ref": "windowStart"}}, "aggregates": {"drops": {"fn": "sum", "args": [{"ref": "drops"}]}, "flows": {"fn": "sum", "args": [{"ref": "flows"}]}}},
     {"id": "flows_6", "verb": "project", "columns": {"src": {"ref": "src"}, "dst": {"ref": "dst"}, "site": {"ref": "site"}, "namespace": {"ref": "namespace"}, "windowStart": {"ref": "windowStart"}, "flows": {"ref": "flows"}, "drops": {"ref": "drops"}, "dropRatio": {"fn": "iff", "args": [{"fn": ">", "args": [{"ref": "flows"}, {"lit": 0}]}, {"fn": "/", "args": [{"ref": "drops"}, {"ref": "flows"}]}, {"lit": 0.0}]}}},
     {"id": "serviceGroup_1", "verb": "summarize", "by": {"site": {"ref": "site"}, "namespace": {"ref": "namespace"}}, "aggregates": {"services": {"fn": "count"}}},

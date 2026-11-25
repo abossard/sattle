@@ -32,7 +32,7 @@ public sealed record ValuesSpec(Dictionary<string, string> Columns, List<Diction
 /// <summary>Windows of the rows' own time: `period` wide, one every `hop` (the period when not given), so a row is in period / hop windows.</summary>
 public sealed record WindowSpec(string Time, string Period, string? Hop = null);
 /// <summary>`fill`: the value of a window in which the element reported nothing.</summary>
-public sealed record SeriesSpec(string Element, string Lookback, string? Property = null, string[]? Properties = null, string? Freshness = null, decimal? Fill = null)
+public sealed record SeriesSpec(string Element, string Lookback, string? Property = null, string[]? Properties = null, string? Freshness = null, decimal? Fill = null, string? Lateness = null)
 {
     /// <summary>The metric properties the series reads: `property` names one, `properties` several of the same element.</summary>
     public string[] Read => Properties ?? (Property is { } p ? [p] : []);
@@ -423,7 +423,8 @@ public static class Lowering
                 || !r.Types.ContainsKey(s.Element) || s.Read.Length == 0 || s.Property is not null && s.Properties is not null)
                 throw new Refused(v.Id, "series names a graph, an element column, a metric property (or a list of properties) and a lookback");
             var op = Op("Series", v.Id, [("within", Value.Integer(Duration(v.Id, s.Lookback))),
-                .. s.Freshness is { } ttl ? new[] { ("ttl", Value.Integer(Duration(v.Id, ttl))) } : []]);
+                .. s.Freshness is { } ttl ? new[] { ("ttl", Value.Integer(Duration(v.Id, ttl))) } : [],
+                .. s.Lateness is { } late ? new[] { ("lateness", Value.Integer(Duration(v.Id, late))) } : []]);
             B.Edge(port, "wire", P(op, "graph"));
             B.Edge(r.Port, "wire", P(op, "in"));
             for (var i = 0; i < s.Read.Length; i++)
