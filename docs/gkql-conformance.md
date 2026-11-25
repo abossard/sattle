@@ -43,8 +43,8 @@ One row per verb. "Fails" is the requirement that fails if the row is wrong.
 | `series` | J of element rows and telemetry windows, then T; with `fill`: K, J, L, T (see time) | `κ₁` = the element column, `κ₂` = the window's element; `s = −∞`, `u` = window start + `lookback` | per element its rows and `since` | R1, R6, R8 |
 | `hysteresis` | K, not summarised: a state machine over the windows of a key, in window order | `κ` = the `by` columns; a window two rows of one key hold has no reading until one row holds it (G2) | per key its windows in the look-back and one carried state | R1, R6 |
 | `retain` | T | `s = −∞`, `u = time(e) + age`, against the clock | the rows by time | R8 |
-| `traverse` | J unrolled at most `max` times, then K | J: rows keyed by start, edges keyed by the frontier id; K: (start, reached id), keeping the least depth; `0 ≤ min ≤ max ≤ 64` | rows by start; depth per (start, id), both ways | R5, R6 |
-| `fixpoint` | F, then J with the node rows | `κ_F`: a node row names its key, an edge row its `from`; J: the keys with an own row | per node its rows, its edges both ways, its value | R7 |
+| `traverse` | J unrolled at most `max` times, then K | J: rows keyed by start, edges keyed by the frontier id; K: (start, reached id), keeping the least depth; `0 ≤ min ≤ max ≤ 64` and `max ≥ 1`, else refused | rows by start; depth per (start, id), both ways | R5, R6 |
+| `fixpoint` | F, the least solution (cycles allowed), then J with the node rows | `κ_F`: a node row names its key, an edge row its `from`; J: the keys with an own row of positive weight and a value above `⊥` | per node its rows, its edges both ways, its value | R7 |
 | `link` | L (weights summed per pair of ids), then the classes of the present links | the pair of own ids | weight per pair; classes; a sparse own-id table in the sinks | R1, R4 |
 | `nodes` | construction step, then merge | ids: see elements; merge keyed by id | per element its fragments | R2, R4 |
 | `edges` | construction step, then merge | ids: see elements; merge keyed by id | per edge its fragments | R2, R4 |
@@ -79,10 +79,12 @@ Merge (Def. 7.4), per graph (one program writes a graph): fragments of positive 
 
 | Construct | Order `V`, `⊥` | Monotone | `V_a`, `ht_a` |
 |---|---|---|---|
-| `fixpoint` | `{⊥}` and the closed list `order`, least first; a value outside the list is `⊥` and counted | `h_{a,k}` = the greatest of the node's own values and of the images of its dependencies' values; each image list has one entry per value and never goes down (else refused) | `V_a = V`, a chain; `ht_a = |order|` |
+| `fixpoint` | `{⊥}` and the closed list `order`, least first; a value outside the list at run time is `⊥` and counted. Refused: an empty order, a repeated value, a value of another type than the value column, a value column that is not Text, Integer, Decimal or Boolean | `h_{a,k}` = the greatest of the node's own values and of the images of its dependencies' values; cycles allowed, the result is the least solution. Refused: an image list without one entry per value of the order, an entry outside the order, a list that goes down, a list chooser that is not a Text column of the edge rows | `V_a = V`, a chain; `ht_a = |order|` |
 | `traverse` | not F: a bounded J and K, at most 64 rounds | | |
 
-`traverse` stays (D26 in #122): fixpoint expresses reach only by keying on (start, node), one edge row per start per edge, so its work grows with starts times edges, where `traverse` walks only what a changed id reaches. There is no `rollup` verb: a roll-up over telemetry is `summarize`, and a roll-up over a tree is `fixpoint`.
+`traverse` stays (D26 in #122): fixpoint expresses reach only by keying on (start, node), one edge row per start per edge, so its work grows with starts times edges, where `traverse` walks only the starts a change reaches: an added edge lowers depths from its far end on, a lost edge walks again each start whose walk visited an end of it. There is no `rollup` verb: a roll-up over telemetry is `summarize`, and a roll-up over a tree is `fixpoint`.
+
+The checker also refuses a `fixpoint` (R3) whose inputs are not data rows or are windowed, that names a key, value, `from` or `to` column its inputs lack, whose key is a list, a null or a relationship, or whose `from` and `to` are not of the key's type.
 
 After a change `fixpoint` evaluates only the changed keys and the nodes that reach them over present edges (Theorem 7.6).
 
@@ -90,9 +92,9 @@ After a change `fixpoint` evaluates only the changed keys and the nodes that rea
 
 | Construct | Function of `time(e)` and `arr(e)`, or clock selection |
 |---|---|
-| rows input with `time` and `lateness` | a row is late if `arr(e) > time(e) + lateness` (Def. 6.1) |
+| rows input with `time` and `lateness` | a row is late if `arr(e) > time(e) + lateness` (Def. 6.1); a late row or a late withdrawal is left out and counted under `lateRows` |
 | `window` | of `time(e)` only |
-| windowed `summarize` | T, `s` = window end, `u = ∞`; a window is kept until its end plus the largest lateness of its upstream event inputs (D1 on #159) |
+| windowed `summarize` | T, `s` = window end, `u = ∞`; a window is kept until its end plus the largest lateness of its upstream rows inputs, or the host horizon (a number of window widths) when one of them declares none or none is upstream (D1 on #159), at most the telemetry retention; a row for a window past that is left out and counted under `lateRows` |
 | `retain` | T, `s = −∞`, `u = time(e) + age` |
 | `series` | T, `u` = window start + `lookback`; `since` is the clock at the end of which the element first had rows, sampled at the end of each clock (D3 on #159) |
 | `series` with `fill` | the progress of a source is a recorded input, records (source, until), not a time: the greatest `until` per source (K), joined with the sources that feed the window (J), window end at or before `until` less the hop lag (L), and window end at or before the clock (T) |
