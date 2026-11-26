@@ -1,88 +1,40 @@
-# Sattle architecture review
+# Sattle week review
 
-Generated, evidence-linked architecture feedback board for Sattle. The static review explains current code and open questions. GitHub issues and issue comments are the only durable decision record.
+A static page that shows what was built in one week, where effort was wasted, and what the run cost in tokens. Every item links to its GitHub issue, commit, file or comment.
+
+```mermaid
+flowchart LR
+  S["data/week-source.json<br/>curated: themes, waste, advice, tokens"] --> G["scripts/generate-review.mjs<br/>git facts in"]
+  L["git log of the week"] --> G
+  G --> R["public/review.json<br/>public/shots/"]
+  R --> P["src/main.ts<br/>the page"]
+```
+
+- `data/week-source.json` holds the judgement: what was built and why (themes), waste and overdone work with evidence and a recommendation (stop, keep, change), screenshots with captions, and the token numbers.
+- `scripts/week.mjs` holds the calculations. It resolves every issue, commit and file, computes commits and lines per day and per area from git, and refuses Azure ids, IP addresses, e-mail addresses, local paths and paper notation in any published text.
+- `scripts/generate-review.mjs` is the only action: it reads git and the source, writes `public/review.json` and copies the screenshots. Both outputs are ignored by git.
 
 ## Local
 
 ```text
 npm ci
-npm run generate
 npm run dev
-```
-
-Run all checks with:
-
-```text
 npm run check
 ```
 
-With the Pages server running, `npm run test:browser -- http://<host>:<port>` runs real Chrome checks for navigation, drafts, feedback retries, responsive layout and large-queue DOM limits. Set `CHROME` to the browser executable outside macOS. Set `AXE_PATH` to an installed `axe-core/axe.min.js` for accessibility checks and `SCREENSHOT` to save a PNG. Browser feedback writes are intercepted; the test does not post review comments to GitHub.
+`npm run check` runs the tests, checks that `public/review.json` is current, type-checks and builds.
 
-The review generator validates unique code anchors against committed HEAD, resolves exact source lines, computes file churn, scores findings, and writes deterministic `public/review.json`. That generated file is ignored and recreated by test/build commands, so commits do not contain a stale self-referential revision. Uncommitted engine changes are deliberately excluded from the public review. The date shown is the evidence commit date, not the current time.
+With a server running (`npx vite preview`), `npm run test:browser -- http://localhost:<port>/` checks the page in Chrome at 1280 and 390 px, in light and dark mode: one square per commit, no horizontal scroll, links only into the repository, screenshots loaded, touch sizes, the area filter and the flow. Set `SCREENSHOT=<dir>` to save full-page screenshots, `CHROME` to the browser outside macOS.
 
-Findings are curated architecture hypotheses, not automated proof of a defect. The generator refreshes provenance and priorities, not their meaning. File churn does not prove a decision reversal. Recorded direction changes link to their owning GitHub issues.
+## Next week
 
-To extend the canvas, edit `data/review-source.json`: add an issue-owned finding, evidence with unique `anchor` text, decision options and settlement checks. Add modules and edges for new boundaries. `npm run generate -- --check` detects stale output without writing it. `--source <path>` and `--output <path>` support alternate review sets.
-
-## LAN HTTP
-
-Build first, then use an available port:
-
-```text
-npm run build
-npm run pages:dev -- --ip 0.0.0.0 --port 59314 --local-protocol http
-```
-
-Local feedback requires `GITHUB_TOKEN` and `REVIEW_KEY` in a gitignored `.dev.vars` file. Use a fine-grained GitHub token with Issues read/write for this repository. Protect the file with mode `0600`. Nothing is sent to GitHub until a reviewer submits.
-
-Enter the review key in the form, or open a privately shared `/#review-key=<key>` link. The fragment is removed immediately and the key stays in tab memory. Plain HTTP does not encrypt that key in feedback requests, so use LAN HTTP only on a trusted network. Public deployments should use Pages HTTPS.
-
-The selected issue's brief and latest 20 comments refresh every 30 seconds while the tab is visible and immediately after submission. Live GitHub read failures are shown explicitly. Drafts survive view/filter changes in tab memory only. Neither drafts nor issue comments are automatically accepted decisions.
-
-For assistant notification, monitor repository issue comments for `<!-- sattle-architecture-feedback:UUID -->`. A session-level two-minute monitor is active for this review session; it is not a permanent service. Future sessions should read #154 and the latest handover on #122 and re-arm monitoring when requested.
+Copy `data/week-source.json`, change `period`, `days`, `themes`, `waste`, `overdone`, `good` and `tokens`. The generator fails on a commit outside the period, an issue without a title, a finding without evidence or recommendation, and on private data in any text.
 
 ## Cloudflare Pages
 
-Use `architecture-review` as the Pages root directory, run `npm ci && npm run check`, and publish `dist`. Pages Functions are under `functions/`.
-
-`.github/workflows/architecture-review-pages.yml` performs the same check on `main` and deploys when `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are configured as repository secrets. Without them, checks still run and the workflow explicitly reports that deployment was skipped.
-
-Set these Pages variables:
-
-```text
-GITHUB_OWNER=abossard
-GITHUB_REPOSITORY=sattle
-```
-
-Set these as encrypted secrets:
-
-```text
-GITHUB_TOKEN=<fine-grained token with Issues: read and write>
-REVIEW_KEY=<long random review key>
-```
-
-Never expose the GitHub token to the browser. Anyone with the review key can post an issue comment or create an architecture issue, so rotate it independently from the GitHub token.
-
-Manual local Pages run:
-
-```text
-npm run build
-npx wrangler pages dev dist
-```
-
-Manual deploy:
+`.github/workflows/architecture-review-pages.yml` runs `npm ci && npm run check` on `main` and publishes `dist` when `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are set as repository secrets. The page needs no functions and no secrets.
 
 ```text
 npm run build
 npx wrangler pages deploy dist --project-name=sattle-architecture-review
 ```
-
-## Durable decision loop
-
-1. The generated board ranks uncertainty, conflict, churn, gaps, leaks, and scale risk.
-2. A reviewer chooses an option and adds a rationale.
-3. The Pages Function posts an idempotent comment to the linked issue, or creates a new architecture issue.
-4. The next review generation reads current code and file history. The live dashboard reads current issue titles and state.
-5. The browser stores no accepted decisions. Unsaved drafts and the review key stay in memory only.
-
-Retries of the same answer reuse a submission ID within the tab. The Function checks up to 2,000 existing comments before posting, and refuses rather than risking a duplicate beyond that limit. This protects sequential retries, not simultaneous requests or issue-creation retries before GitHub search indexes a new issue. GitHub is the record, so check the live discussion before resubmitting after reloading the tab.

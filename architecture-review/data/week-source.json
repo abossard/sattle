@@ -1,0 +1,1243 @@
+{
+  "schemaVersion": 2,
+  "repository": "abossard/sattle",
+  "period": {
+    "from": "2026-11-23",
+    "to": "2026-11-26"
+  },
+  "summary": "The week the engine became neutral: one language (gkql), no domain words in the core, and use cases moved outside it. The paper now defines what the engine does before it is built. The cost was high: the rules for time and late data changed three times, and reviews and hand-overs took a large share of the effort.",
+  "areas": [
+    {
+      "id": "paper",
+      "name": "Paper",
+      "paths": [
+        "paper/"
+      ],
+      "about": "The math-first definition of graphs, changes and time that the engine has to follow."
+    },
+    {
+      "id": "engine",
+      "name": "Engine",
+      "paths": [
+        "engine/",
+        "docs/gkql-conformance.md"
+      ],
+      "about": "The runtime that turns incoming changes into updated graphs, and its one language, gkql."
+    },
+    {
+      "id": "usecases",
+      "name": "Use cases",
+      "paths": [
+        "lab/"
+      ],
+      "about": "Real applications written only in gkql and run outside the engine: the Azure health model, its policy rules and the data collectors."
+    },
+    {
+      "id": "canvas",
+      "name": "Canvas",
+      "paths": [
+        "canvas/",
+        "architecture-review/",
+        "docs/learn/"
+      ],
+      "about": "The browser views: the graph canvas, the gkql editor and this review site."
+    },
+    {
+      "id": "run",
+      "name": "Running the work",
+      "paths": [],
+      "about": "How the sessions were organised: issues, decisions, hand-overs, reviews and the tools around them."
+    }
+  ],
+  "days": [
+    {
+      "date": "2026-11-23",
+      "note": "Only the architecture feedback board was built. It was parked the next day."
+    },
+    {
+      "date": "2026-11-24",
+      "note": "Andre reset the plan: paper first, then engine, then use cases. gkql became the only language, the core went neutral and the old paper chapters were replaced."
+    },
+    {
+      "date": "2026-11-25",
+      "note": "The busiest day: gkql completed, the health model rebuilt outside the engine, collectors added, and the rules for folding windows over time changed twice."
+    },
+    {
+      "date": "2026-11-26",
+      "note": "Late data reopened the time chapter. Then Andre stopped new work for this review."
+    }
+  ],
+  "issues": {
+    "2": {
+      "title": "The core paper",
+      "area": "paper"
+    },
+    "3": {
+      "title": "Efficient engine core: compute and memory",
+      "area": "engine",
+      "closed": "2026-11-24"
+    },
+    "5": {
+      "title": "Canvas viewer and KQL editors",
+      "area": "canvas",
+      "closed": "2026-11-24"
+    },
+    "7": {
+      "title": "A neutral engine core with gkql as the only language",
+      "area": "paper",
+      "closed": "2026-11-25"
+    },
+    "8": {
+      "title": "Use cases run outside the engine, starting with the Azure health model",
+      "area": "usecases",
+      "closed": "2026-11-25"
+    },
+    "55": {
+      "title": "Extract, inline and move reusable rules in the Canvas",
+      "area": "canvas",
+      "closed": "2026-11-24"
+    },
+    "61": {
+      "title": "Game part 1: puzzle source and first cases",
+      "area": "canvas",
+      "closed": "2026-11-24"
+    },
+    "62": {
+      "title": "Game part 2: game shell in the canvas",
+      "area": "canvas",
+      "closed": "2026-11-24"
+    },
+    "63": {
+      "title": "Game part 3: live phase",
+      "area": "canvas",
+      "closed": "2026-11-24"
+    },
+    "64": {
+      "title": "Game part 4: later cases",
+      "area": "canvas",
+      "closed": "2026-11-24"
+    },
+    "65": {
+      "title": "Game: open questions",
+      "area": "paper",
+      "closed": "2026-11-24"
+    },
+    "67": {
+      "title": "The requirements chapter of the paper",
+      "area": "paper"
+    },
+    "73": {
+      "title": "Health model on live data, checked against the real cluster",
+      "area": "usecases",
+      "closed": "2026-11-24"
+    },
+    "74": {
+      "title": "Early experiments on Azure",
+      "area": "usecases",
+      "closed": "2026-11-24"
+    },
+    "99": {
+      "title": "Roadmap: from semi-structured data to self-updating graphs",
+      "area": "run",
+      "closed": "2026-11-24"
+    },
+    "120": {
+      "title": "Tests read what the engine serves, not its insides",
+      "area": "engine",
+      "closed": "2026-11-24"
+    },
+    "122": {
+      "title": "The run's state: plan, decisions and workers",
+      "area": "run"
+    },
+    "126": {
+      "title": "Pin the migration baseline; shared edges retract with their last support",
+      "area": "engine",
+      "closed": "2026-11-24"
+    },
+    "127": {
+      "title": "Load versioned gkql modules and spaces into the checked catalog",
+      "area": "engine",
+      "closed": "2026-11-24"
+    },
+    "128": {
+      "title": "Run and edit one complete graph-only space",
+      "area": "engine",
+      "closed": "2026-11-24"
+    },
+    "129": {
+      "title": "Port the shipped definitions, library and fixtures",
+      "area": "engine",
+      "closed": "2026-11-24"
+    },
+    "131": {
+      "title": "Upgrade stored journals for graph-only recovery",
+      "area": "engine",
+      "closed": "2026-11-24"
+    },
+    "132": {
+      "title": "Remove the two old front ends: gkql is the only language",
+      "area": "engine",
+      "closed": "2026-11-24"
+    },
+    "136": {
+      "title": "Rename: a graph's name is GraphId",
+      "area": "engine",
+      "closed": "2026-11-24"
+    },
+    "141": {
+      "title": "A scrubbed Azure tutorial fixture and metrics feed",
+      "area": "usecases",
+      "closed": "2026-11-24"
+    },
+    "142": {
+      "title": "Rebuild the Azure health model outside the engine: all 47 signals in gkql from raw data",
+      "area": "usecases",
+      "closed": "2026-11-25"
+    },
+    "143": {
+      "title": "Derive Container Apps health and user flows from inventory",
+      "area": "usecases",
+      "closed": "2026-11-24"
+    },
+    "144": {
+      "title": "Make the core model-neutral; health lives only in projections",
+      "area": "usecases",
+      "closed": "2026-11-24"
+    },
+    "145": {
+      "title": "Project business flows with the Azure model held out",
+      "area": "usecases",
+      "closed": "2026-11-24"
+    },
+    "146": {
+      "title": "Azure Monitor metrics and query results in the flow tutorial",
+      "area": "usecases",
+      "closed": "2026-11-24"
+    },
+    "147": {
+      "title": "Collectors for logs, Prometheus samples and Kubernetes metrics, outside the engine",
+      "area": "usecases",
+      "closed": "2026-11-25"
+    },
+    "151": {
+      "title": "Health policy as a gkql library over one keyed fold of windows",
+      "area": "usecases",
+      "closed": "2026-11-25"
+    },
+    "154": {
+      "title": "The architecture feedback board",
+      "area": "canvas"
+    },
+    "156": {
+      "title": "Architecture review: partitioning by key is a goal, not built",
+      "area": "run",
+      "closed": "2026-11-24"
+    },
+    "157": {
+      "title": "Architecture review: reactivating a definition replays all history",
+      "area": "run",
+      "closed": "2026-11-24"
+    },
+    "158": {
+      "title": "Architecture review: the host owns every lifecycle under one lock",
+      "area": "engine",
+      "closed": "2026-11-24"
+    },
+    "159": {
+      "title": "gkql is complete against the requirements: recursion, percentile, conformance list",
+      "area": "engine",
+      "closed": "2026-11-25"
+    },
+    "160": {
+      "title": "Canvas design pass",
+      "area": "canvas",
+      "closed": "2026-11-24"
+    },
+    "161": {
+      "title": "Min and max over decimals depended on arrival order",
+      "area": "engine",
+      "closed": "2026-11-25"
+    },
+    "162": {
+      "title": "Remove the KQL editor from Canvas",
+      "area": "canvas",
+      "closed": "2026-11-24"
+    },
+    "163": {
+      "title": "Canvas gkql editor: graph, outline and text in step",
+      "area": "canvas",
+      "closed": "2026-11-24"
+    },
+    "164": {
+      "title": "The tutorial runs on record envelopes, with its own collector",
+      "area": "usecases",
+      "closed": "2026-11-25"
+    },
+    "165": {
+      "title": "Paper: percentile can now be expressed",
+      "area": "paper",
+      "closed": "2026-11-25"
+    },
+    "166": {
+      "title": "Rename: time series are events and windows, not telemetry",
+      "area": "engine",
+      "closed": "2026-11-25"
+    },
+    "167": {
+      "title": "Canvas reads the new event and window names",
+      "area": "canvas",
+      "closed": "2026-11-25"
+    },
+    "168": {
+      "title": "Canvas reads the keyed fold instead of the old threshold",
+      "area": "canvas",
+      "closed": "2026-11-25"
+    },
+    "169": {
+      "title": "Lateness is declared per event input, no engine-wide setting",
+      "area": "engine",
+      "closed": "2026-11-25"
+    },
+    "170": {
+      "title": "A fold's text is freed before its node id is made",
+      "area": "engine",
+      "closed": "2026-11-25"
+    },
+    "172": {
+      "title": "Paper: the keyed fold starts from a carried state at its look-back edge",
+      "area": "paper",
+      "closed": "2026-11-25"
+    },
+    "173": {
+      "title": "Engine: the keyed fold with a carried start state, memory bounded per key",
+      "area": "engine",
+      "closed": "2026-11-25"
+    },
+    "174": {
+      "title": "Health model fixes: rounding, empty averages, error codes, late captures",
+      "area": "usecases",
+      "closed": "2026-11-25"
+    },
+    "175": {
+      "title": "Fold and identity cost follow the changes",
+      "area": "engine",
+      "closed": "2026-11-25"
+    },
+    "176": {
+      "title": "Collectors: revised buckets, weighted averages, one alias scheme",
+      "area": "usecases",
+      "closed": "2026-11-25"
+    },
+    "177": {
+      "title": "gkql: rounding, text to integer, and windows of windows",
+      "area": "usecases",
+      "closed": "2026-11-25"
+    },
+    "178": {
+      "title": "A projection counted faults for rows its filter had dropped",
+      "area": "engine",
+      "closed": "2026-11-25"
+    },
+    "179": {
+      "title": "Canvas: a stored gkql draft lost its checked state after a reload",
+      "area": "canvas",
+      "closed": "2026-11-25"
+    },
+    "180": {
+      "title": "Paper: a key is dropped only when the clock moves",
+      "area": "paper",
+      "closed": "2026-11-25"
+    },
+    "181": {
+      "title": "A fold's policy row kept columns the program had dropped",
+      "area": "engine",
+      "closed": "2026-11-25"
+    },
+    "182": {
+      "title": "One fold key over six hours used about 142 KB, over the memory budget",
+      "area": "engine",
+      "closed": "2026-11-26"
+    },
+    "183": {
+      "title": "The command line and protocol named the domain; the guard missed them",
+      "area": "engine",
+      "closed": "2026-11-26"
+    },
+    "185": {
+      "title": "Paper: late input revises what it reaches, nothing is dropped for being late",
+      "area": "paper",
+      "closed": "2026-11-26"
+    },
+    "186": {
+      "title": "Engine: keep recent windows, drain older ones, read them back for late input",
+      "area": "engine"
+    },
+    "188": {
+      "title": "This review",
+      "area": "run"
+    }
+  },
+  "themes": [
+    {
+      "id": "core-paper",
+      "area": "paper",
+      "title": "A new core paper replaced the old chapters",
+      "what": "The chapters were written from the problem statement to related work: values and identity, graphs, how changes combine, runs, and time. The old chapters were removed and their links point to the new ones.",
+      "why": "Paper first: the engine and its tests must follow a definition that has been checked, not the other way round.",
+      "issues": [
+        2,
+        67,
+        7
+      ],
+      "commits": [
+        "97c7d71",
+        "8b8e962",
+        "ac8818c",
+        "7a296aa",
+        "3504733",
+        "e9b266d",
+        "1f1970e"
+      ]
+    },
+    {
+      "id": "time-chapter",
+      "area": "paper",
+      "title": "The time chapter was rewritten for late data",
+      "what": "First a keyed fold over windows was defined, then a carried start state at its look-back edge, then a rule for when a key may be dropped. On the last day Andre decided that no input is dropped for being late: the chapter now says late input revises what it reaches and old windows move to storage instead of being forgotten.",
+      "why": "Historic, new and late data must give the same result whatever order they arrive in.",
+      "issues": [
+        151,
+        172,
+        180,
+        182,
+        185,
+        165
+      ],
+      "commits": [
+        "2bfae10",
+        "a38bb07",
+        "22f84a8",
+        "11a7193",
+        "1d1c1f9",
+        "e6b7300",
+        "b8e839f",
+        "1ee8beb",
+        "bfb4ebf",
+        "acaf956"
+      ]
+    },
+    {
+      "id": "one-language",
+      "area": "engine",
+      "title": "gkql became the only language",
+      "what": "The two older ways to write definitions were removed in one cut. Every operator the shipped definitions use can now be written in gkql, and all definitions and fixtures were ported with neutral names.",
+      "why": "Two languages meant two meanings to prove, test and teach. One language is smaller.",
+      "issues": [
+        132,
+        127
+      ],
+      "commits": [
+        "d8cf1e5",
+        "7487ee8",
+        "ac1b0ea",
+        "a019172",
+        "d601fcf"
+      ]
+    },
+    {
+      "id": "neutral-core",
+      "area": "engine",
+      "title": "The core no longer knows any domain",
+      "what": "All input now arrives in one record envelope. The code that understood Azure, pods or health left the runtime and the command line, and a guard test fails the build if a domain word comes back.",
+      "why": "Use cases belong in projections written in gkql, not in the engine.",
+      "issues": [
+        144,
+        120,
+        183,
+        136,
+        166
+      ],
+      "commits": [
+        "4d22439",
+        "3a7268f",
+        "3a39d56",
+        "3d810d0",
+        "a1eae66",
+        "becd710",
+        "d4a9fe5"
+      ]
+    },
+    {
+      "id": "gkql-complete",
+      "area": "engine",
+      "title": "gkql covers every requirement of the paper",
+      "what": "Recursion over edges (a least value per node), percentile, exact sums, a state that holds until a change is confirmed, and lateness declared per input. A conformance list records each requirement and where gkql meets it.",
+      "why": "The language had to express every use case before the use cases were rebuilt on it.",
+      "issues": [
+        159,
+        169,
+        161,
+        177
+      ],
+      "commits": [
+        "45f51c0",
+        "b7ab2aa",
+        "f93b0cb",
+        "a829ed3",
+        "a222145",
+        "44ab947",
+        "ae552c8",
+        "3ea8ebe",
+        "3c786b8"
+      ]
+    },
+    {
+      "id": "keyed-fold",
+      "area": "engine",
+      "title": "One keyed fold over windows replaced the threshold operator",
+      "what": "A single fold walks each key's windows in time order and carries a state. It replaced a special threshold operator, and its cost now follows the changes, not the size of the history.",
+      "why": "Policies such as 'unhealthy for three windows' are then plain gkql in a library, not engine code.",
+      "issues": [
+        151,
+        173,
+        175,
+        170,
+        181,
+        178
+      ],
+      "commits": [
+        "2f2f02a",
+        "a077747",
+        "0c07eb8",
+        "121168c",
+        "10c1f31",
+        "ab9fa32",
+        "8e22a9c",
+        "ccc0884",
+        "2ab012b"
+      ]
+    },
+    {
+      "id": "host-lock",
+      "area": "engine",
+      "title": "The host keeps its lifecycle to itself",
+      "what": "The phase of a running space is private to the host; tests read what the host serves instead of its insides.",
+      "why": "An architecture review found the host was becoming the owner of everything under one lock.",
+      "issues": [
+        158
+      ],
+      "commits": [
+        "365b9ce",
+        "ccc4fd5"
+      ]
+    },
+    {
+      "id": "health-mirror",
+      "area": "usecases",
+      "title": "The Azure health model was rebuilt outside the engine",
+      "what": "All 47 signals of the deployed model are computed in gkql from raw data and compared with two settled checkpoints of the real model. Names that could identify resources are replaced by keyed aliases.",
+      "why": "Proof that a real use case runs on the neutral engine without engine changes.",
+      "issues": [
+        142,
+        8,
+        174,
+        177
+      ],
+      "commits": [
+        "3199f4b",
+        "7cfe6c1",
+        "e4bb9da",
+        "8929e1a",
+        "639f7a7",
+        "f547d78",
+        "3a5c763",
+        "722b32c"
+      ]
+    },
+    {
+      "id": "health-policy",
+      "area": "usecases",
+      "title": "Health policy became a gkql library",
+      "what": "The rules that turn signals into states (for example, how long a signal must stay bad) are a library over the keyed fold.",
+      "why": "Policy is data the user can read and change, not engine code.",
+      "issues": [
+        151
+      ],
+      "commits": [
+        "fc277ec",
+        "559f1d4"
+      ],
+      "shots": [
+        {
+          "file": "architecture-review/shots/fold-guide.png",
+          "caption": "The developer guide shows a health rule as a fold over one-minute CPU windows with four plain settings: above, below, enter after and exit after."
+        }
+      ]
+    },
+    {
+      "id": "collectors",
+      "area": "usecases",
+      "title": "Collectors bring data in from outside",
+      "what": "Logs, platform metrics through Event Hubs, Prometheus samples and Kubernetes metrics are read by collectors that write record envelopes. The tutorial got its own collector.",
+      "why": "The engine reads records only; every source-specific detail stays outside it.",
+      "issues": [
+        147,
+        176,
+        164
+      ],
+      "commits": [
+        "db24233",
+        "b930361",
+        "919cbe1",
+        "fca9e46",
+        "82aee5f",
+        "c5ffd58",
+        "d32e7d9",
+        "cd3a187"
+      ],
+      "shots": [
+        {
+          "file": "docs/evidence/164/1-workloads-starter.png",
+          "caption": "The tutorial on record envelopes: a first projection turns captured pod calls into calls between services, and each call can be traced to its source."
+        }
+      ]
+    },
+    {
+      "id": "gkql-editor",
+      "area": "canvas",
+      "title": "The KQL editor became a gkql editor",
+      "what": "The old KQL editor was removed. The new editor shows the steps, the graph and the text of one gkql program in step, with undo, and its checking is one explicit state machine.",
+      "why": "Users edit the one language the engine runs.",
+      "issues": [
+        162,
+        163,
+        179
+      ],
+      "commits": [
+        "1b41854",
+        "a40be1e",
+        "b487c11",
+        "7d7ea3a",
+        "bcb7815"
+      ],
+      "shots": [
+        {
+          "file": "architecture-review/shots/gkql-editor.png",
+          "caption": "The new gkql editor: the steps of one projection on the left, the same steps as a graph in the middle, the selected step on the right. The engine accepts the draft as it is."
+        }
+      ]
+    },
+    {
+      "id": "canvas-design",
+      "area": "canvas",
+      "title": "A design pass on the Canvas",
+      "what": "Neutral badges, colour only for states, readable legends, a status bar with user readouts and renderer colours that match the drawing sheet.",
+      "why": "Colour should carry meaning, not decoration.",
+      "issues": [
+        160
+      ],
+      "commits": [
+        "ba046a5",
+        "97701c5",
+        "7cbc620",
+        "08fd49a",
+        "d3d71e7"
+      ],
+      "shots": [
+        {
+          "file": "architecture-review/shots/canvas-design.png",
+          "caption": "The data graph after the design pass: plain type list with counts, colour only on types and states, readouts in the status bar."
+        }
+      ]
+    },
+    {
+      "id": "canvas-follows",
+      "area": "canvas",
+      "title": "The Canvas followed each engine change",
+      "what": "It reads the neutral record envelope, the new event and window names and the keyed fold.",
+      "why": "Every engine wire change needs a matching Canvas change the same day.",
+      "issues": [
+        144,
+        167,
+        168
+      ],
+      "commits": [
+        "4aee6c4",
+        "98f5428",
+        "b05432d",
+        "567f18a"
+      ]
+    },
+    {
+      "id": "managed-run",
+      "area": "run",
+      "title": "Work moved to managed sessions on one checkout",
+      "what": "An orchestrator starts worker sessions, one issue each, all on main. Each issue has numbered acceptance criteria; workers post proof, an independent review checks it and only the orchestrator closes. A board mirrors the issues.",
+      "why": "Several sessions could work at once without branches, and every claim has a link.",
+      "issues": [
+        122,
+        99
+      ],
+      "commits": []
+    },
+    {
+      "id": "cost-rules",
+      "area": "run",
+      "title": "Rules to cut the cost of the run",
+      "what": "After a token audit: one issue per session, idle sessions wait for mail instead of polling, the test reference is written before the engine change, reviews look only at the diff, and cheaper models for searches and small reviews.",
+      "why": "The first full day of the run used about 76 million tokens.",
+      "issues": [
+        122
+      ],
+      "commits": []
+    }
+  ],
+  "waste": [
+    {
+      "id": "fold-three-times",
+      "severity": "high",
+      "verdict": "change",
+      "title": "The rules for time changed three times in two days",
+      "plain": "The keyed fold was defined, then given a carried start state, then a rule for dropping keys, each time through paper, test reference and engine. A day later Andre decided that nothing is dropped for being late, which removed the carried state from the paper. The engine work for the new rule is still open.",
+      "cost": "3 issues of paper, reference and engine work, about 900 changed lines and at least 11 million input-equivalent tokens in the sessions started for them, now partly replaced",
+      "evidence": [
+        {
+          "label": "Decision: carry a start state",
+          "url": "https://github.com/abossard/sattle/issues/122#issuecomment-7167364684"
+        },
+        {
+          "issue": 172
+        },
+        {
+          "issue": 173
+        },
+        {
+          "commit": "0c07eb8"
+        },
+        {
+          "commit": "121168c"
+        },
+        {
+          "label": "Decision: no input is dropped for being late",
+          "url": "https://github.com/abossard/sattle/issues/122#issuecomment-7175357516"
+        },
+        {
+          "commit": "bfb4ebf"
+        },
+        {
+          "issue": 186
+        }
+      ],
+      "suggestion": "Settle a time rule with Andre in the paper, with a worked example of late data, before the reference and the engine start."
+    },
+    {
+      "id": "review-rounds",
+      "severity": "high",
+      "verdict": "keep",
+      "title": "One issue took 18 review rounds, another 13",
+      "plain": "The policy library went back and forth between failing and passing reviews 18 times. The audit found the cause: the engine session wrote its own test reference and copied its own mistakes into it. The gkql completeness issue drew 13 rounds and 40 comments.",
+      "cost": "31 review rounds on two issues, about 124,000 characters of comments",
+      "evidence": [
+        {
+          "issue": 151
+        },
+        {
+          "issue": 159
+        },
+        {
+          "label": "Token audit: the cause of the five extra reviews",
+          "url": "https://github.com/abossard/sattle/issues/122#issuecomment-7163987380"
+        }
+      ],
+      "suggestion": "Keep the rule from the audit: a different session writes the reference from the paper first. After three failed rounds, split the issue."
+    },
+    {
+      "id": "fold-memory",
+      "severity": "medium",
+      "verdict": "keep",
+      "title": "Memory was checked after the engine was built",
+      "plain": "One fold key over six hours used about 142 KB, more than the memory budget allows. It was found after the fold was finished, which led to the note on draining old windows and the rewrite of the time chapter.",
+      "cost": "One extra issue and a research note before the next engine step",
+      "evidence": [
+        {
+          "issue": 182
+        },
+        {
+          "commit": "1d1c1f9"
+        }
+      ],
+      "suggestion": "Keep the budget check, but run it on the paper's worked example before the engine is built."
+    },
+    {
+      "id": "no-issue-dump",
+      "severity": "medium",
+      "verdict": "stop",
+      "title": "11,617 lines landed without an issue",
+      "plain": "A large set of health mirror diagnostics and scripts was committed with no issue. Two later review fixes removed parts of it again, a test file and a capture.",
+      "cost": "11,617 lines, of which parts were removed in two review fixes",
+      "evidence": [
+        {
+          "commit": "3bd77ac"
+        },
+        {
+          "commit": "5971de3"
+        },
+        {
+          "commit": "0d080e2"
+        }
+      ],
+      "suggestion": "No commit without an issue; large lab drops go in under the issue that needs them."
+    },
+    {
+      "id": "board-parked",
+      "severity": "low",
+      "verdict": "stop",
+      "title": "A feedback board was built and parked the next day",
+      "plain": "A 5,669-line architecture board that wrote feedback back to GitHub was built on the first evening; the plan was reset the next day and the board is parked. This site replaces it.",
+      "cost": "5,669 lines, one evening",
+      "evidence": [
+        {
+          "commit": "4a9a57d"
+        },
+        {
+          "issue": 154
+        }
+      ],
+      "suggestion": "Build a tool when a question needs it; read GitHub instead of writing to it."
+    },
+    {
+      "id": "revert",
+      "severity": "low",
+      "verdict": "keep",
+      "title": "One change was reverted and redone",
+      "plain": "A rule for when a series starts was changed in the engine, reverted the same day and redone with a different rule.",
+      "cost": "3 small commits",
+      "evidence": [
+        {
+          "commit": "8de0134"
+        },
+        {
+          "commit": "8417968"
+        },
+        {
+          "commit": "d0b6367"
+        }
+      ],
+      "suggestion": "A quick revert is cheap; keep doing it. The cause was an engine change ahead of the paper."
+    }
+  ],
+  "overdone": [
+    {
+      "id": "empty-reviews",
+      "severity": "medium",
+      "verdict": "change",
+      "title": "Full reviews of renames and one-line paper edits found nothing",
+      "plain": "A rename of graph names, a rename of time series to events and windows, and a one-paragraph paper fix each got a full independent review with an engine test run. All three passed at the first round with nothing found.",
+      "cost": "3 review sessions with full test runs; all reviews ran as orchestrator subagents, 16 million input-equivalent tokens over the week",
+      "evidence": [
+        {
+          "label": "Rename review, passed",
+          "url": "https://github.com/abossard/sattle/issues/136#issuecomment-7144067994"
+        },
+        {
+          "label": "Paper fix review, passed",
+          "url": "https://github.com/abossard/sattle/issues/165#issuecomment-7158095000"
+        },
+        {
+          "label": "Rename review, passed",
+          "url": "https://github.com/abossard/sattle/issues/166#issuecomment-7158534063"
+        }
+      ],
+      "suggestion": "For renames and sentence edits, the orchestrator checks the diff itself; keep full reviews for new behaviour."
+    },
+    {
+      "id": "unread-docs",
+      "severity": "medium",
+      "verdict": "change",
+      "title": "Documents that nothing links to",
+      "plain": "The gkql conformance list changed in 20 commits but no file links to it, and it repeats part of the paper. The research note on fold memory was turned into the time chapter the same day. A 412-line analysis of the health mirror is linked from nowhere.",
+      "cost": "20 commits to one unlinked list; a note and a chapter saying the same thing",
+      "evidence": [
+        {
+          "file": "docs/gkql-conformance.md"
+        },
+        {
+          "file": "paper/research/16-fold-state-per-key.md"
+        },
+        {
+          "file": "lab/health-mirror/ANALYSIS.md"
+        }
+      ],
+      "suggestion": "Write a change into the chapter directly, and link or fold the conformance list into the paper."
+    },
+    {
+      "id": "protocol-churn",
+      "severity": "low",
+      "verdict": "change",
+      "title": "The protocol document changed in 26 commits",
+      "plain": "Engine steps edited the protocol document 26 times in three days. The same five engine files changed in 14 to 24 commits each, across many issues.",
+      "cost": "26 commits to one file in three days",
+      "evidence": [
+        {
+          "file": "engine/PROTOCOL.md"
+        },
+        {
+          "file": "engine/src/Sattle.Runtime/Operators.cs"
+        }
+      ],
+      "suggestion": "Update the protocol once per finished issue, not per commit."
+    },
+    {
+      "id": "orchestration-cost",
+      "severity": "high",
+      "verdict": "keep",
+      "title": "Running the sessions cost more than the work in them",
+      "plain": "Over the week 57 sessions used 183 million input-equivalent tokens and 8.2 million output tokens. 85% of the input side was re-reading context already in the cache. Turns with more than 250,000 tokens of context carried a quarter of the input side. The orchestrator and its subagents, which ran the reviews, took 41 million (23%). Almost all of it, 98.6%, ran on the largest model. In three days there were 8 orchestrator and 26 worker hand-overs.",
+      "cost": "183 million input-equivalent tokens; 41 million for orchestration and reviews; 34 hand-overs",
+      "evidence": [
+        {
+          "label": "Token audit of the first full day",
+          "url": "https://github.com/abossard/sattle/issues/122#issuecomment-7163987380"
+        },
+        {
+          "label": "Decision: models by kind of work",
+          "url": "https://github.com/abossard/sattle/issues/122#issuecomment-7175299909"
+        }
+      ],
+      "suggestion": "Keep the audit's rules and the cheaper models; measure again at the end of next week."
+    },
+    {
+      "id": "rule-churn",
+      "severity": "medium",
+      "verdict": "change",
+      "title": "The rules of the run changed five times in three days",
+      "plain": "Five decisions changed how sessions work. One of them forbade the slow test runs that earlier hand-overs had told workers to run, so those hand-overs were wrong the moment they were read.",
+      "cost": "5 rule changes; stale instructions in earlier hand-overs",
+      "evidence": [
+        {
+          "label": "Decision: no slow test runs",
+          "url": "https://github.com/abossard/sattle/issues/122#issuecomment-7157763681"
+        },
+        {
+          "issue": 122
+        }
+      ],
+      "suggestion": "Collect rule changes and apply them once a day, in the briefs, not in hand-overs."
+    },
+    {
+      "id": "repeated-pitfall",
+      "severity": "low",
+      "verdict": "change",
+      "title": "The same pitfall was written in nine hand-overs",
+      "plain": "How the shell splits file paths for a commit was explained again in nine worker hand-overs instead of being fixed once.",
+      "cost": "9 repeats",
+      "evidence": [
+        {
+          "label": "One of the nine",
+          "url": "https://github.com/abossard/sattle/issues/159#issuecomment-7144364253"
+        }
+      ],
+      "suggestion": "Put it into the common rules or a small commit helper once."
+    }
+  ],
+  "good": [
+    {
+      "title": "Use cases left the engine",
+      "plain": "The health model, its policy and the collectors run in gkql outside the engine, and a guard keeps domain words out of it."
+    },
+    {
+      "title": "The old plan was cleared",
+      "plain": "21 issues from the old plan were closed on the day of the reset, so the board lists only live work."
+    },
+    {
+      "title": "Every claim has a link",
+      "plain": "Acceptance criteria with ids and proof per criterion made it possible to write this review from the issues alone."
+    }
+  ],
+  "flow": {
+    "title": "How one piece of work moved through the run",
+    "steps": [
+      {
+        "id": "decide",
+        "title": "Andre decides",
+        "text": "A rule goes into the decision list of the run."
+      },
+      {
+        "id": "issue",
+        "title": "Issue",
+        "text": "The work gets an issue with numbered acceptance criteria."
+      },
+      {
+        "id": "paper",
+        "title": "Paper",
+        "text": "New meaning is defined and checked in the paper."
+      },
+      {
+        "id": "reference",
+        "title": "Reference test",
+        "text": "Another session writes a test from the paper."
+      },
+      {
+        "id": "engine",
+        "title": "Engine",
+        "text": "The engine changes until the reference passes."
+      },
+      {
+        "id": "proof",
+        "title": "Proof",
+        "text": "One proof row per criterion, at a named commit."
+      },
+      {
+        "id": "review",
+        "title": "Review",
+        "text": "An independent review checks it; the orchestrator closes."
+      }
+    ],
+    "loops": [
+      {
+        "from": "review",
+        "to": "engine",
+        "title": "Review failed, back to the engine",
+        "evidence": {
+          "issue": 151
+        }
+      },
+      {
+        "from": "engine",
+        "to": "decide",
+        "title": "A rule changed after the engine was built",
+        "evidence": {
+          "label": "Decision: no input is dropped for being late",
+          "url": "https://github.com/abossard/sattle/issues/122#issuecomment-7175357516"
+        }
+      },
+      {
+        "from": "review",
+        "to": "issue",
+        "title": "Criteria moved to a new issue",
+        "evidence": {
+          "issue": 186
+        }
+      }
+    ]
+  },
+  "tokens": {
+    "method": "Summed from the Claude Code session transcripts of this project: every model reply records its tokens, and each reply is counted once. A day runs on Central European time. The kind of a session comes from the brief it was started with; subagents count to the session that started them. Sessions started with a general brief (engine, paper, canvas, lab, orchestrator) worked on several issues, so only sessions started for one issue are counted per issue.",
+    "weights": "Input-equivalent counts new input and cache writes in full and a cache read at one tenth, the rough price ratio. Output is shown apart.",
+    "days": [
+      {
+        "date": "2026-11-23",
+        "input": 0,
+        "cacheWrite": 0,
+        "cacheRead": 0,
+        "output": 0,
+        "sessions": 0
+      },
+      {
+        "date": "2026-11-24",
+        "input": 9074,
+        "cacheWrite": 10816199,
+        "cacheRead": 632981986,
+        "output": 3127609,
+        "sessions": 20
+      },
+      {
+        "date": "2026-11-25",
+        "input": 13742,
+        "cacheWrite": 14846103,
+        "cacheRead": 883666368,
+        "output": 4655549,
+        "sessions": 35
+      },
+      {
+        "date": "2026-11-26",
+        "input": 784,
+        "cacheWrite": 1957851,
+        "cacheRead": 38681988,
+        "output": 427074,
+        "sessions": 7
+      }
+    ],
+    "kinds": [
+      {
+        "id": "engine",
+        "name": "Engine",
+        "sessions": 25,
+        "own": 69911553,
+        "subagents": 17385772,
+        "output": 3224221
+      },
+      {
+        "id": "orchestrator",
+        "name": "Orchestrator",
+        "sessions": 6,
+        "own": 25050074,
+        "subagents": 16392801,
+        "output": 1612083
+      },
+      {
+        "id": "lab",
+        "name": "Use cases (lab)",
+        "sessions": 8,
+        "own": 18029643,
+        "subagents": 3111942,
+        "output": 925086
+      },
+      {
+        "id": "paper",
+        "name": "Paper",
+        "sessions": 8,
+        "own": 12076893,
+        "subagents": 2716232,
+        "output": 1427217
+      },
+      {
+        "id": "canvas",
+        "name": "Canvas",
+        "sessions": 8,
+        "own": 12532125,
+        "subagents": 509187,
+        "output": 525756
+      },
+      {
+        "id": "interactive",
+        "name": "Interactive session",
+        "sessions": 1,
+        "own": 1850343,
+        "subagents": 2726338,
+        "output": 389400
+      },
+      {
+        "id": "review",
+        "name": "Review sessions (this review)",
+        "sessions": 1,
+        "own": 647536,
+        "subagents": 236348,
+        "output": 106469
+      }
+    ],
+    "issues": [
+      {
+        "issue": 173,
+        "inputEquivalent": 4518109,
+        "sessions": 1
+      },
+      {
+        "issue": 160,
+        "inputEquivalent": 3694815,
+        "sessions": 2
+      },
+      {
+        "issue": 175,
+        "inputEquivalent": 3137121,
+        "sessions": 1
+      },
+      {
+        "issue": 176,
+        "inputEquivalent": 2670721,
+        "sessions": 1
+      },
+      {
+        "issue": 183,
+        "inputEquivalent": 2589097,
+        "sessions": 1
+      },
+      {
+        "issue": 172,
+        "inputEquivalent": 2447257,
+        "sessions": 1
+      },
+      {
+        "issue": 182,
+        "inputEquivalent": 2215095,
+        "sessions": 1
+      },
+      {
+        "issue": 177,
+        "inputEquivalent": 1803446,
+        "sessions": 2
+      },
+      {
+        "issue": 174,
+        "inputEquivalent": 1727456,
+        "sessions": 2
+      },
+      {
+        "issue": 167,
+        "inputEquivalent": 1247458,
+        "sessions": 1
+      },
+      {
+        "issue": 168,
+        "inputEquivalent": 1242488,
+        "sessions": 1
+      },
+      {
+        "issue": 185,
+        "inputEquivalent": 1203893,
+        "sessions": 1
+      },
+      {
+        "issue": 180,
+        "inputEquivalent": 905676,
+        "sessions": 1
+      },
+      {
+        "issue": 188,
+        "inputEquivalent": 883883,
+        "sessions": 1
+      },
+      {
+        "issue": 164,
+        "inputEquivalent": 870787,
+        "sessions": 1
+      },
+      {
+        "issue": 178,
+        "inputEquivalent": 546387,
+        "sessions": 1
+      },
+      {
+        "issue": 181,
+        "inputEquivalent": 323440,
+        "sessions": 1
+      },
+      {
+        "issue": 142,
+        "inputEquivalent": 283170,
+        "sessions": 1
+      },
+      {
+        "issue": 179,
+        "inputEquivalent": 278861,
+        "sessions": 1
+      },
+      {
+        "issue": 186,
+        "inputEquivalent": 41448,
+        "sessions": 1
+      }
+    ],
+    "models": [
+      {
+        "name": "Fable 5.2",
+        "inputEquivalent": 1850343
+      },
+      {
+        "name": "Opus 5.5",
+        "inputEquivalent": 180543668
+      },
+      {
+        "name": "Sonnet 5.5",
+        "inputEquivalent": 782777
+      }
+    ],
+    "longContext": {
+      "threshold": 250000,
+      "turns": 1345,
+      "share": 0.245
+    },
+    "sessions": 57
+  }
+}

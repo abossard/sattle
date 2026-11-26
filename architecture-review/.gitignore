@@ -1,5 +1,6 @@
 dist/
 node_modules/
 .wrangler/
-.dev.vars
 /public/review.json
+/public/shots/
+.dev.vars

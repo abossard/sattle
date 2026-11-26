@@ -2,9 +2,5 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "sattle-architecture-review",
   "pages_build_output_dir": "dist",
-  "compatibility_date": "2026-11-23",
-  "vars": {
-    "GITHUB_OWNER": "abossard",
-    "GITHUB_REPOSITORY": "sattle"
-  }
+  "compatibility_date": "2026-11-23"
 }

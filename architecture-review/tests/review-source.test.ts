@@ -4,23 +4,30 @@ import { describe, expect, it } from "vitest";
 import { parseReview } from "../src/model";
 
 const root = resolve(import.meta.dirname, "..");
-const generated = JSON.parse(readFileSync(resolve(root, "public/review.json"), "utf8"));
+const review = parseReview(JSON.parse(readFileSync(resolve(root, "public/review.json"), "utf8")));
+const repository = `https://github.com/${review.repository}/`;
+const links = (value: unknown): string[] => typeof value === "string"
+  ? (value.startsWith("http") ? [value] : [])
+  : Array.isArray(value) ? value.flatMap(links) : value && typeof value === "object" ? Object.values(value).flatMap(links) : [];
 
-describe("generated review evidence", () => {
-  it("parses as the public review schema", () => {
-    const review = parseReview(generated);
-    expect(review.findings.length).toBeGreaterThanOrEqual(8);
-    expect(review.modules.length).toBeGreaterThanOrEqual(6);
+describe("generated week review", () => {
+  it("covers every area, every day and every commit of the week", () => {
+    expect(review.areas.map((area) => area.id)).toEqual(["paper", "engine", "usecases", "canvas", "run"]);
+    expect(review.days.reduce((sum, day) => sum + day.commits.length, 0)).toBe(review.totals.commits);
+    expect(review.days.reduce((sum, day) => sum + day.closed.length, 0)).toBe(review.totals.issuesClosed);
   });
 
-  it.each(generated.findings)("keeps $id connected to evidence and a GitHub issue", (finding) => {
+  it("links only into the repository", () => {
+    expect(links(review).filter((url) => !url.startsWith(repository))).toEqual([]);
+  });
+
+  it.each([...review.waste, ...review.overdone])("gives $id evidence and a recommendation", (finding) => {
     expect(finding.evidence.length).toBeGreaterThan(0);
-    expect(finding.issueNumbers.length).toBeGreaterThan(0);
-    expect(finding.verification.length).toBeGreaterThan(0);
+    expect(["stop", "keep", "change"]).toContain(finding.verdict);
+    expect(finding.suggestion.length).toBeGreaterThan(0);
   });
 
-  it("sorts findings by generated priority", () => {
-    const scores = generated.findings.map((finding: { score: number }) => finding.score);
-    expect(scores).toEqual([...scores].sort((left, right) => right - left));
+  it.each(review.themes)("links $id to an issue", (theme) => {
+    expect(theme.issues.length).toBeGreaterThan(0);
   });
 });

@@ -1,22 +1,32 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const root = resolve(import.meta.dirname, "..");
-const source = JSON.parse(readFileSync(resolve(root, "data/review-source.json"), "utf8"));
+const source = JSON.parse(readFileSync(resolve(root, "data/week-source.json"), "utf8"));
 
-describe("review generation boundary", () => {
+describe("week review generation boundary", () => {
   it.each([
-    ["unowned finding", (data: typeof source) => { data.findings[0].issueNumbers = []; }, "issue"],
-    ["missing evidence", (data: typeof source) => { data.findings[0].evidence = []; }, "evidence"],
-    ["stale evidence", (data: typeof source) => { data.findings[0].evidence[0].anchor = "not-a-real-code-anchor"; }, "anchor"],
-    ["broken edge", (data: typeof source) => { data.edges[0].to = "missing"; }, "module"],
-    ["duplicate finding", (data: typeof source) => { data.findings.push(data.findings[0]); }, "duplicate"],
-    ["invalid signal", (data: typeof source) => { data.findings[0].signals.impact = 2; }, "signal"],
+    ["a theme without an issue", (data: typeof source) => { data.themes[0].issues = []; }, "issue"],
+    ["an issue without a title", (data: typeof source) => { data.themes[0].issues.push(99999); }, "no title"],
+    ["a commit that does not exist", (data: typeof source) => { data.themes[0].commits.push("0000000"); }, "resolve"],
+    ["a commit outside the week", (data: typeof source) => { data.themes[0].commits.push("4a9a57d~1"); }, "outside the period"],
+    ["a finding without evidence", (data: typeof source) => { data.waste[0].evidence = []; }, "evidence"],
+    ["a finding without a verdict", (data: typeof source) => { data.waste[0].verdict = "maybe"; }, "verdict"],
+    ["a finding without a recommendation", (data: typeof source) => { data.overdone[0].suggestion = ""; }, "recommendation"],
+    ["evidence outside the repository", (data: typeof source) => { data.waste[0].evidence.push({ label: "x", url: "https://example.com/" }); }, "point into"],
+    ["a missing evidence file", (data: typeof source) => { data.overdone[1].evidence.push({ file: "docs/missing.md" }); }, "missing"],
+    ["a flow loop to a missing step", (data: typeof source) => { data.flow.loops[0].to = "nowhere"; }, "missing step"],
+    ["a duplicate item id", (data: typeof source) => { data.overdone.push(data.waste[0]); }, "duplicate"],
+    ["an Azure id in text", (data: typeof source) => { data.summary += " 0f8fad5b-d9cb-469f-a165-70867728950e"; }, "azure id"],
+    ["an IP address in text", (data: typeof source) => { data.waste[0].plain += " 10.1.2.3"; }, "ip address"],
+    ["an e-mail address in text", (data: typeof source) => { data.good[0].plain += " someone@example.org"; }, "e-mail"],
+    ["a local path in text", (data: typeof source) => { data.themes[0].why += " /Users/someone/x"; }, "local path"],
+    ["paper notation in text", (data: typeof source) => { data.themes[0].what += " see Thm. 6.3"; }, "paper notation"],
   ])("rejects %s before publishing", (_name, mutate, message) => {
-    const directory = mkdtempSync(resolve(tmpdir(), "sattle-review-"));
+    const directory = mkdtempSync(resolve(tmpdir(), "sattle-week-"));
     try {
       const data = structuredClone(source);
       mutate(data);
@@ -27,17 +37,6 @@ describe("review generation boundary", () => {
       expect(run.stderr).toMatch(new RegExp(message, "i"));
     } finally {
       rmSync(directory, { recursive: true, force: true });
-    }
-  });
-
-  it("pins every generated source line to its committed evidence anchor", () => {
-    const review = JSON.parse(readFileSync(resolve(root, "public/review.json"), "utf8"));
-    expect(review.revision).toMatch(/^[a-f0-9]{40}$/);
-    for (const finding of review.findings) {
-      for (const evidence of finding.evidence) {
-        const content = execFileSync("git", ["show", `${review.revision}:${evidence.path}`], { cwd: root, encoding: "utf8" });
-        expect(content.split("\n")[evidence.line - 1]).toContain(evidence.anchor);
-      }
     }
   });
 });

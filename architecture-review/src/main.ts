@@ -1,28 +1,9 @@
 import "./styles.css";
-import { loadConfig, loadDiscussion, loadIssues, sendFeedback } from "./api";
-import { WEIGHTS } from "../shared/scoring.mjs";
-import { parseReview, type Finding, type LiveIssue, type ModuleNode, type ReviewDocument, type RuntimeConfig } from "./model";
-import { pageWindow } from "./paging";
+import { parseReview, type Area, type CommitRef, type Day, type Evidence, type Finding, type IssueRef, type Theme, type WeekReview } from "./model";
 
 const mount = document.querySelector<HTMLDivElement>("#app");
 if (!mount) throw new Error("Missing #app");
 const app: HTMLDivElement = mount;
-
-const state = {
-  view: "board" as "board" | "map",
-  filter: "all",
-  query: "",
-  selectedId: "",
-  reviewKey: "",
-  page: 1,
-};
-
-let review: ReviewDocument;
-let config: RuntimeConfig;
-let issues = new Map<number, LiveIssue>();
-const drafts = new Map<string, { decision: string; rationale: string }>();
-let discussionRequest = 0;
-let discussionBusy = false;
 
 const escape = (value: string) => value
   .replaceAll("&", "&amp;")
@@ -30,418 +11,257 @@ const escape = (value: string) => value
   .replaceAll(">", "&gt;")
   .replaceAll('"', "&quot;")
   .replaceAll("'", "&#039;");
+const number = (value: number) => value.toLocaleString("en-US");
+const dayName = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+const external = (url: string, body: string, className = "") => `<a${className ? ` class="${className}"` : ""} href="${escape(url)}" target="_blank" rel="noreferrer">${body}</a>`;
 
-const issueUrl = (number: number) => `${config.repositoryUrl}/issues/${number}`;
-const repositoryFileUrl = (path: string, line: number) => `${config.repositoryUrl}/blob/${review.revision}/${path}#L${line}`;
-const readableDate = (value: string | null) => value ? new Date(value).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "unknown";
+const issueLink = (issue: IssueRef) => external(issue.url, `${escape(issue.title)} <span class="ref">#${issue.n}</span>`, "link");
+const commitLink = (commit: CommitRef) => external(commit.url, `${escape(commit.title)} <span class="ref">${escape(commit.sha)}</span>`, "link");
+const evidenceLink = (evidence: Evidence) => external(evidence.url, `${escape(evidence.label)}${evidence.ref ? ` <span class="ref">${escape(evidence.ref)}</span>` : ""}`, "link");
 
-function issueMarkup(number: number) {
-  const live = issues.get(number);
-  return `<a class="issue-link issue-state" data-issue="${number}" data-state="${live?.state ?? "unknown"}" href="${escape(issueUrl(number))}" target="_blank" rel="noreferrer">#${number}${live ? ` ${escape(live.title)}` : " · status unavailable"}</a>`;
+function header(review: WeekReview) {
+  const { totals } = review;
+  return `
+    <header class="masthead">
+      <p class="kicker">Sattle week review, ${escape(dayName(review.period.from))} to ${escape(dayName(review.period.to))}</p>
+      <h1>What was built this week, and where effort was wasted</h1>
+      <p class="lede">${escape(review.summary)}</p>
+      <dl class="totals">
+        <div><dt>Commits</dt><dd>${number(totals.commits)}</dd></div>
+        <div><dt>Issues closed</dt><dd>${number(totals.issuesClosed)}</dd></div>
+        <div><dt>Lines added</dt><dd>+${number(totals.added)}</dd></div>
+        <div><dt>Lines removed</dt><dd>−${number(totals.deleted)}</dd></div>
+      </dl>
+    </header>`;
 }
 
-function selectedFinding(): Finding | undefined {
-  return review.findings.find((finding) => finding.id === state.selectedId) ?? review.findings[0];
+function controls(review: WeekReview) {
+  const buttons = review.areas.map((area) => `<button type="button" class="chip" data-filter="${area.id}" data-area="${area.id}" aria-pressed="false"><span class="swatch" aria-hidden="true"></span>${escape(area.name)}</button>`).join("");
+  return `
+    <nav class="controls" aria-label="Sections and areas">
+      <div class="sections">
+        <a href="#timeline">Timeline</a><a href="#map">Map</a><a href="#built">Built</a><a href="#waste">Waste</a><a href="#tokens">Tokens</a><a href="#flow">Flow</a>
+      </div>
+      <div class="filters" role="group" aria-label="Show one area">
+        <button type="button" class="chip" data-filter="all" aria-pressed="true">All areas</button>${buttons}
+      </div>
+    </nav>`;
 }
 
-function visibleFindings() {
-  const query = state.query.trim().toLowerCase();
-  return review.findings.filter((finding) => {
-    if (state.filter !== "all" && !finding.kinds.includes(state.filter as Finding["kinds"][number]) && finding.risk !== state.filter) return false;
-    return !query || `${finding.title} ${finding.summary} ${finding.principle} ${finding.question}`.toLowerCase().includes(query);
-  });
+function dayColumn(day: Day, index: number) {
+  const squares = day.commits.map((commit, at) => `<li data-area="${commit.area}" style="--i:${at}">${external(commit.url, `<span class="visually-hidden">${escape(commit.sha)}: ${escape(commit.title)}</span>`, "square")}</li>`).join("");
+  const closed = day.closed.length
+    ? `<details class="closed"><summary>${day.closed.length} ${day.closed.length === 1 ? "issue" : "issues"} closed</summary><ul>${day.closed.map((issue) => `<li data-area="${issue.area}">${issueLink(issue)}</li>`).join("")}</ul></details>`
+    : `<p class="quiet">No issue closed.</p>`;
+  return `
+    <article class="day" style="--d:${index}">
+      <h3>${escape(dayName(day.date))}</h3>
+      <p class="count">${day.commits.length} ${day.commits.length === 1 ? "commit" : "commits"}</p>
+      <p>${escape(day.note)}</p>
+      <ul class="squares" aria-label="Commits on ${escape(dayName(day.date))}">${squares}</ul>
+      ${closed}
+    </article>`;
 }
 
-function metricMarkup() {
-  return review.metrics.map((metric) => `
-    <article class="metric" data-status="${metric.status}">
-      <span class="metric-value">${escape(metric.value)}</span>
-      <span class="metric-label">${escape(metric.label)}</span>
-      <p class="metric-detail">${escape(metric.detail)}</p>
-      ${metric.issueNumbers.length ? `<a href="${issueUrl(metric.issueNumbers[0])}" target="_blank" rel="noreferrer">Evidence in #${metric.issueNumbers[0]}</a>` : ""}
-    </article>
-  `).join("");
+function timeline(review: WeekReview) {
+  return `
+    <section id="timeline" aria-labelledby="timeline-title">
+      <h2 id="timeline-title">The week, day by day</h2>
+      <p class="section-note">Each square is one commit, coloured by the area it changed most. Open a square to see the commit on GitHub.</p>
+      <div class="days">${review.days.map(dayColumn).join("")}</div>
+    </section>`;
 }
 
-function edgePath(from: ModuleNode, to: ModuleNode) {
-  const x1 = from.x, y1 = from.y, x2 = to.x, y2 = to.y;
-  const mx = (x1 + x2) / 2;
-  return `M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`;
+function areaTile(area: Area, review: WeekReview) {
+  const lines = area.added + area.deleted;
+  const widest = Math.max(1, ...area.folders.map((folder) => folder.lines));
+  const folders = area.folders.map((folder) => `
+    <li>
+      ${external(`https://github.com/${review.repository}/tree/${review.revision}/${folder.path}`, escape(folder.path), "link")}
+      <span class="bar" style="--share:${(folder.lines / widest).toFixed(3)}" aria-hidden="true"></span>
+      <span class="num">${number(folder.lines)} lines, ${folder.commits} ${folder.commits === 1 ? "commit" : "commits"}</span>
+    </li>`).join("");
+  return `
+    <article class="tile${lines >= 10_000 ? " wide" : ""}" data-area="${area.id}">
+      <h3><span class="swatch" aria-hidden="true"></span>${escape(area.name)}</h3>
+      <p>${escape(area.about)}</p>
+      <p class="num">${area.commits} commits, +${number(area.added)} −${number(area.deleted)}</p>
+      ${folders ? `<ul class="folders">${folders}</ul>` : `<p class="quiet">Its work lives in issues and session notes, not in the repository.</p>`}
+      <a class="more" href="#built-${area.id}">What was built</a>
+    </article>`;
 }
 
-function moduleRisk(module: ModuleNode): string {
-  const linked = review.findings.filter((finding) => finding.ownerFiles.some((path) => path === module.path || path.startsWith(`${module.path}/`)));
-  const top = linked.reduce((score, finding) => Math.max(score, finding.score), 0);
-  if (top >= 80) return "critical";
-  if (top >= 62) return "high";
-  if (top >= 42) return "medium";
-  return "low";
+function map(review: WeekReview) {
+  return `
+    <section id="map" aria-labelledby="map-title">
+      <h2 id="map-title">Where the changes went</h2>
+      <p class="section-note">Areas that changed more than 10,000 lines get a wide tile. The bars show the folders that changed most.</p>
+      <div class="tiles">${review.areas.map((area) => areaTile(area, review)).join("")}</div>
+    </section>`;
 }
 
-function mapMarkup() {
-  const limit = 160;
-  const modules = review.modules.slice(0, limit);
-  const nodes = new Map(modules.map((module) => [module.id, module]));
-  const edges = review.edges.map((edge) => {
-    const from = nodes.get(edge.from), to = nodes.get(edge.to);
-    if (!from || !to) return "";
-    const path = edgePath(from, to);
-    const x = (from.x + to.x) / 2, y = (from.y + to.y) / 2 - 7;
+function themeCard(theme: Theme) {
+  const commits = theme.commits.length
+    ? `<details class="commits"><summary>${theme.commits.length} ${theme.commits.length === 1 ? "commit" : "commits"}, ${number(theme.lines)} lines</summary><ul>${theme.commits.map((commit) => `<li>${commitLink(commit)}</li>`).join("")}</ul></details>`
+    : `<p class="quiet">No commits: this work lives in issues and the run's decision list.</p>`;
+  return `
+    <article class="theme" data-area="${theme.area}">
+      <h4><span class="swatch" aria-hidden="true"></span>${escape(theme.title)}</h4>
+      <p>${escape(theme.what)}</p>
+      <p class="why"><strong>Why.</strong> ${escape(theme.why)}</p>
+      <ul class="issues">${theme.issues.map((issue) => `<li>${issueLink(issue)}</li>`).join("")}</ul>
+      ${commits}
+      ${theme.shots.map((shot) => `<figure class="shot"><img src="${escape(shot.src)}" width="${shot.width}" height="${shot.height}" alt="${escape(shot.caption)}" loading="lazy" decoding="async"><figcaption>${escape(shot.caption)}</figcaption></figure>`).join("")}
+    </article>`;
+}
+
+function built(review: WeekReview) {
+  const groups = review.areas.map((area) => {
+    const themes = review.themes.filter((theme) => theme.area === area.id);
+    if (!themes.length) return "";
     return `
-      <path class="map-edge map-edge-${edge.kind}" d="${path}" marker-end="url(#arrow-${edge.kind})"></path>
-      <text class="map-edge-label" x="${x}" y="${y}" text-anchor="middle">${escape(edge.label)}</text>
-    `;
+      <section class="area-group" id="built-${area.id}" data-area="${area.id}" aria-labelledby="built-${area.id}-title">
+        <h3 id="built-${area.id}-title"><span class="swatch" aria-hidden="true"></span>${escape(area.name)}</h3>
+        <div class="themes">${themes.map(themeCard).join("")}</div>
+      </section>`;
   }).join("");
-  const moduleMarkup = modules.map((module) => `
-    <g class="map-node" data-risk="${moduleRisk(module)}" data-module="${escape(module.id)}" tabindex="0" role="button" aria-label="${escape(module.title)}: ${escape(module.role)}" transform="translate(${module.x - 100} ${module.y - 42})">
-      <rect width="200" height="84"></rect>
-      <text class="map-node-title" x="16" y="29">${escape(module.title)}</text>
-      <text class="map-node-role" x="16" y="50">${escape(module.role)}</text>
-      <text class="map-node-role" x="16" y="69">${escape(module.issueNumbers.map((number) => `#${number}`).join(" · ") || module.path)}</text>
-    </g>
-  `).join("");
   return `
-    <section class="panel" aria-labelledby="map-title">
-      <div class="panel-head"><h2 id="map-title">Architecture and feedback map</h2><span>${modules.length === review.modules.length ? `${modules.length} modules` : `showing ${modules.length} of ${review.modules.length} modules`}</span></div>
-      <div class="map-wrap">
-        <svg class="architecture-map" viewBox="0 0 1200 620" role="img" aria-label="Sattle module boundary and data-flow map">
-          <defs>
-            <marker id="arrow-data" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L0 6 L7 3 z" fill="var(--muted)"></path></marker>
-            <marker id="arrow-definition" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L0 6 L7 3 z" fill="var(--violet)"></path></marker>
-            <marker id="arrow-commit" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L0 6 L7 3 z" fill="var(--amber)"></path></marker>
-            <marker id="arrow-feedback" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L0 6 L7 3 z" fill="var(--cyan)"></path></marker>
-          </defs>
-          ${edges}
-          ${moduleMarkup}
-        </svg>
+    <section id="built" aria-labelledby="built-title">
+      <h2 id="built-title">What was built, and why</h2>
+      ${groups}
+    </section>`;
+}
+
+const VERDICT = { stop: "Stop", keep: "Keep", change: "Change" } as const;
+
+function findingCard(finding: Finding) {
+  return `
+    <article class="finding" data-severity="${finding.severity}">
+      <h4>${escape(finding.title)}</h4>
+      <p>${escape(finding.plain)}</p>
+      <p class="cost"><span class="label">Cost</span> ${escape(finding.cost)}</p>
+      <p class="advice" data-verdict="${finding.verdict}"><span class="verdict">${VERDICT[finding.verdict]}</span> ${escape(finding.suggestion)}</p>
+      <ul class="evidence" aria-label="Evidence">${finding.evidence.map((evidence) => `<li>${evidenceLink(evidence)}</li>`).join("")}</ul>
+    </article>`;
+}
+
+function waste(review: WeekReview) {
+  return `
+    <section id="waste" aria-labelledby="waste-title">
+      <h2 id="waste-title">Where effort was wasted</h2>
+      <p class="section-note">Each finding links to its evidence and ends with a recommendation: stop it, keep it, or change it.</p>
+      <h3>Work redone or lost</h3>
+      <div class="findings">${review.waste.map(findingCard).join("")}</div>
+      <h3>Overdone</h3>
+      <div class="findings">${review.overdone.map(findingCard).join("")}</div>
+      <h3>What worked</h3>
+      <ul class="good">${review.good.map((item) => `<li><strong>${escape(item.title)}.</strong> ${escape(item.plain)}</li>`).join("")}</ul>
+    </section>`;
+}
+
+const millions = (value: number) => `${(value / 1e6).toLocaleString("en-US", { maximumFractionDigits: 1 })} M`;
+const percent = (value: number) => `${(value * 100).toLocaleString("en-US", { maximumFractionDigits: 1 })}%`;
+
+function barRow(label: string, parts: { value: number; className: string }[], widest: number, readout: string) {
+  const total = parts.reduce((sum, part) => sum + part.value, 0);
+  const segments = parts.map((part) => `<span class="${part.className}" style="--share:${(part.value / Math.max(1, total)).toFixed(4)}"></span>`).join("");
+  return `<li><span class="bar-label">${label}</span><span class="stack" style="--share:${(total / Math.max(1, widest)).toFixed(4)}" aria-hidden="true">${segments}</span><span class="num">${readout}</span></li>`;
+}
+
+function tokens(review: WeekReview) {
+  const data = review.tokens;
+  const cacheShare = (0.1 * data.cacheRead) / data.total;
+  const dayMax = Math.max(...data.days.map((day) => day.inputEquivalent));
+  const kindMax = Math.max(...data.kinds.map((kind) => kind.own + kind.subagents));
+  const issueMax = Math.max(...data.issues.map((issue) => issue.inputEquivalent));
+  const largest = [...data.models].sort((left, right) => right.inputEquivalent - left.inputEquivalent)[0];
+  const modelTotal = data.models.reduce((sum, model) => sum + model.inputEquivalent, 0);
+  return `
+    <section id="tokens" aria-labelledby="tokens-title">
+      <h2 id="tokens-title">What the run cost in tokens</h2>
+      <p class="section-note">${percent(cacheShare)} of the input side was re-reading context already in the cache. Turns with more than ${number(data.longContext.threshold)} tokens of context carried ${percent(data.longContext.share)} of it. ${escape(largest.name)} did ${percent(largest.inputEquivalent / modelTotal)} of the work.</p>
+      <dl class="totals">
+        <div><dt>Input-equivalent</dt><dd>${millions(data.total)}</dd></div>
+        <div><dt>Cache reads</dt><dd>${millions(data.cacheRead)}</dd></div>
+        <div><dt>Output</dt><dd>${millions(data.output)}</dd></div>
+        <div><dt>Sessions</dt><dd>${number(data.sessions)}</dd></div>
+      </dl>
+      <div class="token-grid">
+        <div>
+          <h3>Per day</h3>
+          <p class="legend"><span class="key cache"></span>cache reads, one tenth <span class="key fresh"></span>new input and cache writes</p>
+          <ul class="bars">${data.days.map((day) => barRow(escape(dayName(day.date)), [{ value: 0.1 * day.cacheRead, className: "cache" }, { value: day.input + day.cacheWrite, className: "fresh" }], dayMax, `${millions(day.inputEquivalent)}, ${day.sessions} ${day.sessions === 1 ? "session" : "sessions"}`)).join("")}</ul>
+        </div>
+        <div>
+          <h3>Per kind of session</h3>
+          <p class="legend"><span class="key fresh"></span>the session <span class="key sub"></span>its subagents</p>
+          <ul class="bars">${data.kinds.map((kind) => barRow(escape(kind.name), [{ value: kind.own, className: "fresh" }, { value: kind.subagents, className: "sub" }], kindMax, `${millions(kind.own + kind.subagents)}, ${kind.sessions} ${kind.sessions === 1 ? "session" : "sessions"}`)).join("")}</ul>
+        </div>
+        <div class="wide-block">
+          <h3>Per issue, sessions started for one issue</h3>
+          <ul class="bars columns">${data.issues.map((issue) => barRow(issueLink(issue), [{ value: issue.inputEquivalent, className: "fresh" }], issueMax, millions(issue.inputEquivalent))).join("")}</ul>
+        </div>
       </div>
-    </section>
-  `;
+      <details class="method"><summary>How these numbers were counted</summary><p>${escape(data.method)}</p><p>${escape(data.weights)}</p></details>
+    </section>`;
 }
 
-function findingMarkup(finding: Finding) {
+function flow(review: WeekReview) {
+  const { steps, loops } = review.flow;
+  const position = new Map(steps.map((step, index) => [step.id, index]));
+  const title = (id: string) => steps[position.get(id) ?? 0].title;
   return `
-    <button class="finding" type="button" data-finding="${escape(finding.id)}" aria-current="${finding.id === selectedFinding()?.id}">
-      <span class="finding-top">
-        <span class="finding-title">${escape(finding.title)}</span>
-        <span class="score ${finding.risk}" aria-label="Priority ${finding.score}">${finding.score}</span>
-      </span>
-      <span class="finding-summary">${escape(finding.summary)}</span>
-      <span class="finding-meta">${escape(finding.risk)} · ${finding.kinds.map(escape).join(", ")} · #${finding.issueNumbers[0]}</span>
-    </button>
-  `;
+    <section id="flow" aria-labelledby="flow-title">
+      <h2 id="flow-title">${escape(review.flow.title)}</h2>
+      <p class="section-note">The planned path runs left to right. The loops below are where this week's work went back, each with an example.</p>
+      <figure class="flow" data-state="idle">
+        <ol class="steps">${steps.map((step, index) => `<li style="--i:${index}"><strong>${escape(step.title)}</strong><span>${escape(step.text)}</span></li>`).join("")}</ol>
+        <ul class="loops">${loops.map((loop, index) => `
+          <li style="--i:${steps.length + index}">
+            <span class="hop"><span>${escape(title(loop.from))}</span><span class="visually-hidden">back to</span><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path d="M4 12h15m-6-6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>${escape(title(loop.to))}</span></span>
+            <span>${escape(loop.title)}. ${evidenceLink(loop.evidence)}</span>
+          </li>`).join("")}</ul>
+        <figcaption><button type="button" class="play" aria-describedby="flow-title">Play the path</button></figcaption>
+      </figure>
+    </section>`;
 }
 
-function findingsMarkup() {
-  const filtered = visibleFindings();
-  const page = pageWindow(filtered, state.page, 25);
-  const findings = page.items;
-  state.page = page.page;
-  return `
-    <section class="panel" aria-labelledby="findings-title">
-      <div class="panel-head"><h2 id="findings-title">Prioritized review queue</h2><span>${page.start}-${page.end} of ${filtered.length} concerns</span></div>
-      <div class="findings">${findings.length ? findings.map(findingMarkup).join("") : `<p class="empty">No concern matches this filter.</p>`}</div>
-      ${page.pages > 1 ? `<div class="page-controls"><button class="button" type="button" data-page="${page.page - 1}" ${page.page === 1 ? "disabled" : ""}>Previous</button><span>Page ${page.page} of ${page.pages}</span><button class="button" type="button" data-page="${page.page + 1}" ${page.page === page.pages ? "disabled" : ""}>Next</button></div>` : ""}
-    </section>
-  `;
+function footer(review: WeekReview) {
+  const url = `https://github.com/${review.repository}/commit/${review.revision}`;
+  return `<footer class="foot">Built from the repository at ${external(url, `<span class="ref">${escape(review.revision.slice(0, 7))}</span>`, "link")} and the issues it names. Every figure comes from git; every judgement links to its evidence.</footer>`;
 }
 
-function signalMarkup(label: string, value: number) {
-  const percent = Math.round(value * 100);
-  return `<div class="signal"><span class="signal-label">${escape(label)} ${percent}%</span><div class="signal-bar" role="meter" aria-label="${escape(label)}" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100"><span style="width:${percent}%"></span></div></div>`;
-}
-
-function detailMarkup() {
-  const finding = selectedFinding();
-  if (!finding) return `<aside class="detail-panel"><div class="detail-content"><p>No findings.</p></div></aside>`;
-  const linkedIssues = finding.issueNumbers.slice(1).map((number) => issueMarkup(number)).join("<br>");
-  const draft = drafts.get(finding.id);
-  const options = [...finding.options, { id: "needs-discussion", title: "Question or different direction", detail: "Challenge the framing, request evidence, or propose another choice." }].map((option, index) => `
-    <label class="option">
-      <input type="radio" name="decision" value="${escape(option.id)}" ${index === 0 ? "required" : ""} ${draft?.decision === option.id ? "checked" : ""}>
-      <span><strong>${escape(option.title)}</strong>${option.detail ? `<small>${escape(option.detail)}</small>` : ""}</span>
-    </label>
-  `).join("");
-  const target = finding.issueNumbers[0];
-  return `
-    <aside class="detail-panel" aria-labelledby="detail-title">
-      <div class="detail-content">
-        <p class="detail-meta"><span class="${finding.risk}">${escape(finding.risk)} priority · ${finding.score}/100</span> · changed ${readableDate(finding.history.lastChangedAt)}</p>
-        <h2 id="detail-title" tabindex="-1">${escape(finding.title)}</h2>
-        <p>${escape(finding.summary)}</p>
-        <section class="review-question" aria-labelledby="question-title">
-          <h3 id="question-title">Decision to make</h3>
-          <p>${escape(finding.question)}</p>
-          <p class="recommendation"><strong>Recommended:</strong> ${escape(finding.recommendation)}</p>
-        </section>
-        <details class="evidence-details">
-          <summary>Evidence and priority <span>${finding.evidence.length} sources · ${finding.history.commits} commits</span></summary>
-          <div class="signal-grid">
-          ${signalMarkup("impact", finding.signals.impact)}
-          ${signalMarkup("ambiguity", finding.signals.ambiguity)}
-          ${signalMarkup("conflict", finding.signals.conflict)}
-          ${signalMarkup("churn", finding.signals.churn)}
-          ${signalMarkup("evidence", finding.signals.evidenceGap)}
-        </div>
-        <p class="score-explanation">Priority = ${Object.entries(WEIGHTS).map(([name, weight]) => `${weight}% ${name}`).join(" + ")}. Signals are reviewer estimates; churn is increased by file history. Commit count is not proof of a reversed decision.</p>
-        <div class="notice"><strong>Constraint:</strong> ${escape(finding.principle)}</div>
-        <section aria-labelledby="evidence-title">
-          <h3 id="evidence-title">Evidence</h3>
-          <ul class="evidence">${finding.evidence.map((evidence) => `<li><a href="${repositoryFileUrl(evidence.path, evidence.line)}" target="_blank" rel="noreferrer"><code>${escape(evidence.path)}:${evidence.line}</code></a><p>${escape(evidence.detail)}</p><p><code>${escape(evidence.anchor)}</code></p></li>`).join("")}</ul>
-        </section>
-        <details class="verification"><summary>How to settle this concern</summary><ul>${finding.verification.map((check) => `<li>${escape(check)}</li>`).join("")}</ul></details>
-        </details>
-        <form class="feedback" id="feedback-form" data-state="idle">
-          <h3>Your response</h3>
-          <p>${target ? `Posts to ${issueMarkup(target)}` : "Creates a new architecture issue."}</p>
-          <fieldset class="option-list"><legend>Choose a direction</legend>${options}</fieldset>
-          <label class="field">Rationale<textarea name="rationale" required minlength="8" maxlength="8000" placeholder="Why this choice? What evidence settles it?">${escape(draft?.rationale ?? "")}</textarea></label>
-          <details class="access-settings" ${state.reviewKey ? "" : "open"}><summary>Posting access${state.reviewKey ? " · key provided" : ""}</summary><label class="field">Review key<input name="reviewKey" type="password" autocomplete="off" spellcheck="false" value="${escape(state.reviewKey)}" required placeholder="Configured on the review server"></label></details>
-          <input type="hidden" name="findingId" value="${escape(finding.id)}">
-          ${target ? `<input type="hidden" name="issueNumber" value="${target}">` : ""}
-          <div class="feedback-actions">
-            <button class="button primary" type="submit" ${config.feedbackEnabled ? "" : "disabled"}>${target ? `Post to #${target}` : "Create GitHub issue"}</button>
-            <button class="button" type="button" id="copy-draft">Copy draft</button>
-          </div>
-          <div id="feedback-result" class="notice" role="status" aria-live="polite">${config.feedbackEnabled ? "Posting is enabled. The key is kept only in this tab. Answers become GitHub comments, not automatically accepted decisions." : "Posting is disabled on this deployment. Copy the draft or configure GITHUB_TOKEN and REVIEW_KEY on Cloudflare Pages."}</div>
-        </form>
-        ${linkedIssues ? `<details class="related-issues"><summary>Related work (${finding.issueNumbers.length - 1})</summary><p>${linkedIssues}</p></details>` : ""}
-        <section class="discussion" aria-labelledby="discussion-title">
-          <div class="discussion-heading"><h3 id="discussion-title">Live GitHub record</h3><button class="button" type="button" id="refresh-discussion">Refresh</button></div>
-          <p class="discussion-status" id="discussion-status" role="status">Loading the owning issue. Refreshes every 30 seconds.</p>
-          <div id="discussion-content"></div>
-        </section>
-      </div>
-    </aside>
-  `;
-}
-
-function mainView() {
-  if (state.view === "map") {
-    return `<div class="review-grid">${mapMarkup()}${detailMarkup()}</div>`;
+function applyFilter(area: string) {
+  for (const button of app.querySelectorAll<HTMLButtonElement>("[data-filter]")) button.setAttribute("aria-pressed", String(button.dataset.filter === area));
+  for (const element of app.querySelectorAll<HTMLElement>("main [data-area]")) {
+    element.classList.toggle("is-dimmed", area !== "all" && element.dataset.area !== area);
   }
-  return `<div class="review-grid">${findingsMarkup()}${detailMarkup()}</div>`;
+  for (const group of app.querySelectorAll<HTMLElement>(".area-group")) group.hidden = area !== "all" && group.dataset.area !== area;
 }
 
-function render() {
-  const previous = document.querySelector<HTMLFormElement>("#feedback-form");
-  if (previous) {
-    const data = new FormData(previous);
-    drafts.set(String(data.get("findingId")), { decision: String(data.get("decision") ?? ""), rationale: String(data.get("rationale") ?? "") });
-    state.reviewKey = String(data.get("reviewKey") ?? "");
-  }
-  const generated = new Date(review.generatedAt);
-  const issueCount = new Set(review.findings.flatMap((finding) => finding.issueNumbers)).size;
-  app.innerHTML = `
-    <div class="shell">
-      <header class="topbar">
-        <div class="mark" aria-hidden="true">S</div>
-        <div class="brand"><h1>Sattle architecture review</h1><p>Evidence ${escape(review.revision.slice(0, 7))} · ${generated.toLocaleDateString()} · ${issueCount} linked issues</p></div>
-        <div class="header-actions">
-        <a class="button" href="${config.repositoryUrl}/issues" target="_blank" rel="noreferrer">Open issues</a>
-        <button class="button" type="button" id="theme-toggle">Use ${document.documentElement.dataset.theme === "light" ? "dark" : "light"} theme</button>
-        </div>
-      </header>
-      <main class="main" id="review-main">
-        <details class="review-context">
-          <summary>Architecture context <span>Principles, measurements and decision history</span></summary>
-          <p class="baseline-note">Code evidence is pinned to the committed revision. Uncommitted working-tree changes are not represented. Recommendations are proposals, not decisions.</p>
-          <section class="principles">
-            <h2>Architecture principles</h2>
-            <ol>${review.principles.map((principle) => `<li>${escape(principle)}</li>`).join("")}</ol>
-          </section>
-        <h2>Recorded measurements</h2>
-        <section class="metrics" aria-label="Architecture measurements">${metricMarkup()}</section>
-        <details class="direction-history">
-          <summary>Decisions that changed direction</summary>
-          <p>These changes are recorded in GitHub, not inferred from code churn. Open the issue for the authoritative rationale and current status.</p>
-          <ul>
-            <li><a href="${issueUrl(7)}" target="_blank" rel="noreferrer">#7 · Migrate Sattle to graph-native GKQL as its only definition language</a>. On November 19, the sole-language migration replaced the earlier parallel-KQL destination in #106.</li>
-            <li><a href="${issueUrl(122)}" target="_blank" rel="noreferrer">#122 · Orchestrator state</a>. On November 18, the engine gate was revised to 8 GB live, 12 GB peak and 37 microseconds per record. These are the current recorded limits, not the earlier budgets.</li>
-            <li><a href="${issueUrl(119)}" target="_blank" rel="noreferrer">#119 · Window-close latency at one million nodes</a>. The earlier whole-graph waves prototype exposed unpublished results. Its replacement prepares matches privately and publishes in writer order; the longer steady p99 measurement remains open.</li>
-          </ul>
-        </details>
-        </details>
-        <div class="toolbar">
-          <div class="tabs" role="group" aria-label="Review view">
-            <button class="tab" type="button" data-view="board" aria-pressed="${state.view === "board"}">Queue</button>
-            <button class="tab" type="button" data-view="map" aria-pressed="${state.view === "map"}">Architecture</button>
-          </div>
-          <label class="field" aria-label="Search findings"><span>Search</span><input id="review-search" value="${escape(state.query)}" type="search" placeholder="Find leaks, churn, health, GKQL…"></label>
-          <label class="field">Priority or kind<select id="review-filter">
-            ${["all", "critical", "high", "medium", "ambiguity", "conflict", "gap", "misnomer", "leak", "churn"].map((filter) => `<option value="${filter}" ${state.filter === filter ? "selected" : ""}>${filter}</option>`).join("")}
-          </select></label>
-        </div>
-        ${mainView()}
-      </main>
-      <footer class="footer"><span>${escape(review.repository)} · evidence generated from ${escape(review.revision)}</span><span>GitHub issues and comments are the decision record.</span></footer>
-    </div>
-  `;
-  bind();
-  void refreshDiscussion();
-}
-
-async function refreshDiscussion() {
-  const finding = selectedFinding();
-  const target = finding?.issueNumbers[0];
-  if (!target) return;
-  const request = ++discussionRequest;
-  discussionBusy = true;
-  try {
-    const discussion = await loadDiscussion(target);
-    if (request !== discussionRequest || selectedFinding()?.id !== finding.id) return;
-    const content = document.querySelector<HTMLElement>("#discussion-content");
-    const status = document.querySelector<HTMLElement>("#discussion-status");
-    if (status) status.textContent = `${discussion.issue.state} · ${discussion.totalComments} comments · checked ${new Date().toLocaleTimeString()} · refreshes every 30s`;
-    if (content) content.innerHTML = `
-      <details><summary>Issue brief: ${escape(discussion.issue.title)}</summary><pre>${escape(discussion.issue.body)}</pre></details>
-      ${discussion.comments.length ? `<ol class="discussion-comments">${discussion.comments.map((comment) => `<li><a href="${escape(comment.url)}" target="_blank" rel="noreferrer">${escape(comment.author)} · ${readableDate(comment.createdAt)}</a><pre>${escape(comment.body)}</pre></li>`).join("")}</ol>` : `<p>No comments yet. Your answer will appear here after it reaches GitHub.</p>`}
-      ${discussion.totalComments > 20 ? `<a href="${issueUrl(target)}" target="_blank" rel="noreferrer">Read all ${discussion.totalComments} comments on GitHub</a>` : ""}`;
-    document.querySelectorAll<HTMLAnchorElement>(`[data-issue="${target}"]`).forEach((link) => {
-      link.dataset.state = discussion.issue.state;
-      link.textContent = `#${target} ${discussion.issue.title}`;
-    });
-  } catch (error) {
-    if (request !== discussionRequest) return;
-    const status = document.querySelector<HTMLElement>("#discussion-status");
-    if (status) status.textContent = `GitHub record unavailable: ${error instanceof Error ? error.message : "request failed"}. Previous content may be stale.`;
-  } finally {
-    if (request === discussionRequest) discussionBusy = false;
-  }
-}
-
-function draftFor(finding: Finding) {
-  const decision = document.querySelector<HTMLInputElement>('input[name="decision"]:checked')?.value ?? finding.options[0]?.id ?? "needs-input";
-  const rationale = document.querySelector<HTMLTextAreaElement>('textarea[name="rationale"]')?.value.trim() ?? "";
-  return [
-    `## Architecture dashboard response`,
-    "",
-    `- Finding: \`${finding.id}\``,
-    `- Choice: \`${decision}\``,
-    `- Dashboard revision: \`${review.revision}\``,
-    "",
-    "### Rationale",
-    rationale || "Pending owner rationale.",
-    "",
-    "### Evidence",
-    ...finding.evidence.map((evidence) => `- \`${evidence.path}:${evidence.line}\` ${evidence.detail}`),
-  ].join("\n");
-}
-
-function bind() {
-  document.querySelector<HTMLButtonElement>("#theme-toggle")?.addEventListener("click", (event) => {
-    document.documentElement.dataset.theme = document.documentElement.dataset.theme === "light" ? "dark" : "light";
-    (event.currentTarget as HTMLButtonElement).textContent = `Use ${document.documentElement.dataset.theme === "light" ? "dark" : "light"} theme`;
-  });
-  document.querySelectorAll<HTMLButtonElement>("[data-view]").forEach((button) => button.addEventListener("click", () => {
-    state.view = button.dataset.view === "map" ? "map" : "board";
-    render();
-    document.querySelector<HTMLButtonElement>(`.tabs [data-view="${state.view}"]`)?.focus({ preventScroll: true });
-  }));
-  document.querySelector<HTMLInputElement>("#review-search")?.addEventListener("change", (event) => {
-    state.query = (event.currentTarget as HTMLInputElement).value;
-    state.page = 1;
-    render();
-  });
-  document.querySelector<HTMLSelectElement>("#review-filter")?.addEventListener("change", (event) => {
-    state.filter = (event.currentTarget as HTMLSelectElement).value;
-    state.page = 1;
-    render();
-  });
-  document.querySelectorAll<HTMLButtonElement>("[data-page]").forEach((button) => button.addEventListener("click", () => {
-    state.page = Number(button.dataset.page);
-    render();
-  }));
-  document.querySelectorAll<HTMLElement>("[data-finding]").forEach((finding) => {
-    const choose = () => {
-      state.selectedId = finding.dataset.finding ?? "";
-      render();
-      document.querySelector("#detail-title")?.scrollIntoView({ behavior: "instant", block: "nearest" });
-      document.querySelector<HTMLElement>("#detail-title")?.focus({ preventScroll: true });
-    };
-    finding.addEventListener("click", choose);
-  });
-  document.querySelectorAll<SVGGElement>(".map-node").forEach((module) => {
-    const choose = () => {
-      const id = module.dataset.module;
-      const node = review.modules.find((item) => item.id === id);
-      const next = review.findings.find((finding) => node && finding.ownerFiles.some((path) => path === node.path || path.startsWith(`${node.path}/`)));
-      if (next) { state.selectedId = next.id; render(); document.querySelector<HTMLElement>("#detail-title")?.focus({ preventScroll: true }); }
-    };
-    module.addEventListener("click", choose);
-    module.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") { event.preventDefault(); choose(); }
-    });
-  });
-  document.querySelector<HTMLButtonElement>("#refresh-discussion")?.addEventListener("click", () => { void refreshDiscussion(); });
-  const finding = selectedFinding();
-  document.querySelector<HTMLButtonElement>("#copy-draft")?.addEventListener("click", async () => {
-    if (!finding) return;
-    const result = document.querySelector<HTMLElement>("#feedback-result");
-    try {
-      await navigator.clipboard.writeText(draftFor(finding));
-      if (result) result.textContent = "Draft copied. Paste it into the linked issue if the Pages function is not configured.";
-    } catch {
-      if (result) { result.textContent = "Clipboard unavailable on plain HTTP. Select this draft and paste it into GitHub:"; const draft = document.createElement("textarea"); draft.readOnly = true; draft.value = draftFor(finding); result.append(draft); draft.select(); }
-    }
-  });
-  document.querySelector<HTMLFormElement>("#feedback-form")?.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    if (!finding) return;
-    const form = event.currentTarget as HTMLFormElement;
-    const data = new FormData(form);
-    const reviewKey = String(data.get("reviewKey") ?? "");
-    state.reviewKey = reviewKey;
-    const result = document.querySelector<HTMLElement>("#feedback-result");
-    const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
-    form.dataset.state = "loading";
-    const submitLabel = submit?.textContent ?? "";
-    if (submit) { submit.disabled = true; submit.textContent = "Posting..."; submit.setAttribute("aria-busy", "true"); }
-    if (result) { result.className = "notice"; result.textContent = "Posting the decision to GitHub…"; }
-    const issueNumber = Number(data.get("issueNumber"));
-    try {
-      const response = await sendFeedback(reviewKey, {
-        action: Number.isInteger(issueNumber) && issueNumber > 0 ? "comment" : "create",
-        findingId: finding.id,
-        issueNumber: Number.isInteger(issueNumber) && issueNumber > 0 ? issueNumber : undefined,
-        decision: String(data.get("decision") ?? ""),
-        rationale: String(data.get("rationale") ?? ""),
-        summary: finding.summary,
-        question: finding.question,
-        revision: review.revision,
-        evidence: finding.evidence,
-        title: `[Architecture] ${finding.title}`,
-      });
-      form.dataset.state = "success";
-      if (result) result.innerHTML = `Saved to GitHub: <a href="${escape(response.url)}" target="_blank" rel="noreferrer">Open the ${escape(response.action)}</a>. The live record below refreshes automatically.`;
-      await refreshDiscussion();
-    } catch (error) {
-      form.dataset.state = "error";
-      if (result) { result.className = "notice error"; result.textContent = error instanceof Error ? error.message : "Could not post feedback."; }
-    } finally {
-      if (submit) { submit.disabled = false; submit.textContent = submitLabel; submit.removeAttribute("aria-busy"); }
-    }
-  });
+function playFlow() {
+  const figure = app.querySelector<HTMLElement>(".flow");
+  if (!figure) return;
+  figure.dataset.state = "idle";
+  void figure.offsetWidth;
+  figure.dataset.state = "playing";
 }
 
 async function start() {
-  app.innerHTML = `<div class="main"><p class="notice">Generating the architecture review…</p></div>`;
   try {
-    const fragment = new URLSearchParams(location.hash.slice(1));
-    state.reviewKey = fragment.get("review-key") ?? "";
-    if (fragment.has("review-key")) history.replaceState(null, "", location.pathname + location.search);
-    const response = await fetch("/review.json");
-    if (!response.ok) throw new Error(`Could not load review.json (${response.status})`);
-    review = parseReview(await response.json());
-    config = await loadConfig();
-    issues = await loadIssues(review.findings.flatMap((finding) => finding.issueNumbers));
-    state.selectedId = review.findings[0]?.id ?? "";
-    document.documentElement.dataset.theme = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-    render();
-    window.setInterval(() => { if (!document.hidden && !discussionBusy) void refreshDiscussion(); }, 30_000);
-    document.addEventListener("visibilitychange", () => { if (!document.hidden) void refreshDiscussion(); });
+    const response = await fetch("./review.json", { cache: "no-store" });
+    if (!response.ok) throw new Error(`review.json answered ${response.status}`);
+    const review = parseReview(await response.json());
+    app.innerHTML = `${header(review)}${controls(review)}<main id="review-main">${timeline(review)}${map(review)}${built(review)}${waste(review)}${tokens(review)}${flow(review)}</main>${footer(review)}`;
+    app.addEventListener("click", (event) => {
+      const target = event.target as HTMLElement;
+      const filter = target.closest<HTMLButtonElement>("[data-filter]");
+      if (filter) applyFilter(filter.dataset.filter ?? "all");
+      if (target.closest(".play")) playFlow();
+    });
+    document.documentElement.dataset.ready = "true";
   } catch (error) {
-    app.innerHTML = `<main class="main"><div class="notice error">${escape(error instanceof Error ? error.message : "Could not load the review")}</div></main>`;
+    app.innerHTML = `<main id="review-main" class="failure"><h1>The review could not load</h1><p>${escape(error instanceof Error ? error.message : String(error))}</p></main>`;
   }
 }
 
