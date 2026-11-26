@@ -206,6 +206,34 @@ main > section:first-child { border-block-start: 0; }
 .tabs [role="tab"][aria-selected="true"] { background: var(--text); color: var(--canvas); border-color: var(--text); }
 .tabs [role="tab"]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
+/* Explainers */
+.explainer { display: grid; gap: 0.75rem; }
+.explainer > p { max-inline-size: 70ch; }
+.batches { list-style: none; margin: 0; padding: 0; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.batches li { padding: 0.25rem 0.625rem; border: 1px solid var(--line-strong); border-radius: 999px; font: 600 0.8125rem var(--mono); color: var(--muted); }
+.batches li.is-current { color: var(--text); border-color: var(--text); }
+.stage { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1.2fr) auto minmax(0, 1fr); gap: 0.75rem; align-items: start; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; }
+.stage-column { display: grid; gap: 0.5rem; align-content: start; min-inline-size: 0; }
+.stage-column h4 { font-size: 0.875rem; color: var(--muted); font-weight: 600; }
+.stage-arrow { color: var(--muted); margin-block-start: 1.75rem; }
+.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.375rem; }
+.row-chip { display: flex; gap: 0.5rem; align-items: baseline; padding: 0.375rem 0.5rem; border-radius: 6px; font: 400 0.875rem var(--mono); border: 1px solid var(--line); }
+.row-chip .weight { font-weight: 600; inline-size: 1.75rem; flex: none; }
+.row-chip[data-weight="add"] { background: color-mix(in oklab, var(--keep) 10%, var(--surface)); }
+.row-chip[data-weight="add"] .weight { color: var(--keep); }
+.row-chip[data-weight="remove"] { background: color-mix(in oklab, var(--stop) 10%, var(--surface)); }
+.row-chip[data-weight="remove"] .weight { color: var(--stop); }
+.state { font: 400 0.875rem var(--mono); }
+.stage-note { padding: 0.75rem 1rem; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); max-inline-size: 70ch; }
+@media (prefers-reduced-motion: no-preference) {
+  .row-chip { animation: travel 360ms var(--ease) both; animation-delay: calc(var(--c) * 260ms + var(--i) * 60ms); }
+  @keyframes travel { from { opacity: 0; transform: translateX(-24px); } }
+}
+@media (max-width: 52rem) {
+  .stage { grid-template-columns: 1fr; }
+  .stage-arrow { transform: rotate(90deg); margin: 0 auto; }
+}
+
 /* Flow */
 .flow-grid { display: grid; gap: 1rem; }
 .flow-detail { max-inline-size: 48rem; }

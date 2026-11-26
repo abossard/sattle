@@ -103,12 +103,26 @@ try {
     }
   }
 
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+  await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }, { name: "prefers-reduced-motion", value: "no-preference" }] });
+  await send("Page.navigate", { url: base });
+  await waitFor("document.documentElement.dataset.ready === 'true'");
   await click('[data-filter="engine"]');
   assert.equal(await evaluate("document.querySelectorAll('.squares li:not(.is-dimmed)').length"), review.areas.find((area) => area.id === "engine").commits, "The area filter keeps only engine commits bright");
   assert.equal(await evaluate("[...document.querySelectorAll('.area-group')].filter((group) => !group.hidden).length"), 1, "The area filter shows one area of built work");
   await click('[data-stepper="week"] [data-event="next"]');
   await click('[data-stepper="week"] [data-event="next"]');
   assert.equal(await evaluate("document.querySelectorAll('.day.is-future').length"), review.days.length - 2, "The week replay fades the days still to come");
+  await click('[data-stepper="changes"] [data-event="next"]');
+  await click('[data-stepper="changes"] [data-event="next"]');
+  await evaluate("Promise.all(document.getAnimations().map((animation) => animation.finished))");
+  assert.equal(await evaluate("document.querySelectorAll('#panel-changes .stage-column:last-of-type .row-chip').length"), 2, "Batch 2 sends one -1 and one +1");
+  assert.ok(await evaluate("document.querySelector('#panel-changes .stage-note').textContent.startsWith('One more api error')"), "Each batch explains itself");
+  if (shots) {
+    const box = await evaluate("(() => { const r = document.querySelector('#explain').getBoundingClientRect(); return { x: 0, y: r.top + scrollY, width: innerWidth, height: r.height }; })()");
+    const screenshot = await send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true, clip: { ...box, scale: 1 } });
+    writeFileSync(`${shots}/explainer-changes-${await evaluate("innerWidth")}.png`, Buffer.from(screenshot.result.data, "base64"));
+  }
   await click('[data-stepper="flow"] [data-event="next"]');
   await click('.node[data-id="review"]');
   assert.ok(await evaluate("document.querySelector('.flow-detail').textContent.includes('back to')"), "A step opens its detail with the loops that touch it");

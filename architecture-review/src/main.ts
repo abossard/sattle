@@ -3,6 +3,7 @@ import "@fontsource/ibm-plex-sans/latin-600.css";
 import "@fontsource/ibm-plex-mono/latin-400.css";
 import "@fontsource/ibm-plex-mono/latin-600.css";
 import "./styles.css";
+import { CHANGES_SCRIPT, runChanges, type Change, type Frame } from "./sim/changes";
 import { step, stepper, type StepEvent, type Stepper } from "./stepper";
 import { parseReview, type Area, type CommitRef, type Day, type Evidence, type Finding, type IssueRef, type Theme, type WeekReview } from "./model";
 
@@ -45,7 +46,7 @@ function controls(review: WeekReview) {
   return `
     <nav class="controls" aria-label="Sections and areas">
       <div class="sections">
-        <a href="#timeline">Timeline</a><a href="#map">Map</a><a href="#built">Built</a><a href="#waste">Waste</a><a href="#tokens">Tokens</a><a href="#flow">Flow</a>
+        <a href="#timeline">Timeline</a><a href="#map">Map</a><a href="#explain">Ideas</a><a href="#built">Built</a><a href="#waste">Waste</a><a href="#tokens">Tokens</a><a href="#flow">Flow</a>
       </div>
       <div class="filters" role="group" aria-label="Show one area">
         <button type="button" class="chip" data-filter="all" aria-pressed="true">All areas</button>${buttons}
@@ -128,6 +129,55 @@ function themeCard(theme: Theme) {
       ${commits}
       ${theme.shots.map((shot) => `<figure class="shot"><img src="${escape(shot.src)}" width="${shot.width}" height="${shot.height}" alt="${escape(shot.caption)}" loading="lazy" decoding="async"><figcaption>${escape(shot.caption)}</figcaption></figure>`).join("")}
     </article>`;
+}
+
+const sign = (weight: number) => (weight > 0 ? "+1" : "−1");
+const rowChip = <T,>(change: Change<T>, text: (row: T) => string, column: number, index: number) =>
+  `<li class="row-chip" data-weight="${change.weight > 0 ? "add" : "remove"}" style="--c:${column};--i:${index}"><span class="weight">${sign(change.weight)}</span>${escape(text(change.row))}</li>`;
+const rowList = (items: string[], empty: string) => items.length ? `<ul class="rows">${items.join("")}</ul>` : `<p class="quiet">${empty}</p>`;
+
+function changesStage(frame: Frame) {
+  const row = (value: { service: string; status: string }) => `${value.service}, ${value.status}`;
+  const count = (value: { service: string; errors: number }) => `${value.service}: ${value.errors} ${value.errors === 1 ? "error" : "errors"}`;
+  const state = (list: { service: string; errors: number }[]) => list.length ? list.map((item) => `${item.service} ${item.errors}`).join(", ") : "empty";
+  const arrow = `<svg class="stage-arrow" aria-hidden="true" viewBox="0 0 24 24" width="20" height="20"><path d="M4 12h15m-6-6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  return `
+    <div class="stage-column"><h4>Input changes</h4>${rowList(frame.input.map((change, index) => rowChip(change, row, 0, index)), "none")}</div>${arrow}
+    <div class="stage-column"><h4>Map: keep errors</h4>${rowList(frame.mapped.map((change, index) => rowChip(change, row, 1, index)), "nothing kept")}</div>${arrow}
+    <div class="stage-column"><h4>Reduce: errors per service</h4><p class="state"><span class="label">State before</span> ${escape(state(frame.before))}</p><p class="state"><span class="label">Keys touched</span> ${escape(frame.touched.join(", ") || "none")}</p><p class="state"><span class="label">State after</span> ${escape(state(frame.after))}</p></div>${arrow}
+    <div class="stage-column"><h4>Output changes</h4>${rowList(frame.output.map((change, index) => rowChip(change, count, 3, index)), "nothing changed")}</div>`;
+}
+
+function explain() {
+  const explainers = [{ id: "changes", title: "Changes as +1 and −1", script: CHANGES_SCRIPT }];
+  return `
+    <section id="explain" aria-labelledby="explain-title">
+      <h2 id="explain-title">How this week's ideas work</h2>
+      <p class="section-note">Small simulators of the main ideas. Step through them with Back and Next, or press Play.</p>
+      <div class="tabs" role="tablist" aria-label="Explainers">${explainers.map((item, index) => `<button type="button" role="tab" id="tab-${item.id}" aria-controls="panel-${item.id}" aria-selected="${index === 0}" tabindex="${index === 0 ? 0 : -1}">${escape(item.title)}</button>`).join("")}</div>
+      ${explainers.map((item, index) => `
+        <div class="tab-panel explainer" role="tabpanel" id="panel-${item.id}" aria-labelledby="tab-${item.id}" data-explainer="${item.id}"${index === 0 ? "" : " hidden"}>
+          <h3>${escape(item.script.title)}</h3>
+          <p>${escape(item.script.lede)}</p>
+          ${stepperControls(item.id, item.script.title)}
+          <ol class="batches">${item.script.batches.map((_batch, at) => `<li data-step="${at}">Batch ${at + 1}</li>`).join("")}</ol>
+          <div class="stage" aria-live="polite"></div>
+          <p class="stage-note" aria-live="polite"></p>
+        </div>`).join("")}
+    </section>`;
+}
+
+function mountExplainers() {
+  const panel = app.querySelector<HTMLElement>('[data-explainer="changes"]');
+  if (!panel) return;
+  const frames = runChanges(CHANGES_SCRIPT.batches);
+  const stage = panel.querySelector<HTMLElement>(".stage")!;
+  const note = panel.querySelector<HTMLElement>(".stage-note")!;
+  mountStepper(panel, (at) => `batch ${at + 1}`, (at) => {
+    const index = at ?? 0;
+    stage.innerHTML = changesStage(frames[index]);
+    note.textContent = CHANGES_SCRIPT.notes[index];
+  });
 }
 
 function built(review: WeekReview) {
@@ -381,13 +431,14 @@ async function start() {
     const response = await fetch("./review.json", { cache: "no-store" });
     if (!response.ok) throw new Error(`review.json answered ${response.status}`);
     const review = parseReview(await response.json());
-    app.innerHTML = `${header(review)}${controls(review)}<main id="review-main">${timeline(review)}${map(review)}${built(review)}${waste(review)}${tokens(review)}${flow(review)}</main>${footer(review)}`;
+    app.innerHTML = `${header(review)}${controls(review)}<main id="review-main">${timeline(review)}${map(review)}${explain()}${built(review)}${waste(review)}${tokens(review)}${flow(review)}</main>${footer(review)}`;
     app.addEventListener("click", (event) => {
       const filter = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-filter]");
       if (filter) applyFilter(filter.dataset.filter ?? "all");
     });
     mountStepper(app.querySelector<HTMLElement>("#timeline")!, (at) => dayName(review.days[at].date), () => undefined);
-    mountTabs(app.querySelector<HTMLElement>('[role="tablist"]')!);
+    for (const list of app.querySelectorAll<HTMLElement>('[role="tablist"]')) mountTabs(list);
+    mountExplainers();
     mountFlow(review);
     document.documentElement.dataset.ready = "true";
   } catch (error) {
