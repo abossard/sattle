@@ -100,11 +100,11 @@ public sealed class RecordAdapter : ISourceAdapter, IRedelivery
         current[id] = (envelope.CapturedNs, next is null ? null : Encode(next));
     }
 
-    /// <summary>The values of a row as one text: per field a tag and the value (`-` absent, `s` text, `b` boolean, `i` integer or instant, `d` decimal with its digits), separated by U+001F.</summary>
+    /// <summary>The values of a row as one text: per field a tag and the value (`-` absent, `s` text, `b` boolean, `i` integer or instant, `d` decimal with its digits), separated by U+001F. A U+001F inside a text is written twice; a tag is never U+001F, so `Decode` reads back exactly the values written, and a text without U+001F is written as before.</summary>
     static string Encode(object?[] values) => string.Join('\u001f', values.Select(v => v switch
     {
         null => "-",
-        string t => "s" + t,
+        string t => "s" + t.Replace("\u001f", "\u001f\u001f", StringComparison.Ordinal),
         bool b => b ? "b1" : "b0",
         decimal d => "d" + d.ToString(System.Globalization.CultureInfo.InvariantCulture),
         long n => "i" + n.ToString(System.Globalization.CultureInfo.InvariantCulture),
@@ -113,7 +113,7 @@ public sealed class RecordAdapter : ISourceAdapter, IRedelivery
 
     static object?[] Decode(string text, RowContract row)
     {
-        var parts = text.Split('\u001f');
+        var parts = Fields(text);
         var values = new object?[row.Fields.Length];
         for (var i = 0; i < values.Length; i++)
             values[i] = parts[i][0] switch
@@ -125,6 +125,21 @@ public sealed class RecordAdapter : ISourceAdapter, IRedelivery
                 _ => long.Parse(parts[i][1..], System.Globalization.CultureInfo.InvariantCulture),
             };
         return values;
+    }
+
+    /// <summary>The fields of an encoded row: a single U+001F ends a field, a doubled one is a U+001F of the text.</summary>
+    static List<string> Fields(string text)
+    {
+        var parts = new List<string>();
+        var field = new System.Text.StringBuilder();
+        for (var i = 0; i < text.Length; i++)
+        {
+            if (text[i] != '\u001f') field.Append(text[i]);
+            else if (i + 1 < text.Length && text[i + 1] == '\u001f') { field.Append('\u001f'); i++; }
+            else { parts.Add(field.ToString()); field.Clear(); }
+        }
+        parts.Add(field.ToString());
+        return parts;
     }
 
     static bool Read(RowField field, JsonElement? json, out object? value)

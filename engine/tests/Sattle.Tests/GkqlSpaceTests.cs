@@ -112,6 +112,22 @@ public class GkqlSpaceTests
         Assert.Equal(["create", "delete"], touches);
     }
 
+    /// <summary>A text field may hold U+001F, the separator of the record adapter's stored values (#189 F05): an update or a deletion still retracts the row as it was sent, so its link goes and nothing else stays.</summary>
+    [Theory]
+    [InlineData("a\u001fb", "c", true)]
+    [InlineData("a\u001fb", "c", false)]
+    [InlineData("\u001f", "\u001f\u001f", true)]
+    [InlineData("a\u001f", "\u001fb", false)]
+    public void A_text_with_the_unit_separator_is_retracted_as_it_was_sent(string from, string to, bool delete)
+    {
+        using var host = Open(Space());
+        Send(host, "m", from, to);
+        Assert.Single(Links(host, from, to));
+        Send(host, "m", "x", "y", deleted: delete);
+        Assert.Empty(Links(host, from, to));
+        Assert.Equal(delete ? 0 : 1, Links(host, "x", "y").Count);
+    }
+
     static string Digest(SpaceHost host) => host.Definitions().AsArray().Single(m => m!["name"]!.GetValue<string>() == "pairs")!["digest"]!.GetValue<string>();
 
     /// <summary>Documents to catalog to documents and back: the texts come out as they went in, the second catalog has the same digest, and the authored verb and rule ids name its operators (`op:ID_n`) and rules.</summary>
