@@ -623,19 +623,21 @@ public sealed class Engine : IDisposable, IEngineInput
         Patch? patch = null;
         if (edits.Count > 0)
         {
+            // the patch is the new state as a value: checked against the head, committed, and only then applied to the head graph, so a refused commit leaves the head as it was
             patch = new Patch(g.Name, g.Head, g.Head + 1, edits, new Cause([cause + "#" + seq], ConfigurationRevision.ToString(System.Globalization.CultureInfo.InvariantCulture)));
-            var err = g.State.Apply(patch.Edits);
+            var err = g.State.Check(patch.Edits);
             if (err is not null) throw new InvalidOperationException($"graph {g.Name}: engine produced an inapplicable patch: {err}");
-            Charge("(patch and apply)", ref a, ref t);
             var gin = ImmutableSortedDictionary.CreateBuilder<string, long>(StringComparer.Ordinal);
             foreach (var (_, from) in g.PortSources) if (byName.TryGetValue(from, out var up)) gin[from] = up.Head;
             var pos = ImmutableSortedDictionary<string, long>.Empty.Add(cause, seq);
             var fr = new Frontier(pos, gin.ToImmutable(), ConfigurationRevision);
             var res = store.Commit(new CommitBatch(g.Key, g.Head, [patch], [fr], g.IsMaster ? Identities.Pending : []));
-            if (g.IsMaster) Identities.Committed();
             if (res is not CommitResult.Committed c) throw new InvalidOperationException($"graph {g.Name}: store did not commit: {res}");
-            g.Head = c.Head;
+            if (g.IsMaster) Identities.Committed();
             Charge("(store commit)", ref a, ref t);
+            g.State.Apply(patch.Edits);
+            g.Head = c.Head;
+            Charge("(patch and apply)", ref a, ref t);
         }
         if (keys is not null) OperatorMillis[keys[^1]] = OperatorMillis.GetValueOrDefault(keys[^1]) + System.Diagnostics.Stopwatch.GetElapsedTime(tCommit).TotalMilliseconds;
         // every step reads what its graph's windows changed by: its own samples, and the windows a merge of two identities moved in this step, which no sample announces
