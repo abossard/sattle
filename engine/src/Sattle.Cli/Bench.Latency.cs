@@ -61,7 +61,7 @@ static partial class Bench
         public readonly Catalog Cat = new(Program.Projections); public readonly string Space; public readonly Engine Engine; public readonly TimingInput Input; public readonly Replay Replay;
         public Rig(Func<string, IGraphStore> factory, int chunkRows)
         {
-            var res = Cat.Load(Catalog.ReadDirectory(FindDefs()));
+            var res = Cat.Load(Catalog.ReadDirectory(FindDefs()), updatePins: true);
             if (res.HasErrors) throw new InvalidOperationException(string.Join("\n", res.Diagnostics));
             Space = Cat.Spaces.Keys.First();
             var adapters = AdapterRegistry.Create(Cat.Spaces[Space], Cat);
