@@ -5,7 +5,7 @@ namespace Sattle.Tests;
 /// <summary>The engine projects name no domain: no health states, no authored health rows, no Azure, Kubernetes or other source system (#144), no observability word for events and windows (#166), no estate, workload or query language of a use case (#183). Domains come in through definitions and record envelopes only. The engine may name its own health: its liveness route is `"/health"`, matched by that exact form.</summary>
 public partial class NeutralityTests
 {
-    [GeneratedRegex(@"Healthy|Degraded|Unhealthy|SignalRule|PolicyRow|CurationRow|RollupPolicy|(?<!""/)[Hh]ealth|""/health(?!"")|[Aa]zure|[Kk]ubernetes|\bk8s\b|kubectl|\b[Pp]ods?\b|\b[Pp]od(?=[A-Z_0-9])|[Hh]ubble|[Pp]rometheus|[Ee]vent ?[Hh]ubs?\b|eventhub|ResourceGraph|\bAKS\b|\baks\b|[Cc]luster|[Tt]elemetry|Deployment|deployment(?=[A-Z])|[Rr]eplica ?[Ss]et|[Rr]esource ?[Gg]roup|resource-group|/subscriptions/|[Ss]ubscription ?[Ii]ds?\b|[Kk]usto|(?<![Gg])(?:KQL|Kql|kql)|\b[Aa]cme|ACME|(?<![A-Za-z])estate|Estate|[Cc]osmos")]
+    [GeneratedRegex(@"Healthy|Degraded|Unhealthy|SignalRule|PolicyRow|CurationRow|RollupPolicy|(?<!""/)[Hh]ealth|""/Health|""/health(?!"")|[Aa]zure|[Kk]ubernetes|\bk8s\b|kubectl|\b[Pp]ods?\b|\b[Pp]ods?(?=[A-Z_0-9])|(?<=[a-z])Pods?(?![a-z])|[Hh]ubble|[Pp]rometheus|[Ee]vent ?[Hh]ubs?\b|eventhub|ResourceGraph|\bAKS\b|\baks\b|[Cc]luster|[Tt]elemetry|Deployment|deployment(?=[A-Z])|[Rr]eplica ?[Ss]et|[Rr]esource ?[Gg]roup|resource-group|/subscriptions/|[Ss]ubscription ?[Ii]ds?\b|[Kk]usto|(?<![Gg])(?:KQL|Kql|kql)|\b[Aa]cme|ACME|(?<![A-Za-z])estate|Estate|[Cc]osmos")]
     private static partial Regex DomainWord();
 
     /// <summary>The domain words of a source text: (line, symbol, match). The symbol is the identifier or word the match is in.</summary>
@@ -72,6 +72,13 @@ public partial class NeutralityTests
     [InlineData("static int GenEstate(Options o)", "Estate")]
     [InlineData("var podCode = 1;", "pod")]
     [InlineData("var c = PodIp;", "Pod")]
+    [InlineData("var r = PodsReady;", "Pods")]
+    [InlineData("var m = podsByNode;", "pods")]
+    [InlineData("var p = nodePod;", "Pod")]
+    [InlineData("var k = kubePod;", "Pod")]
+    [InlineData("var n = nodePods;", "Pods")]
+    [InlineData("app.MapGet(\"/Health\", Live);", "\"/Health")]
+    [InlineData("app.MapGet(\"/HealthTree\", Live);", "\"/Health")]
     [InlineData("var t = \"healthTree\";", "health")]
     [InlineData("var m = HealthModel.Of(g);", "Health")]
     [InlineData("app.MapGet(\"/healthz\", Live);", "\"/health")]
@@ -87,6 +94,7 @@ public partial class NeutralityTests
     [InlineData("sealed class RollupOp : AggregatingOp")]
     [InlineData("new Diagnostic(\"Aggregate\", \"error\", focus, message) { Severity = \"error\" }")]
     [InlineData("var spods = epods + 1; // podium, Podcast")]
+    [InlineData("var x = Podium + nodePodcast;")]
     [InlineData("Tenant = \"lab\", // the tenant of the run")]
     [InlineData("// a subscription of a publish-subscribe topic, Subscribe(handler)")]
     [InlineData("// the container of a node in the tree, Contains")]
