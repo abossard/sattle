@@ -113,11 +113,11 @@ sattle serve --store sqlite=space.db
 **Benchmarks** (chapter 13, chapter 14). The file `engine/PERF.md` lists each benchmark with its options.
 
 ```bash
-sattle bench
+sattle-lab bench q14
 ```
 
 ```bash
-sattle bench estate
+sattle-lab bench estate
 ```
 
 **Viewer: tests and checks** (chapter 12).
