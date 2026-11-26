@@ -207,31 +207,62 @@ main > section:first-child { border-block-start: 0; }
 .tabs [role="tab"]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 /* Explainers */
-.explainer { display: grid; gap: 0.75rem; }
+.theme:has(.explainer) { grid-column: 1 / -1; }
+.explainer { display: grid; gap: 0.625rem; margin-block-start: 0.5rem; padding-block-start: 1rem; border-block-start: 1px solid var(--line); }
+.explainer h5 { font-size: 1rem; font-weight: 600; margin: 0; }
 .explainer > p { max-inline-size: 70ch; }
-.batches { list-style: none; margin: 0; padding: 0; display: flex; gap: 0.5rem; flex-wrap: wrap; }
-.batches li { padding: 0.25rem 0.625rem; border: 1px solid var(--line-strong); border-radius: 999px; font: 600 0.8125rem var(--mono); color: var(--muted); }
+.explainer .stepper { margin-block-end: 0; }
+.batches { list-style: none; margin: 0; padding: 0; display: flex; gap: 0.375rem; flex-wrap: wrap; }
+.batches li { min-inline-size: 1.75rem; text-align: center; padding: 0.125rem 0.5rem; border: 1px solid var(--line-strong); border-radius: 999px; font: 600 0.8125rem var(--mono); color: var(--muted); }
 .batches li.is-current { color: var(--text); border-color: var(--text); }
-.stage { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1.2fr) auto minmax(0, 1fr); gap: 0.75rem; align-items: start; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; }
-.stage-column { display: grid; gap: 0.5rem; align-content: start; min-inline-size: 0; }
-.stage-column h4 { font-size: 0.875rem; color: var(--muted); font-weight: 600; }
-.stage-arrow { color: var(--muted); margin-block-start: 1.75rem; }
-.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.375rem; }
-.row-chip { display: flex; gap: 0.5rem; align-items: baseline; padding: 0.375rem 0.5rem; border-radius: 6px; font: 400 0.875rem var(--mono); border: 1px solid var(--line); }
-.row-chip .weight { font-weight: 600; inline-size: 1.75rem; flex: none; }
-.row-chip[data-weight="add"] { background: color-mix(in oklab, var(--keep) 10%, var(--surface)); }
-.row-chip[data-weight="add"] .weight { color: var(--keep); }
-.row-chip[data-weight="remove"] { background: color-mix(in oklab, var(--stop) 10%, var(--surface)); }
-.row-chip[data-weight="remove"] .weight { color: var(--stop); }
-.state { font: 400 0.875rem var(--mono); }
-.stage-note { padding: 0.75rem 1rem; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); max-inline-size: 70ch; }
-@media (prefers-reduced-motion: no-preference) {
-  .row-chip { animation: travel 360ms var(--ease) both; animation-delay: calc(var(--c) * 260ms + var(--i) * 60ms); }
-  @keyframes travel { from { opacity: 0; transform: translateX(-24px); } }
+.explainer .drawing { padding: 0; background: var(--canvas); }
+.explainer .drawing svg { min-inline-size: 760px; }
+.stage-note { padding: 0.75rem 1rem; border-radius: 8px; background: var(--canvas); border: 1px solid var(--line); max-inline-size: 70ch; min-block-size: 3.25rem; }
+.key.add { background: var(--add-fill); outline: 1px solid var(--add-line); }
+.key.remove { background: var(--remove-fill); outline: 1px solid var(--remove-line); }
+.key.touched { background: var(--touch-fill); outline: 2px solid var(--focus); }
+.key.dim { background: var(--surface); outline: 1px dashed var(--line-strong); }
+.key.accent { background: var(--touch-fill); outline: 1px solid var(--focus); }
+.key.warn { background: var(--warn-fill); outline: 1px solid var(--medium); }
+:root {
+  --add-fill: light-dark(#e3f3e8, #183323); --add-line: var(--keep);
+  --remove-fill: light-dark(#fbe5e3, #3a1c1a); --remove-line: var(--stop);
+  --touch-fill: light-dark(#e6eefc, #1a2740);
+  --warn-fill: light-dark(#fbf0dc, #3a2c12);
 }
-@media (max-width: 52rem) {
-  .stage { grid-template-columns: 1fr; }
-  .stage-arrow { transform: rotate(90deg); margin: 0 auto; }
+.lanes text { font-family: var(--sans); fill: var(--text); font-size: 13px; }
+.lane rect { fill: var(--surface); stroke: var(--line); }
+.lane.calc rect { fill: color-mix(in oklab, var(--focus) 5%, var(--surface)); }
+.lane.state rect { fill: color-mix(in oklab, var(--medium) 6%, var(--surface)); }
+.lane-title { font-weight: 600; font-size: 12px !important; fill: var(--muted) !important; }
+.kit-edge { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+.kit-edge.dashed { stroke-dasharray: 6 5; }
+.kit-head { fill: var(--muted); }
+.lanes .halo { paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
+.kit-chip rect { stroke-width: 1.2; }
+.kit-chip text { font: 500 13px var(--mono) !important; }
+.kit-chip.add rect { fill: var(--add-fill); stroke: var(--add-line); }
+.kit-chip.remove rect { fill: var(--remove-fill); stroke: var(--remove-line); }
+.kit-chip.accent rect, .kit-chip.touched rect { fill: var(--touch-fill); stroke: var(--focus); }
+.kit-chip.warn rect { fill: var(--warn-fill); stroke: var(--medium); }
+.kit-chip.dim rect { fill: var(--surface); stroke: var(--line-strong); stroke-dasharray: 4 3; }
+.kit-chip.struck { opacity: 0.4; }
+.kit-chip.struck text { text-decoration: line-through; }
+.kit-box rect { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1.2; }
+.kit-box .box-key { font-size: 12px !important; fill: var(--muted) !important; }
+.kit-box .box-value { font: 600 20px var(--mono) !important; }
+.kit-box.touched rect { fill: var(--touch-fill); stroke: var(--focus); stroke-width: 2.5; }
+.kit-box.warn rect { fill: var(--warn-fill); stroke: var(--medium); stroke-width: 2; }
+.kit-box.add rect { fill: var(--add-fill); stroke: var(--add-line); stroke-width: 2; }
+.kit-box.remove rect { fill: var(--remove-fill); stroke: var(--remove-line); stroke-width: 2; }
+.kit-box.dim { opacity: 0.4; }
+@media (prefers-reduced-motion: no-preference) {
+  .kit-chip.travel { animation: kit-travel 520ms var(--ease) both; animation-delay: var(--delay); }
+  .kit-chip.appear { animation: kit-appear 300ms var(--ease) both; animation-delay: var(--delay); }
+  .kit-box.touched, .kit-box.warn, .kit-box.add, .kit-box.remove { animation: kit-pop 380ms var(--ease) both; animation-delay: var(--delay); transform-box: fill-box; transform-origin: center; }
+  @keyframes kit-travel { from { translate: var(--dx) var(--dy); opacity: 0.3; } }
+  @keyframes kit-appear { from { opacity: 0; } }
+  @keyframes kit-pop { 0% { scale: 0.92; } 60% { scale: 1.04; } }
 }
 
 /* Flow */

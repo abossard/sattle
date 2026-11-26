@@ -113,16 +113,19 @@ try {
   await click('[data-stepper="week"] [data-event="next"]');
   await click('[data-stepper="week"] [data-event="next"]');
   assert.equal(await evaluate("document.querySelectorAll('.day.is-future').length"), review.days.length - 2, "The week replay fades the days still to come");
-  await click('[data-stepper="changes"] [data-event="next"]');
-  await click('[data-stepper="changes"] [data-event="next"]');
-  await evaluate("Promise.all(document.getAnimations().map((animation) => animation.finished))");
-  assert.equal(await evaluate("document.querySelectorAll('#panel-changes .stage-column:last-of-type .row-chip').length"), 2, "Batch 2 sends one -1 and one +1");
-  assert.ok(await evaluate("document.querySelector('#panel-changes .stage-note').textContent.startsWith('One more api error')"), "Each batch explains itself");
-  if (shots) {
-    const box = await evaluate("(() => { const r = document.querySelector('#explain').getBoundingClientRect(); return { x: 0, y: r.top + scrollY, width: innerWidth, height: r.height }; })()");
-    const screenshot = await send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true, clip: { ...box, scale: 1 } });
-    writeFileSync(`${shots}/explainer-changes-${await evaluate("innerWidth")}.png`, Buffer.from(screenshot.result.data, "base64"));
+  for (const id of await evaluate("[...document.querySelectorAll('[data-explainer]')].map((block) => block.dataset.explainer)")) {
+    await click(`[data-stepper="${id}"] [data-event="next"]`);
+    assert.ok(await evaluate(`document.querySelector('[data-explainer="${id}"] .drawing svg') !== null`), `Explainer ${id} draws its first step`);
+    assert.ok(await evaluate(`document.querySelector('[data-explainer="${id}"] .stage-note').textContent.length > 20`), `Explainer ${id} explains its step`);
+    await click(`[data-stepper="${id}"] [data-event="next"]`);
+    await evaluate("Promise.all(document.getAnimations().map((animation) => animation.finished))");
+    if (shots) {
+      const box = await evaluate(`(() => { const r = document.querySelector('[data-explainer="${id}"]').getBoundingClientRect(); return { x: r.left, y: r.top + scrollY, width: r.width, height: r.height }; })()`);
+      const screenshot = await send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true, clip: { ...box, scale: 1 } });
+      writeFileSync(`${shots}/explainer-${id}.png`, Buffer.from(screenshot.result.data, "base64"));
+    }
   }
+  assert.ok(await evaluate("document.querySelectorAll('[data-explainer]').length") >= 1, "Explainers sit in their theme cards");
   await click('[data-stepper="flow"] [data-event="next"]');
   await click('.node[data-id="review"]');
   assert.ok(await evaluate("document.querySelector('.flow-detail').textContent.includes('back to')"), "A step opens its detail with the loops that touch it");
