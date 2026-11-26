@@ -85,7 +85,7 @@ try {
         squares: document.querySelectorAll('.square').length,
         foreign: [...document.querySelectorAll('a[href^="http"]')].map((a) => a.href).filter((href) => !href.startsWith(${JSON.stringify(repository)})),
         brokenImages: [...document.images].filter((image) => !image.naturalWidth).length,
-        smallTargets: [...document.querySelectorAll('.chip, .play')].filter((el) => el.getBoundingClientRect().height < (innerWidth < 600 ? 44 : 36)).length,
+        smallTargets: [...document.querySelectorAll('.chip, .step-button, [role=tab]')].filter((el) => el.getBoundingClientRect().height < (innerWidth < 600 ? 44 : 36)).length,
         canvas: getComputedStyle(document.body).backgroundColor,
       }))()`);
       assert.ok(page.overflow <= 0, `No horizontal scroll at ${width}px ${scheme}: ${page.overflow}px`);
@@ -106,9 +106,15 @@ try {
   await click('[data-filter="engine"]');
   assert.equal(await evaluate("document.querySelectorAll('.squares li:not(.is-dimmed)').length"), review.areas.find((area) => area.id === "engine").commits, "The area filter keeps only engine commits bright");
   assert.equal(await evaluate("[...document.querySelectorAll('.area-group')].filter((group) => !group.hidden).length"), 1, "The area filter shows one area of built work");
-  await click('.play');
-  assert.equal(await evaluate("document.querySelector('.flow').dataset.state"), "playing", "The flow plays on request");
-  console.log("PASS area filter and flow");
+  await click('[data-stepper="week"] [data-event="next"]');
+  await click('[data-stepper="week"] [data-event="next"]');
+  assert.equal(await evaluate("document.querySelectorAll('.day.is-future').length"), review.days.length - 2, "The week replay fades the days still to come");
+  await click('[data-stepper="flow"] [data-event="next"]');
+  await click('.node[data-id="review"]');
+  assert.ok(await evaluate("document.querySelector('.flow-detail').textContent.includes('back to')"), "A step opens its detail with the loops that touch it");
+  await click('[role="tab"]#tab-kind');
+  assert.equal(await evaluate("document.querySelector('#panel-kind').hidden"), false, "A tab shows its own chart");
+  console.log("PASS area filter, week replay, flow detail and tabs");
   assert.deepEqual(errors, [], "No uncaught errors");
   console.log("PASS no uncaught errors");
 } finally {

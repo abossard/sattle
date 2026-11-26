@@ -1,4 +1,9 @@
+import "@fontsource/ibm-plex-sans/latin-400.css";
+import "@fontsource/ibm-plex-sans/latin-600.css";
+import "@fontsource/ibm-plex-mono/latin-400.css";
+import "@fontsource/ibm-plex-mono/latin-600.css";
 import "./styles.css";
+import { step, stepper, type StepEvent, type Stepper } from "./stepper";
 import { parseReview, type Area, type CommitRef, type Day, type Evidence, type Finding, type IssueRef, type Theme, type WeekReview } from "./model";
 
 const mount = document.querySelector<HTMLDivElement>("#app");
@@ -54,7 +59,7 @@ function dayColumn(day: Day, index: number) {
     ? `<details class="closed"><summary>${day.closed.length} ${day.closed.length === 1 ? "issue" : "issues"} closed</summary><ul>${day.closed.map((issue) => `<li data-area="${issue.area}">${issueLink(issue)}</li>`).join("")}</ul></details>`
     : `<p class="quiet">No issue closed.</p>`;
   return `
-    <article class="day" style="--d:${index}">
+    <article class="day" data-step="${index}" style="--d:${index}">
       <h3>${escape(dayName(day.date))}</h3>
       <p class="count">${day.commits.length} ${day.commits.length === 1 ? "commit" : "commits"}</p>
       <p>${escape(day.note)}</p>
@@ -63,11 +68,21 @@ function dayColumn(day: Day, index: number) {
     </article>`;
 }
 
+const stepperControls = (name: string, label: string) => `
+  <div class="stepper" data-stepper="${name}" role="group" aria-label="${escape(label)}">
+    <button type="button" class="step-button" data-event="back">Back</button>
+    <button type="button" class="step-button primary" data-event="play">Play</button>
+    <button type="button" class="step-button" data-event="next">Next</button>
+    <button type="button" class="step-button quiet-button" data-event="all">Show all</button>
+    <span class="step-status" aria-live="polite"></span>
+  </div>`;
+
 function timeline(review: WeekReview) {
   return `
     <section id="timeline" aria-labelledby="timeline-title">
       <h2 id="timeline-title">The week, day by day</h2>
-      <p class="section-note">Each square is one commit, coloured by the area it changed most. Open a square to see the commit on GitHub.</p>
+      <p class="section-note">Each square is one commit, coloured by the area it changed most. Open a square to see the commit on GitHub. Play replays the week one day at a time.</p>
+      ${stepperControls("week", "Replay the week")}
       <div class="days">${review.days.map(dayColumn).join("")}</div>
     </section>`;
 }
@@ -176,6 +191,18 @@ function tokens(review: WeekReview) {
   const issueMax = Math.max(...data.issues.map((issue) => issue.inputEquivalent));
   const largest = [...data.models].sort((left, right) => right.inputEquivalent - left.inputEquivalent)[0];
   const modelTotal = data.models.reduce((sum, model) => sum + model.inputEquivalent, 0);
+  const plural = (count: number) => `${count} ${count === 1 ? "session" : "sessions"}`;
+  const panels = [
+    { id: "day", title: "Per day", body: `
+      <p class="legend"><span class="key cache"></span>cache reads, one tenth <span class="key fresh"></span>new input and cache writes</p>
+      <ul class="bars">${data.days.map((day) => barRow(escape(dayName(day.date)), [{ value: 0.1 * day.cacheRead, className: "cache" }, { value: day.input + day.cacheWrite, className: "fresh" }], dayMax, `${millions(day.inputEquivalent)}, ${plural(day.sessions)}`)).join("")}</ul>` },
+    { id: "kind", title: "Per kind of session", body: `
+      <p class="legend"><span class="key fresh"></span>the session <span class="key sub"></span>its subagents</p>
+      <ul class="bars">${data.kinds.map((kind) => barRow(escape(kind.name), [{ value: kind.own, className: "fresh" }, { value: kind.subagents, className: "sub" }], kindMax, `${millions(kind.own + kind.subagents)}, ${plural(kind.sessions)}`)).join("")}</ul>` },
+    { id: "issue", title: "Per issue", body: `
+      <p class="legend">Sessions started for one issue only.</p>
+      <ul class="bars columns">${data.issues.map((issue) => barRow(issueLink(issue), [{ value: issue.inputEquivalent, className: "fresh" }], issueMax, millions(issue.inputEquivalent))).join("")}</ul>` },
+  ];
   return `
     <section id="tokens" aria-labelledby="tokens-title">
       <h2 id="tokens-title">What the run cost in tokens</h2>
@@ -186,43 +213,74 @@ function tokens(review: WeekReview) {
         <div><dt>Output</dt><dd>${millions(data.output)}</dd></div>
         <div><dt>Sessions</dt><dd>${number(data.sessions)}</dd></div>
       </dl>
-      <div class="token-grid">
-        <div>
-          <h3>Per day</h3>
-          <p class="legend"><span class="key cache"></span>cache reads, one tenth <span class="key fresh"></span>new input and cache writes</p>
-          <ul class="bars">${data.days.map((day) => barRow(escape(dayName(day.date)), [{ value: 0.1 * day.cacheRead, className: "cache" }, { value: day.input + day.cacheWrite, className: "fresh" }], dayMax, `${millions(day.inputEquivalent)}, ${day.sessions} ${day.sessions === 1 ? "session" : "sessions"}`)).join("")}</ul>
-        </div>
-        <div>
-          <h3>Per kind of session</h3>
-          <p class="legend"><span class="key fresh"></span>the session <span class="key sub"></span>its subagents</p>
-          <ul class="bars">${data.kinds.map((kind) => barRow(escape(kind.name), [{ value: kind.own, className: "fresh" }, { value: kind.subagents, className: "sub" }], kindMax, `${millions(kind.own + kind.subagents)}, ${kind.sessions} ${kind.sessions === 1 ? "session" : "sessions"}`)).join("")}</ul>
-        </div>
-        <div class="wide-block">
-          <h3>Per issue, sessions started for one issue</h3>
-          <ul class="bars columns">${data.issues.map((issue) => barRow(issueLink(issue), [{ value: issue.inputEquivalent, className: "fresh" }], issueMax, millions(issue.inputEquivalent))).join("")}</ul>
-        </div>
-      </div>
+      <div class="tabs" role="tablist" aria-label="Token charts">${panels.map((panel, index) => `<button type="button" role="tab" id="tab-${panel.id}" aria-controls="panel-${panel.id}" aria-selected="${index === 0}" tabindex="${index === 0 ? 0 : -1}">${panel.title}</button>`).join("")}</div>
+      ${panels.map((panel, index) => `<div class="tab-panel" role="tabpanel" id="panel-${panel.id}" aria-labelledby="tab-${panel.id}"${index === 0 ? "" : " hidden"}>${panel.body}</div>`).join("")}
       <details class="method"><summary>How these numbers were counted</summary><p>${escape(data.method)}</p><p>${escape(data.weights)}</p></details>
     </section>`;
 }
 
-function flow(review: WeekReview) {
+const NODE = { width: 128, height: 60, gap: 28, top: 24 };
+const nodeX = (index: number) => 16 + index * (NODE.width + NODE.gap);
+
+function flowDrawing(review: WeekReview) {
   const { steps, loops } = review.flow;
-  const position = new Map(steps.map((step, index) => [step.id, index]));
-  const title = (id: string) => steps[position.get(id) ?? 0].title;
+  const position = new Map(steps.map((item, index) => [item.id, index]));
+  const width = nodeX(steps.length - 1) + NODE.width + 16;
+  const bottom = NODE.top + NODE.height;
+  const spans = loops.map((loop) => Math.abs((position.get(loop.from) ?? 0) - (position.get(loop.to) ?? 0)));
+  const depth = (index: number) => 30 + 26 * [...new Set(spans)].sort((left, right) => left - right).indexOf(spans[index]) * 1.6;
+  const height = bottom + Math.max(...loops.map((_loop, index) => depth(index))) + 40;
+  const arrows = steps.slice(0, -1).map((_item, index) => {
+    const x1 = nodeX(index) + NODE.width;
+    const x2 = nodeX(index + 1) - 4;
+    const y = NODE.top + NODE.height / 2;
+    return `<path class="edge" d="M${x1} ${y}H${x2}" marker-end="url(#arrow)"/>`;
+  }).join("");
+  const arcs = loops.map((loop, index) => {
+    const from = nodeX(position.get(loop.from) ?? 0) + NODE.width / 2;
+    const to = nodeX(position.get(loop.to) ?? 0) + NODE.width / 2;
+    const dip = bottom + depth(index) * 1.33;
+    const labelY = bottom + depth(index) + 4;
+    return `<g class="loop" data-from="${loop.from}" data-to="${loop.to}">
+      <path class="edge back" d="M${from} ${bottom} C ${from} ${dip}, ${to} ${dip}, ${to} ${bottom + 4}" marker-end="url(#arrow-back)"/>
+      <text class="halo loop-label" x="${(from + to) / 2}" y="${labelY}" text-anchor="middle">${escape(loop.title)}</text>
+    </g>`;
+  }).join("");
+  const nodes = steps.map((item, index) => `
+    <g class="node" data-step="${index}" data-id="${item.id}" tabindex="0" role="button" aria-label="Step ${index + 1}: ${escape(item.title)}">
+      <rect x="${nodeX(index)}" y="${NODE.top}" width="${NODE.width}" height="${NODE.height}" rx="8"/>
+      <text class="step-number" x="${nodeX(index) + 10}" y="${NODE.top + 20}">${index + 1}</text>
+      <text class="step-title" x="${nodeX(index) + 10}" y="${NODE.top + 42}">${escape(item.title)}</text>
+    </g>`).join("");
+  return `<svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="group" aria-label="${escape(review.flow.title)}">
+    <defs>
+      <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrow-head" d="M0 0L10 5L0 10z"/></marker>
+      <marker id="arrow-back" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrow-head back" d="M0 0L10 5L0 10z"/></marker>
+    </defs>
+    ${arrows}${arcs}${nodes}
+  </svg>`;
+}
+
+function flowDetail(review: WeekReview, id: string) {
+  const item = review.flow.steps.find((candidate) => candidate.id === id) ?? review.flow.steps[0];
+  const titles = new Map(review.flow.steps.map((candidate) => [candidate.id, candidate.title]));
+  const touching = review.flow.loops.filter((loop) => loop.from === item.id || loop.to === item.id);
+  return `
+    <h3>${escape(item.title)}</h3>
+    <p>${escape(item.text)}</p>
+    ${touching.length ? `<p class="label">Where work went back</p><ul class="evidence">${touching.map((loop) => `<li>${escape(titles.get(loop.from) ?? "")} back to ${escape(titles.get(loop.to) ?? "")}: ${escape(loop.title)}. ${evidenceLink(loop.evidence)}</li>`).join("")}</ul>` : `<p class="quiet">No work went back at this step this week.</p>`}`;
+}
+
+function flow(review: WeekReview) {
   return `
     <section id="flow" aria-labelledby="flow-title">
       <h2 id="flow-title">${escape(review.flow.title)}</h2>
-      <p class="section-note">The planned path runs left to right. The loops below are where this week's work went back, each with an example.</p>
-      <figure class="flow" data-state="idle">
-        <ol class="steps">${steps.map((step, index) => `<li style="--i:${index}"><strong>${escape(step.title)}</strong><span>${escape(step.text)}</span></li>`).join("")}</ol>
-        <ul class="loops">${loops.map((loop, index) => `
-          <li style="--i:${steps.length + index}">
-            <span class="hop"><span>${escape(title(loop.from))}</span><span class="visually-hidden">back to</span><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path d="M4 12h15m-6-6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>${escape(title(loop.to))}</span></span>
-            <span>${escape(loop.title)}. ${evidenceLink(loop.evidence)}</span>
-          </li>`).join("")}</ul>
-        <figcaption><button type="button" class="play" aria-describedby="flow-title">Play the path</button></figcaption>
-      </figure>
+      <p class="section-note">The planned path runs left to right. The dashed arcs are where this week's work went back. Select a step to read it; Play walks the path.</p>
+      ${stepperControls("flow", "Walk the path")}
+      <div class="flow-grid">
+        <div class="drawing" tabindex="0" role="region" aria-label="Drawing of the path, scrolls sideways">${flowDrawing(review)}</div>
+        <aside class="flow-detail" aria-live="polite">${flowDetail(review, review.flow.steps[0].id)}</aside>
+      </div>
     </section>`;
 }
 
@@ -239,12 +297,83 @@ function applyFilter(area: string) {
   for (const group of app.querySelectorAll<HTMLElement>(".area-group")) group.hidden = area !== "all" && group.dataset.area !== area;
 }
 
-function playFlow() {
-  const figure = app.querySelector<HTMLElement>(".flow");
-  if (!figure) return;
-  figure.dataset.state = "idle";
-  void figure.offsetWidth;
-  figure.dataset.state = "playing";
+/** One stepper per section: the state machine in ./stepper, its timer and its view here. */
+function mountStepper(section: HTMLElement, describe: (at: number) => string, onStep: (at: number | null) => void) {
+  const steps = [...section.querySelectorAll<HTMLElement | SVGElement>("[data-step]")];
+  const controls = section.querySelector<HTMLElement>(".stepper");
+  if (!controls) return;
+  let state: Stepper = stepper(steps.length);
+  let timer: number | undefined;
+  const view = () => {
+    for (const element of steps) {
+      const index = Number(element.dataset.step);
+      element.classList.toggle("is-future", state.at !== null && index > state.at);
+      element.classList.toggle("is-current", state.at === index);
+    }
+    const play = controls.querySelector<HTMLButtonElement>('[data-event="play"], [data-event="pause"]');
+    if (play) { play.dataset.event = state.playing ? "pause" : "play"; play.textContent = state.playing ? "Pause" : "Play"; }
+    controls.querySelector<HTMLButtonElement>('[data-event="back"]')!.disabled = state.at === 0;
+    controls.querySelector<HTMLButtonElement>('[data-event="next"]')!.disabled = state.at === state.count - 1;
+    controls.querySelector<HTMLElement>(".step-status")!.textContent = state.at === null ? "" : `${state.at + 1} of ${state.count}: ${describe(state.at)}`;
+    onStep(state.at);
+  };
+  const send = (event: StepEvent) => {
+    state = step(state, event);
+    window.clearInterval(timer);
+    timer = state.playing ? window.setInterval(() => send("tick"), 1400) : undefined;
+    view();
+  };
+  controls.addEventListener("click", (event) => {
+    const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-event]");
+    if (button) send(button.dataset.event as StepEvent);
+  });
+  view();
+}
+
+function mountTabs(list: HTMLElement) {
+  const tabs = [...list.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+  const select = (tab: HTMLButtonElement) => {
+    for (const other of tabs) {
+      const selected = other === tab;
+      other.setAttribute("aria-selected", String(selected));
+      other.tabIndex = selected ? 0 : -1;
+      document.getElementById(other.getAttribute("aria-controls") ?? "")!.hidden = !selected;
+    }
+  };
+  list.addEventListener("click", (event) => {
+    const tab = (event.target as HTMLElement).closest<HTMLButtonElement>('[role="tab"]');
+    if (tab) select(tab);
+  });
+  list.addEventListener("keydown", (event) => {
+    const index = tabs.indexOf(document.activeElement as HTMLButtonElement);
+    const next = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: tabs.length - 1 }[event.key];
+    if (index < 0 || next === undefined) return;
+    event.preventDefault();
+    const tab = tabs[(next + tabs.length) % tabs.length];
+    select(tab);
+    tab.focus();
+  });
+}
+
+function mountFlow(review: WeekReview) {
+  const section = app.querySelector<HTMLElement>("#flow");
+  const detail = app.querySelector<HTMLElement>(".flow-detail");
+  if (!section || !detail) return;
+  const show = (id: string) => {
+    detail.innerHTML = flowDetail(review, id);
+    for (const node of section.querySelectorAll<SVGGElement>(".node")) node.classList.toggle("is-selected", node.dataset.id === id);
+    for (const loop of section.querySelectorAll<SVGGElement>(".loop")) loop.classList.toggle("is-related", loop.dataset.from === id || loop.dataset.to === id);
+  };
+  section.addEventListener("click", (event) => {
+    const node = (event.target as Element).closest<SVGGElement>(".node");
+    if (node?.dataset.id) show(node.dataset.id);
+  });
+  section.addEventListener("keydown", (event) => {
+    const node = (event.target as Element).closest<SVGGElement>(".node");
+    if (node?.dataset.id && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); show(node.dataset.id); }
+  });
+  mountStepper(section, (at) => review.flow.steps[at].title, (at) => { if (at !== null) show(review.flow.steps[at].id); });
+  show(review.flow.steps[0].id);
 }
 
 async function start() {
@@ -254,11 +383,12 @@ async function start() {
     const review = parseReview(await response.json());
     app.innerHTML = `${header(review)}${controls(review)}<main id="review-main">${timeline(review)}${map(review)}${built(review)}${waste(review)}${tokens(review)}${flow(review)}</main>${footer(review)}`;
     app.addEventListener("click", (event) => {
-      const target = event.target as HTMLElement;
-      const filter = target.closest<HTMLButtonElement>("[data-filter]");
+      const filter = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-filter]");
       if (filter) applyFilter(filter.dataset.filter ?? "all");
-      if (target.closest(".play")) playFlow();
     });
+    mountStepper(app.querySelector<HTMLElement>("#timeline")!, (at) => dayName(review.days[at].date), () => undefined);
+    mountTabs(app.querySelector<HTMLElement>('[role="tablist"]')!);
+    mountFlow(review);
     document.documentElement.dataset.ready = "true";
   } catch (error) {
     app.innerHTML = `<main id="review-main" class="failure"><h1>The review could not load</h1><p>${escape(error instanceof Error ? error.message : String(error))}</p></main>`;
