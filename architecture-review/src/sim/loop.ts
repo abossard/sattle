@@ -63,7 +63,7 @@ export function runLoop(script: Event[][]): Frame[] {
 
 export const LOOP_SCRIPT = {
   title: "One issue through the managed run",
-  lede: "An issue has numbered acceptance criteria. A worker session holds its card and moves it from plan to doing to review, posting proof for each criterion. An independent review either passes it, and the issue closes, or sends it back. When a session runs low on context it hands over, and a fresh one picks the card up.",
+  lede: "An issue has numbered acceptance criteria. A worker holds its card and moves it from plan to doing to review, posting proof for each criterion. An independent review either passes it, and the issue closes, or sends it back. When a worker runs low on context it hands over, and a fresh one picks the card up.",
   script: [
     [{ kind: "open" }],
     [{ kind: "claim" }],
@@ -74,12 +74,12 @@ export const LOOP_SCRIPT = {
     [{ kind: "pass" }],
   ] as Event[][],
   notes: [
-    "The issue is opened with three acceptance criteria, A1 to A3, all open, and its card waits at plan.",
-    "A worker session claims the card and moves it to doing.",
+    "The issue is opened with three acceptance criteria, criterion 1 to criterion 3, all open, and its card waits at plan.",
+    "The first worker claims the card and moves it to doing.",
     "The worker posts proof for every criterion at a named commit, and the card moves to review.",
-    "The independent review fails A2. The card goes back to doing, A2 is open again, and the review round count goes to 1.",
-    "At 30% context the worker writes a handover and releases the card, and a fresh session claims it and goes on.",
-    "The new session posts proof for A2 only, since A1 and A3 already have proof, and the card returns to review.",
-    "The second review passes: all criteria are ticked, the orchestrator closes the issue, and the run took 2 review rounds and 2 sessions.",
+    "The independent review fails criterion 2. The card goes back to doing, criterion 2 is open again, and the review round count goes to 1.",
+    "At 30% context the worker writes a handover and releases the card, and a second worker claims it and goes on.",
+    "The second worker posts proof for criterion 2 only, since criteria 1 and 3 already have proof, and the card returns to review.",
+    "The second review passes: all criteria are ticked, the orchestrator closes the issue, and the run took 2 review rounds and 2 workers.",
   ],
 };

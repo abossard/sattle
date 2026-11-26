@@ -55,7 +55,7 @@ export function pngSize(bytes) {
   return { width: view.getUint32(16), height: view.getUint32(20) };
 }
 
-/** Parse `git log --format=%x1e%H%x1f%cI%x1f%s --numstat`. */
+/** Parse `git log --format=%x1e%H%x1f%aI%x1f%s --numstat`. */
 export function parseLog(text) {
   return text.split("\x1e").filter((block) => block.trim()).map((block) => {
     const [header, ...rest] = block.split("\n");

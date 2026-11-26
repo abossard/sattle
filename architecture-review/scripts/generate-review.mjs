@@ -26,7 +26,7 @@ const since = new Date(Date.parse(source.period.from) - 2 * 86_400_000).toISOStr
 const review = buildReview(source, {
   revision,
   generatedAt: git(["show", "-s", "--format=%cI", "HEAD"]),
-  log: parseLog(git(["log", `--since=${since}`, "--no-renames", "--format=%x1e%H%x1f%cI%x1f%s", "--numstat", revision])),
+  log: parseLog(git(["log", `--since=${since}`, "--no-renames", "--format=%x1e%H%x1f%aI%x1f%s", "--numstat", revision])),
   resolve: (sha) => { try { return git(["rev-parse", "--verify", "--quiet", `${sha}^{commit}`]); } catch { return null; } },
   fileExists: (path) => { try { git(["cat-file", "-e", `${revision}:${path}`]); return true; } catch { return false; } },
   image: (path) => { const absolute = resolve(repoRoot, path); return relative(repoRoot, absolute).startsWith("..") || !existsSync(absolute) ? null : readFileSync(absolute); },

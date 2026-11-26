@@ -39,6 +39,7 @@ function header(review: WeekReview) {
         <div><dt>Lines added</dt><dd>+${number(totals.added)}</dd></div>
         <div><dt>Lines removed</dt><dd>−${number(totals.deleted)}</dd></div>
       </dl>
+      <p class="quiet">Commits are counted by author date, lines per file as git log --numstat reports them with --no-renames, so a renamed file counts as removed and added.</p>
     </header>`;
 }
 
@@ -245,6 +246,7 @@ function tokens(review: WeekReview) {
       </dl>
       <div class="tabs" role="tablist" aria-label="Token charts">${panels.map((panel, index) => `<button type="button" role="tab" id="tab-${panel.id}" aria-controls="panel-${panel.id}" aria-selected="${index === 0}" tabindex="${index === 0 ? 0 : -1}">${panel.title}</button>`).join("")}</div>
       ${panels.map((panel, index) => `<div class="tab-panel" role="tabpanel" id="panel-${panel.id}" aria-labelledby="tab-${panel.id}"${index === 0 ? "" : " hidden"}>${panel.body}</div>`).join("")}
+      <p class="quiet">Sessions that span days count once in each day, so the days add up to more than the total.</p>
       <details class="method"><summary>How these numbers were counted</summary><p>${escape(data.method)}</p><p>${escape(data.weights)}</p></details>
     </section>`;
 }
