@@ -142,7 +142,7 @@ function explainerBlock(item: Explainer<unknown>) {
       <ol class="batches" aria-label="Steps">${item.frames.map((_frame, at) => `<li data-step="${at}">${at + 1}</li>`).join("")}</ol>
       <div class="drawing" tabindex="0" role="region" aria-label="${escape(item.title)}, scrolls sideways"></div>
       <p class="stage-note" aria-live="polite"></p>
-      <p class="legend">${item.legend.map((entry) => `<span class="key ${entry.swatch}"></span>${escape(entry.label)}`).join(" ")}</p>
+      <p class="legend">${item.legend.map((entry) => `<span class="legend-item"><span class="key ${entry.swatch}"></span>${escape(entry.label)}</span>`).join("")}</p>
     </div>`;
 }
 

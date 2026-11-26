@@ -113,6 +113,7 @@ try {
   await click('[data-stepper="week"] [data-event="next"]');
   await click('[data-stepper="week"] [data-event="next"]');
   assert.equal(await evaluate("document.querySelectorAll('.day.is-future').length"), review.days.length - 2, "The week replay fades the days still to come");
+  await click('[data-filter="all"]');
   for (const id of await evaluate("[...document.querySelectorAll('[data-explainer]')].map((block) => block.dataset.explainer)")) {
     await click(`[data-stepper="${id}"] [data-event="next"]`);
     assert.ok(await evaluate(`document.querySelector('[data-explainer="${id}"] .drawing svg') !== null`), `Explainer ${id} draws its first step`);

@@ -852,6 +852,35 @@
       "suggestion": "For renames and sentence edits, the orchestrator checks the diff itself; keep full reviews for new behaviour."
     },
     {
+      "id": "scope-moves",
+      "severity": "medium",
+      "verdict": "change",
+      "title": "Criteria kept moving between issues",
+      "plain": "At least seven acceptance criteria moved from one issue to another during the week, for example from the language-complete issue to the health model rebuild, from the health model to the lateness issue, and from the fold memory issue to the open drain issue. The health model rebuild ended with nine criteria and the neutral-core epic with ten.",
+      "cost": "7 or more moved criteria; two issues with nine and ten criteria",
+      "evidence": [
+        {
+          "issue": 7
+        },
+        {
+          "issue": 159
+        },
+        {
+          "issue": 142
+        },
+        {
+          "issue": 169
+        },
+        {
+          "issue": 182
+        },
+        {
+          "issue": 186
+        }
+      ],
+      "suggestion": "Turn a moved criterion into a new small issue, and split an issue with more than eight criteria before work starts."
+    },
+    {
       "id": "unread-docs",
       "severity": "medium",
       "verdict": "change",
