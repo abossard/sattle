@@ -1159,6 +1159,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             var catPatch = new Patch("catalog", catalogHistory.Count, catalogHistory.Count + 1, Graph.Diff(Catalog.Graph, cand.Graph));
             // swap
             Engine = fresh; Catalog = cand;
+            live?.Rebind(Space);
             foreach (var (m, t) in ModuleTexts(texts)) sources[m] = (sources.TryGetValue(m, out var oldSrc) ? oldSrc.Path : m + ".module.gkql.json", t);
             foreach (var kv in fixedTexts) { var m = ModuleOfPath(kv.Key); if (m.Length > 0) sources[m] = (kv.Key, kv.Value); }
             var withFiles = OthersWith(texts); var removed = others.Where(f => texts.TryGetValue(Path.GetFileName(f.Path), out var t) && t is null).ToList(); others.Clear(); others.AddRange(withFiles);

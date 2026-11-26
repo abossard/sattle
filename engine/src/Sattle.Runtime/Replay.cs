@@ -172,6 +172,12 @@ public sealed class Replay : IRowSink
     public Replay(IEngineInput engine, TypedSpace space, IReadOnlyList<ISourceAdapter> adapters, ReplayOptions options, object? gate = null)
     {
         this.engine = engine; this.adapters = adapters; opt = options; this.gate = gate ?? new object();
+        Bind(space);
+    }
+
+    void Bind(TypedSpace space)
+    {
+        sourceOfRowType.Clear(); sourcesOfAdapter.Clear();
         foreach (var s in space.Sources) sourceOfRowType[s.Adapter + "|" + Ids.Name(s.RowTypeId)] = s.Name;   // the same row type can come from two adapters into two sources
         // a record envelope is progress of the sources of its row type only; an envelope of any other adapter of all the sources of that adapter
         foreach (var s in space.Sources)
@@ -179,6 +185,25 @@ public sealed class Replay : IRowSink
             var by = s.Adapter == RecordAdapter.AdapterId ? s.Adapter + "|" + Ids.Name(s.RowTypeId) : s.Adapter;
             if (!sourcesOfAdapter.TryGetValue(by, out var names)) sourcesOfAdapter[by] = names = [];
             names.Add(s.Name);
+        }
+    }
+
+    /// <summary>Follows the bindings of an activated space from now on: each (adapter, row type) feeds the source the space names for it. The adapters stay (activation checks their contracts against the space), so the rows in hand and the progress not yet recorded move to the new name of their source; those of a source the space no longer has are dropped, as the rows of an unbound type are.</summary>
+    public void Rebind(TypedSpace space)
+    {
+        var before = sourceOfRowType.ToList();
+        Bind(space);
+        var now = before.ToDictionary(kv => kv.Value, kv => sourceOfRowType.GetValueOrDefault(kv.Key), StringComparer.Ordinal);
+        var progress = reported.ToList(); reported.Clear();
+        foreach (var (source, until) in progress)
+            if (now.GetValueOrDefault(source) is { } name) reported[name] = Math.Max(reported.GetValueOrDefault(name, long.MinValue), until);
+        foreach (var (key, o) in writers.ToList())
+        {
+            var source = sourceOfRowType.GetValueOrDefault(o.Name);
+            if (source == o.Source) continue;
+            Out? moved = o.Source is not null && source is not null ? new(o.W, o.Name, source) : null;   // a writer that becomes bound or unbound is made again at its next row
+            if (moved is null) { o.W.Dispose(); writers.Remove(key); } else writers[key] = moved;
+            if (current == o) current = moved;
         }
     }
 

@@ -57,13 +57,13 @@ public class GkqlSpaceTests
     }
 
     static int seq;
-    static void Send(SpaceHost host, string key, string from, string to, bool deleted = false)
+    static void Send(SpaceHost host, string key, string from, string to, bool deleted = false, bool flush = true)
     {
         var n = Interlocked.Increment(ref seq);
         object payload = deleted ? new { key, deleted = true } : new { key, values = new { name = key, from, to } };
         var line = JsonSerializer.Serialize(new { v = 1, source = "records:Mention", capturedAt = $"2026-11-01T10:00:{n % 60:00}Z", seq = n, key = $"records:Mention/{n}", payload });
         Assert.Equal(SpaceHost.LiveResult.Consumed, host.LiveEnvelope("test", line, n.ToString()));
-        host.LiveFlush();
+        if (flush) host.LiveFlush();
     }
 
     static List<JsonNode> Links(SpaceHost host, string from, string to)
@@ -126,6 +126,24 @@ public class GkqlSpaceTests
         Send(host, "m", "x", "y", deleted: delete);
         Assert.Empty(Links(host, from, to));
         Assert.Equal(delete ? 0 : 1, Links(host, "x", "y").Count);
+    }
+
+    /// <summary>A commit that renames the source of the master activates its new binding for the live input too (#189 F06): a mention sent after the commit reaches the graph, and retracts one sent before it that was still pending at the commit.</summary>
+    [Theory]
+    [InlineData("feed", false)]
+    [InlineData("feed", true)]
+    [InlineData("mentions2", true)]
+    public void A_renamed_source_feeds_the_live_input_once_activated(string source, bool pendingBefore)
+    {
+        using var host = Open(Space());
+        if (pendingBefore) Send(host, "m", "a", "b", flush: false);
+        var renamed = Module.Replace("""[{"name": "mentions",""", $$"""[{"name": "{{source}}",""")
+            .Replace("""{"mentions": "mentions"}""", $$"""{"mentions": "{{source}}"}""");
+        host.Commit("pairs", renamed, host.CatalogRevision);
+        Assert.Equal(source, Assert.Single(host.Space.Sources).Name);
+        Send(host, "m", "c", "d");
+        Assert.Empty(Links(host, "a", "b"));
+        Assert.Single(Links(host, "c", "d"));
     }
 
     static string Digest(SpaceHost host) => host.Definitions().AsArray().Single(m => m!["name"]!.GetValue<string>() == "pairs")!["digest"]!.GetValue<string>();
