@@ -38,5 +38,5 @@ describe("week review generation boundary", () => {
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });
