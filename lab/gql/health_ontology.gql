@@ -1,0 +1,62 @@
+CREATE NODE TYPE ProjectionSnapshot (
+  id STRING,
+  as_of STRING,
+  as_of_ns INTEGER
+);
+
+CREATE NODE TYPE HealthAssessment (
+  id STRING,
+  as_of STRING,
+  as_of_ns INTEGER,
+  subject_key STRING,
+  resource_id STRING,
+  metric STRING,
+  dimensions_json STRING,
+  state STRING,
+  reason STRING,
+  policy STRING,
+  evidence_count INTEGER
+);
+
+CREATE NODE TYPE HealthEvidence (
+  id STRING,
+  observation_id STRING,
+  raw_capture_id STRING,
+  captured_at STRING,
+  captured_ns INTEGER,
+  event_at STRING,
+  event_ns INTEGER,
+  row_type STRING,
+  record_key STRING,
+  aggregation STRING,
+  unit STRING,
+  values_json STRING,
+  dimensions_json STRING
+);
+
+CREATE NODE TYPE HealthEntity (
+  id STRING,
+  entity_key STRING,
+  kind STRING,
+  display_name STRING
+);
+
+CREATE NODE TYPE SourceStatus (
+  id STRING,
+  kind STRING,
+  state STRING,
+  detail STRING
+);
+
+CREATE EDGE TYPE SUPPORTED_BY (rule STRING);
+CREATE EDGE TYPE SNAPSHOT_HAS (kind STRING);
+CREATE EDGE TYPE ASSESSES (kind STRING);
+CREATE EDGE TYPE EVIDENCES_ENTITY (role STRING);
+CREATE EDGE TYPE PRESERVED_RELATION (
+  observation_id STRING,
+  record_key STRING,
+  relation STRING,
+  verdict STRING,
+  captured_ns INTEGER,
+  event_ns INTEGER
+);

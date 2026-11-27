@@ -154,3 +154,40 @@ cd capture && node eh-forward.mjs --namespace <eventhub namespace> --kubeconfig 
 - Runs until `SIGTERM`. Reads Hubble through its own relay port-forward, so it can run next to `capture.sh`.
 - Hubs, ordering, markers and failure behaviour: see CAPTURE-FORMAT.md, section Live stream.
 - Knobs: `--mirror-hubble`, `HUBBLE_FILTER`, `PROM_POLL_SECONDS`, `AZURE_POLL_SECONDS`, `QUEUE_MAX_MB`, `--no-hubble`, `--no-metrics`.
+
+## Experimental GQL health projection (#191)
+
+`lab/gql/` is a self-contained, read-only-input example on Grafeo 0.6.3, a GQL database licensed Apache-2.0. It is an experiment, not a production health evaluator. The exact dependency pins are `grafeo==0.6.3` and transitive `solvor==0.6.3`; both pins were checked against the GitHub advisory database. Install only into an external environment, never into the repository:
+
+```sh
+python3 -m venv "$HOME/.venvs/sattle-gql"
+"$HOME/.venvs/sattle-gql/bin/python" -m pip install -r lab/gql/requirements.txt
+```
+
+Run against a user's native capture (one file or a directory of `.ndjson` files):
+
+```sh
+"$HOME/.venvs/sattle-gql/bin/python" -B lab/gql/app.py --input PATH/TO/NATIVE-CAPTURE
+```
+
+The checked-in, scrubbed collector recordings can also be replayed without first making an output file:
+
+```sh
+"$HOME/.venvs/sattle-gql/bin/python" -B lab/gql/app.py --collector-replay lab/collector/recordings
+```
+
+This supports the collector's `RequestRow`, `SampleRow`, `UsageRow`, and `MetricRow` record envelopes; the checked-in replay has 11, 91, 24, and 80 respectively. Use `timeline`, `time 2026-01-01T00:00:00Z`, `time latest`, `view master`, `view health`, `use master`, `use health`, and `gql MATCH (...) RETURN ...` in the terminal. Terminal GQL sessions are read-only and cannot modify even the in-memory graph. The default graph database is in memory. `--database` is an explicit persistence opt-in for a new database; it refuses to overwrite existing experimental graphs, and repository-local paths must be below the ignored `lab/gql/.local/`. Captures and derived `.ndjson` under `lab/gql/` are ignored. No raw capture is copied or written by default.
+
+The master deployment executes the GQL DDL in `azure_ontology.gql`; the separate health deployment executes `health_ontology.gql`. Native Azure, Kubernetes, Hubble, and VNet flow envelopes reuse `lab/collector/capture.py` normalization instead of interpreting the collector's output as new source truth. Every raw envelope remains a `RawCapture` node, every normalized update/delete remains an `Observation`, and edges cite the raw envelope. Raw Hubble and VNet flow evidence is available in the master graph even when the collector does not normalize a VNet tuple into a row. The terminal's `view master` shows trace references but does not print raw payloads automatically. No invented measurements or fabricated evidence are added.
+
+The actual GQL query in `projection.gql` is the projection. It uses temporal anti-joins to select the latest applicable revision of each record key, then the latest applicable point of each resource/metric/dimension series; it joins a metric to its observed resource through `MEASURES_ENTITY` and `DESCRIBES_ENTITY` edges, exposes inventory deletion, and classifies severity and unknown states with `CASE`. Python only maps those GQL results into a separate health graph. `topology.gql` also selects the current observed relationships in GQL, and the health graph preserves the one-hop relationships relevant to health subjects as `PRESERVED_RELATION` edges. These are GQL statements, not Cypher. A capture arrival is visible only after `capturedAt`; an event-time point is also not visible before its own time. This avoids both future-arrival leakage and confusion between collection time and measurement time. Revisions of an unchanged key supersede only earlier revisions, deletions remove current state but remain in history, dimension names and values remain in series identity, and a measured zero is distinct from missing data.
+
+The only health rule is deliberately illustrative: a native metric whose actual Azure response proves `average` aggregation and `Percent` unit, for `node_cpu_usage_percentage` or `CpuPercentage`, is `HEALTHY` below 80%, `DEGRADED` from 80% to below 95%, and `CRITICAL` from 95%. A point older than 300 seconds at the selected as-of time is `UNKNOWN_STALE`. Missing or non-numeric points are `UNKNOWN_MISSING`; an unavailable aggregation or unverified unit is unknown, never healthy; a current metric joined to a latest visible inventory delete is `UNKNOWN_DELETED`. In particular, `capture.py` chooses `total` when `average` is absent but does not retain aggregation or unit in the normalized row. This example recovers and validates both from the paired native envelope and refuses to classify a total-only or unit-less value as a percentage. Collector `MetricRow` values are retained, but that record type has no unit and its Event Hubs path does not retain dimension metadata, so it is not eligible for this rule; its full record key is still preserved. Prometheus and Kubernetes usage are preserved as measurements without attaching an unsupported percentage or capacity policy.
+
+Observed entity relationships are exposed in the master graph as edges. They are limited to relationships stated by normalized inventory, Kubernetes selection/ownership/endpoint rows, Azure network facts, and observed network flows (for example `networkFlow`, `selects`, `ip`, and `azureHost`), with observation IDs as evidence. They are not inferred application dependencies. The health graph keeps only currently visible, one-hop relationships touching its assessed subjects; raw VNet tuples, records unsupported by the collector normalizer, and application trace dependency topology remain unavailable.
+
+Source availability is explicit. Inventory-only input supplies no application traces. Hubble and VNet flows are network evidence, not application spans or health proof. Hubble loss and forwarder-drop markers report incompleteness; the absence of a marker does not prove a complete trace capture. `RequestRow` records are request telemetry and do not establish distributed-trace completeness. The experiment also does not infer Resource Health, application dependencies, SLOs, alerting intent, capacity, or a real operational threshold. A full native capture can be large and is loaded in memory; source-specific coverage, late delivery, relist gaps, and collector retention remain limitations. Run the focused unit and real Grafeo integration tests with:
+
+```sh
+"$HOME/.venvs/sattle-gql/bin/python" -B lab/gql/test_gql.py
+```

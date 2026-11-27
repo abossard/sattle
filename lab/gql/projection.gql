@@ -1,0 +1,152 @@
+MATCH (point:Observation:MetricPoint)-[:MEASURES_ENTITY]->(subject:MasterEntity)
+WHERE point.operation = "upsert"
+  AND point.captured_ns <= $as_of_ns
+  AND point.event_ns <= $as_of_ns
+  AND point.metric_fold IN ["node_cpu_usage_percentage", "cpupercentage"]
+  AND NOT EXISTS {
+    MATCH (point_revision:Observation)
+    WHERE point_revision.row_type = point.row_type
+      AND point_revision.record_key = point.record_key
+      AND point_revision.captured_ns <= $as_of_ns
+      AND point_revision.event_ns <= $as_of_ns
+      AND (
+        point_revision.captured_ns > point.captured_ns
+        OR (
+          point_revision.captured_ns = point.captured_ns
+          AND point_revision.ordinal > point.ordinal
+        )
+      )
+  }
+  AND NOT EXISTS {
+    MATCH (later:Observation:MetricPoint)-[:MEASURES_ENTITY]->(later_subject:MasterEntity)
+    WHERE later.operation = "upsert"
+      AND later.series_key = point.series_key
+      AND later.captured_ns <= $as_of_ns
+      AND later.event_ns <= $as_of_ns
+      AND NOT EXISTS {
+        MATCH (later_revision:Observation)
+        WHERE later_revision.row_type = later.row_type
+          AND later_revision.record_key = later.record_key
+          AND later_revision.captured_ns <= $as_of_ns
+          AND later_revision.event_ns <= $as_of_ns
+          AND (
+            later_revision.captured_ns > later.captured_ns
+            OR (
+              later_revision.captured_ns = later.captured_ns
+              AND later_revision.ordinal > later.ordinal
+            )
+          )
+      }
+      AND (
+        later.event_ns > point.event_ns
+        OR (
+          later.event_ns = point.event_ns
+          AND later.captured_ns > point.captured_ns
+        )
+        OR (
+          later.event_ns = point.event_ns
+          AND later.captured_ns = point.captured_ns
+          AND later.ordinal > point.ordinal
+        )
+      )
+  }
+OPTIONAL MATCH (resource_state:Observation)-[:DESCRIBES_ENTITY]->(subject)
+WHERE resource_state.row_type = "ResourceRow"
+  AND resource_state.captured_ns <= $as_of_ns
+  AND resource_state.event_ns <= $as_of_ns
+  AND NOT EXISTS {
+    MATCH (resource_revision:Observation)
+    WHERE resource_revision.row_type = resource_state.row_type
+      AND resource_revision.record_key = resource_state.record_key
+      AND resource_revision.captured_ns <= $as_of_ns
+      AND resource_revision.event_ns <= $as_of_ns
+      AND (
+        resource_revision.captured_ns > resource_state.captured_ns
+        OR (
+          resource_revision.captured_ns = resource_state.captured_ns
+          AND resource_revision.ordinal > resource_state.ordinal
+        )
+      )
+  }
+RETURN
+  point.series_key AS subject_key,
+  subject.id AS subject_id,
+  subject.entity_key AS resource_id,
+  subject.kind AS subject_kind,
+  subject.display_name AS subject_name,
+  point.metric AS metric,
+  point.dimensions_json AS dimensions_json,
+  CASE
+    WHEN resource_state.operation = "delete" THEN "UNKNOWN_DELETED"
+    WHEN $as_of_ns - point.event_ns > $stale_after_ns THEN "UNKNOWN_STALE"
+    WHEN point.has_numeric = FALSE THEN "UNKNOWN_MISSING"
+    WHEN point.aggregation <> "average" THEN "UNKNOWN_UNSUPPORTED_AGGREGATION"
+    WHEN NOT (lower(point.unit) IN ["%", "percent", "percentage"]) THEN "UNKNOWN_UNVERIFIED_UNIT"
+    WHEN point.numeric_value >= $critical_percent THEN "CRITICAL"
+    WHEN point.numeric_value >= $warning_percent THEN "DEGRADED"
+    ELSE "HEALTHY"
+  END AS state,
+  CASE
+    WHEN resource_state.operation = "delete" THEN "The metric's observed resource was deleted by this as-of point."
+    WHEN $as_of_ns - point.event_ns > $stale_after_ns THEN "The latest visible point is stale; stale is not healthy."
+    WHEN point.has_numeric = FALSE THEN "The visible point is missing a numeric value; a gap is not a measured zero."
+    WHEN point.aggregation <> "average" THEN "The illustrative rule requires a verified average aggregation."
+    WHEN NOT (lower(point.unit) IN ["%", "percent", "percentage"]) THEN "The illustrative rule cannot verify a percentage unit."
+    WHEN point.numeric_value >= $critical_percent THEN "The verified average is at or above the illustrative critical threshold."
+    WHEN point.numeric_value >= $warning_percent THEN "The verified average is at or above the illustrative warning threshold."
+    ELSE "The verified average is below the illustrative warning threshold and is neither missing nor stale."
+  END AS reason,
+  point AS point_evidence,
+  resource_state AS resource_evidence
+UNION ALL
+MATCH (inventory:Observation:InventoryVersion)-[:DESCRIBES_ENTITY]->(subject:MasterEntity)
+WHERE inventory.operation = "upsert"
+  AND inventory.captured_ns <= $as_of_ns
+  AND inventory.event_ns <= $as_of_ns
+  AND NOT EXISTS {
+    MATCH (inventory_revision:Observation)
+    WHERE inventory_revision.row_type = inventory.row_type
+      AND inventory_revision.record_key = inventory.record_key
+      AND inventory_revision.captured_ns <= $as_of_ns
+      AND inventory_revision.event_ns <= $as_of_ns
+      AND (
+        inventory_revision.captured_ns > inventory.captured_ns
+        OR (
+          inventory_revision.captured_ns = inventory.captured_ns
+          AND inventory_revision.ordinal > inventory.ordinal
+        )
+      )
+  }
+  AND NOT EXISTS {
+    MATCH (available:Observation:MetricPoint)-[:MEASURES_ENTITY]->(subject)
+    WHERE available.operation = "upsert"
+      AND available.captured_ns <= $as_of_ns
+      AND available.event_ns <= $as_of_ns
+      AND available.metric_fold IN ["node_cpu_usage_percentage", "cpupercentage"]
+      AND NOT EXISTS {
+        MATCH (available_revision:Observation)
+        WHERE available_revision.row_type = available.row_type
+          AND available_revision.record_key = available.record_key
+          AND available_revision.captured_ns <= $as_of_ns
+          AND available_revision.event_ns <= $as_of_ns
+          AND (
+            available_revision.captured_ns > available.captured_ns
+            OR (
+              available_revision.captured_ns = available.captured_ns
+              AND available_revision.ordinal > available.ordinal
+            )
+          )
+      }
+  }
+RETURN
+  subject.entity_key + "|cpu-percentage|missing" AS subject_key,
+  subject.id AS subject_id,
+  subject.entity_key AS resource_id,
+  subject.kind AS subject_kind,
+  subject.display_name AS subject_name,
+  "cpu percentage (illustrative)" AS metric,
+  "[]" AS dimensions_json,
+  "UNKNOWN_MISSING" AS state,
+  "No qualifying CPU percentage time series is visible at this as-of point." AS reason,
+  NULL AS point_evidence,
+  inventory AS resource_evidence;

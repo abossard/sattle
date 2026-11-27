@@ -1,0 +1,81 @@
+CREATE NODE TYPE RawCapture (
+  id STRING,
+  input_key STRING,
+  source STRING,
+  category STRING,
+  captured_at STRING,
+  captured_ns INTEGER,
+  ordinal INTEGER,
+  raw_json STRING
+);
+
+CREATE NODE TYPE Observation (
+  id STRING,
+  raw_capture_id STRING,
+  row_type STRING,
+  record_key STRING,
+  operation STRING,
+  subject_id STRING,
+  source STRING,
+  captured_at STRING,
+  captured_ns INTEGER,
+  event_at STRING,
+  event_ns INTEGER,
+  ordinal INTEGER,
+  values_json STRING,
+  series_key STRING,
+  dimensions_json STRING,
+  metric_fold STRING,
+  aggregation STRING,
+  unit STRING,
+  availability STRING
+);
+
+CREATE NODE TYPE MasterEntity (
+  id STRING,
+  entity_key STRING,
+  kind STRING,
+  display_name STRING
+);
+
+CREATE NODE TYPE InventoryVersion (
+  resource_id STRING,
+  name STRING,
+  resource_type STRING
+);
+
+CREATE NODE TYPE MetricPoint (
+  resource_id STRING,
+  metric STRING,
+  numeric_value DOUBLE,
+  has_numeric BOOLEAN
+);
+
+CREATE NODE TYPE NetworkTrace (
+  trace_key STRING,
+  trace_at STRING,
+  verdict STRING
+);
+
+CREATE NODE TYPE NetworkFact (
+  resource_id STRING,
+  fact_kind STRING,
+  target STRING
+);
+
+CREATE NODE TYPE ApplicationObservation (
+  observation_name STRING,
+  result STRING
+);
+
+CREATE EDGE TYPE DERIVED_FROM (normalizer STRING);
+CREATE EDGE TYPE DESCRIBES_ENTITY (observation_id STRING);
+CREATE EDGE TYPE MEASURES_ENTITY (observation_id STRING);
+CREATE EDGE TYPE OBSERVED_RELATION (
+  observation_id STRING,
+  record_key STRING,
+  relation STRING,
+  verdict STRING,
+  captured_ns INTEGER,
+  event_ns INTEGER
+);

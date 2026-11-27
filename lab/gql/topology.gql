@@ -1,0 +1,34 @@
+MATCH (source:MasterEntity)-[link:OBSERVED_RELATION]->(target:MasterEntity)
+MATCH (observation:Observation {id: link.observation_id})
+WHERE observation.captured_ns <= $as_of_ns
+  AND observation.event_ns <= $as_of_ns
+  AND observation.operation = "upsert"
+  AND NOT EXISTS {
+    MATCH (revision:Observation)
+    WHERE revision.row_type = observation.row_type
+      AND revision.record_key = observation.record_key
+      AND revision.captured_ns <= $as_of_ns
+      AND revision.event_ns <= $as_of_ns
+      AND (
+        revision.captured_ns > observation.captured_ns
+        OR (
+          revision.captured_ns = observation.captured_ns
+          AND revision.ordinal > observation.ordinal
+        )
+      )
+  }
+RETURN
+  source.id AS source_id,
+  source.entity_key AS source_key,
+  source.kind AS source_kind,
+  source.display_name AS source_name,
+  target.id AS target_id,
+  target.entity_key AS target_key,
+  target.kind AS target_kind,
+  target.display_name AS target_name,
+  link.relation AS relation,
+  link.verdict AS verdict,
+  link.observation_id AS observation_id,
+  link.record_key AS record_key,
+  link.captured_ns AS captured_ns,
+  link.event_ns AS event_ns;
