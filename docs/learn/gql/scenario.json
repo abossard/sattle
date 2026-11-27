@@ -1,0 +1,49 @@
+{
+  "checkpoints": [
+    { "at": "2026-01-01T10:00:00Z", "label": "Inventory only" },
+    { "at": "2026-01-01T10:01:00Z", "label": "First reading" },
+    { "at": "2026-01-01T10:02:00Z", "label": "Before delivery" },
+    { "at": "2026-01-01T10:03:00Z", "label": "Late reading arrives" },
+    { "at": "2026-01-01T10:04:15Z", "label": "CPU falls" },
+    { "at": "2026-01-01T10:09:01Z", "label": "Reading goes stale" }
+  ],
+  "capture": [
+    {
+      "v": 1,
+      "source": "arg",
+      "capturedAt": "2026-01-01T10:00:00Z",
+      "key": "demo/inventory",
+      "payload": {
+        "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/shop/providers/Microsoft.ContainerService/managedClusters/shop-aks",
+        "name": "shop-aks",
+        "type": "Microsoft.ContainerService/managedClusters",
+        "resourceGroup": "shop",
+        "subscriptionId": "00000000-0000-0000-0000-000000000000"
+      }
+    },
+    {
+      "v": 1,
+      "source": "azure-metrics",
+      "capturedAt": "2026-01-01T10:01:00Z",
+      "key": "demo/cpu-1",
+      "meta": { "resourceId": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/shop/providers/Microsoft.ContainerService/managedClusters/shop-aks" },
+      "payload": { "value": [{ "name": { "value": "node_cpu_usage_percentage" }, "unit": "Percent", "timeseries": [{ "data": [{ "timeStamp": "2026-01-01T10:00:30Z", "average": 24 }] }] }] }
+    },
+    {
+      "v": 1,
+      "source": "azure-metrics",
+      "capturedAt": "2026-01-01T10:03:00Z",
+      "key": "demo/cpu-2",
+      "meta": { "resourceId": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/shop/providers/Microsoft.ContainerService/managedClusters/shop-aks" },
+      "payload": { "value": [{ "name": { "value": "node_cpu_usage_percentage" }, "unit": "Percent", "timeseries": [{ "data": [{ "timeStamp": "2026-01-01T10:02:00Z", "average": 97 }] }] }] }
+    },
+    {
+      "v": 1,
+      "source": "azure-metrics",
+      "capturedAt": "2026-01-01T10:04:15Z",
+      "key": "demo/cpu-3",
+      "meta": { "resourceId": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/shop/providers/Microsoft.ContainerService/managedClusters/shop-aks" },
+      "payload": { "value": [{ "name": { "value": "node_cpu_usage_percentage" }, "unit": "Percent", "timeseries": [{ "data": [{ "timeStamp": "2026-01-01T10:04:00Z", "average": 42 }] }] }] }
+    }
+  ]
+}

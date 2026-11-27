@@ -1,12 +1,14 @@
-"""Add the two learning guides to an existing Pages atlas without rebuilding the films."""
+"""Add the learning guides to an existing Pages atlas without rebuilding the films."""
 
 import argparse
 import html
 from html.parser import HTMLParser
+import json
 from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 from urllib.parse import urlsplit
 
 
@@ -26,6 +28,53 @@ class PlaybackAssets(HTMLParser):
                 continue
             if attrs.get(key):
                 self.paths.add(GUIDE / urlsplit(attrs[key]).path)
+
+
+def transport(element):
+    # JSON numbers cannot carry nanosecond instants exactly into JavaScript.
+    return {key: str(value) if key.endswith("_ns") else value for key, value in element.items()}
+
+
+def package_gql(site):
+    lab_dir = ROOT / "lab/gql"
+    sys.path.insert(0, str(lab_dir))
+    try:
+        from gql_lab import CRITICAL_PERCENT, STALE_AFTER_NS, WARNING_PERCENT, GqlHealthLab, instant_ns
+    finally:
+        sys.path.pop(0)
+
+    source = ROOT / GUIDE / "gql"
+    target = site / GUIDE / "gql"
+    target.mkdir(parents=True, exist_ok=True)
+    for name in ("index.html", "replay.css", "replay.mjs", "page.mjs", "grafeo-license.txt"):
+        shutil.copyfile(source / name, target / name)
+
+    vendor = target / "vendor"
+    vendor.mkdir(exist_ok=True)
+    wasm = source / "node_modules/@grafeo-db/wasm"
+    shutil.copyfile(wasm / "grafeo_wasm_bg.js", vendor / "grafeo_wasm_bg.mjs")
+    shutil.copyfile(wasm / "grafeo_wasm_bg.wasm", vendor / "grafeo_wasm_bg.wasm")
+
+    scenario = json.loads((source / "scenario.json").read_text(encoding="utf-8"))
+    with GqlHealthLab() as lab:
+        lab.load_envelopes(scenario["capture"])
+        nodes = lab.query("master", "MATCH (n) RETURN n AS node ORDER BY n.id")
+        edges = lab.query(
+            "master", "MATCH (a)-[e]->(b) RETURN a.id AS source, e AS edge, b.id AS target "
+            "ORDER BY a.id, b.id, type(e)")
+    seed = {
+        "checkpoints": [{**stop, "ns": str(instant_ns(stop["at"]))} for stop in scenario["checkpoints"]],
+        "ontology": (lab_dir / "azure_ontology.gql").read_text(encoding="utf-8"),
+        "projection": (lab_dir / "projection.gql").read_text(encoding="utf-8").strip().rstrip(";"),
+        "policy": {
+            "warning_percent": WARNING_PERCENT,
+            "critical_percent": CRITICAL_PERCENT,
+            "stale_after_ns": str(STALE_AFTER_NS),
+        },
+        "nodes": [transport(row["node"]) for row in nodes],
+        "edges": [{**row, "edge": transport(row["edge"])} for row in edges],
+    }
+    (target / "replay.json").write_text(json.dumps(seed, separators=(",", ":")) + "\n", encoding="utf-8")
 
 
 def package(site, source_base):
@@ -71,16 +120,20 @@ def package(site, source_base):
         output.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / path, output)
 
-    # Add the guide to the hosted atlas without changing its standalone download.
+    package_gql(site)
+
+    # Add the guides to the hosted atlas without changing its standalone download.
     home = site / "index.html"
     contents = home.read_text()
-    entry = '<a href="docs/learn/">Retail walkthrough</a>'
-    if entry not in contents:
+    entries = ('<a href="docs/learn/">Retail walkthrough</a>',
+               '<a href="docs/learn/gql/">GQL health replay</a>')
+    missing = "".join(entry for entry in entries if entry not in contents)
+    if missing:
         navigation = '<nav aria-label="Main navigation">'
         if navigation not in contents:
             raise ValueError("Missing atlas home navigation")
-        home.write_text(contents.replace(navigation, navigation + entry, 1))
-    print(f"Packaged both guides and {len(assets.paths)} playback assets in {target}")
+        home.write_text(contents.replace(navigation, navigation + missing, 1))
+    print(f"Packaged the guides, GQL replay, and {len(assets.paths)} playback assets in {target}")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>When did CPU turn critical? · Sattle</title>
+  <link rel="stylesheet" href="../film/theme.css">
+  <link rel="stylesheet" href="../learn.css">
+  <link rel="stylesheet" href="replay.css">
+  <script type="module" src="page.mjs"></script>
+</head>
+<body>
+  <main>
+    <header class="intro">
+      <a href="../">Sattle learning guides</a>
+      <p class="eyebrow">GQL experiment · Synthetic Azure data</p>
+      <h1>When did CPU turn critical?</h1>
+      <p>A cluster reaches 97% CPU at 10:02 UTC. Sattle receives the reading a minute later.
+        Step through the replay to see when that reading changes the health graph.</p>
+    </header>
+
+    <fieldset id="timeline" disabled>
+      <legend>Replay time (UTC)</legend>
+      <div id="stops" class="stops"></div>
+    </fieldset>
+    <p id="replay-status" role="status">Loading Grafeo and the synthetic capture…</p>
+    <noscript><p>Enable JavaScript to run the projection in your browser.</p></noscript>
+
+    <div class="graphs" hidden>
+      <section class="graph master" aria-labelledby="master-title">
+        <p class="eyebrow">01 · What arrived</p>
+        <h2 id="master-title">Master graph</h2>
+        <div class="node"><small>MasterEntity · AKS cluster</small><strong id="master-resource"></strong></div>
+        <ul id="observations" class="branches" aria-label="Visible observations"></ul>
+        <p id="no-readings">No CPU readings have arrived.</p>
+      </section>
+      <section class="graph health" aria-labelledby="health-title">
+        <p class="eyebrow">02 · What GQL concluded</p>
+        <h2 id="health-title">Health graph</h2>
+        <div class="node"><small>HealthEntity · AKS cluster</small><strong id="health-resource"></strong></div>
+        <p class="edge">↑ <code>ASSESSES</code></p>
+        <div class="node assessment">
+          <small>HealthAssessment</small>
+          <strong id="state"></strong>
+          <p id="reason"></p>
+        </div>
+        <ul id="evidence" class="branches" aria-label="Source observations that support the assessment"></ul>
+      </section>
+    </div>
+
+    <section class="explain" aria-labelledby="how">
+      <h2 id="how">Read the projection</h2>
+      <ol>
+        <li>The Azure ontology records which readings measure the cluster. It does not assign a health state.</li>
+        <li>GQL picks the newest reading that was both sampled and received by the chosen time.</li>
+        <li>The query compares the reading with the example CPU thresholds. An old reading becomes unknown, not healthy.</li>
+      </ol>
+      <p id="policy"></p>
+      <details>
+        <summary>Show the GQL that ran in your browser</summary>
+        <pre tabindex="0"><code id="projection"></code></pre>
+      </details>
+      <p>Your browser runs the lab’s GQL query in Grafeo WebAssembly and draws the result.
+        It does not connect to Azure or send queries to a server. These thresholds are examples, not recommendations.</p>
+      <p><a href="https://github.com/abossard/sattle/tree/main/lab/gql">Lab source and queries</a>
+        · <a href="grafeo-license.txt">Grafeo license and notice</a></p>
+    </section>
+  </main>
+</body>
+</html>
