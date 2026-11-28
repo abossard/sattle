@@ -154,3 +154,103 @@ cd capture && node eh-forward.mjs --namespace <eventhub namespace> --kubeconfig 
 - Runs until `SIGTERM`. Reads Hubble through its own relay port-forward, so it can run next to `capture.sh`.
 - Hubs, ordering, markers and failure behaviour: see CAPTURE-FORMAT.md, section Live stream.
 - Knobs: `--mirror-hubble`, `HUBBLE_FILTER`, `PROM_POLL_SECONDS`, `AZURE_POLL_SECONDS`, `QUEUE_MAX_MB`, `--no-hubble`, `--no-metrics`.
+
+## Experimental GQL health projection (#191)
+
+Can a GQL query turn Azure observations into a health graph? This lab uses
+[Grafeo 0.6.3](https://github.com/GrafeoDB/grafeo/releases/tag/v0.6.3), an
+Apache-2.0 database, to test one rule. At a given time, did the readings that
+had arrived show high CPU usage in an AKS cluster?
+
+### Try the browser replay
+
+In the [GQL learning page](https://abossard.github.io/sattle/docs/learn/gql/), select
+**Before delivery** and then **Late reading arrives**. The first view does not
+include the late sample. In the next view, the health graph cites that sample
+as evidence for `CRITICAL`. Open **Show the GQL that ran in your browser** to see
+the query. The page uses synthetic Azure records and runs Grafeo in WebAssembly.
+GitHub Pages publishes it from `main`. You can also [build it locally](../docs/learn/README.md#try-the-gql-replay).
+
+### Run the terminal lab
+
+From the repository root in a Codespace or on Linux, put the Python dependencies
+in a virtual environment outside the checkout. The requirements pin
+`grafeo==0.6.3` and `solvor==0.6.3`.
+
+```sh
+repo="$(git rev-parse --show-toplevel)"
+python3 -m venv "$HOME/.venvs/sattle-gql"
+"$HOME/.venvs/sattle-gql/bin/python" -m pip install -r "$repo/lab/gql/requirements.txt"
+```
+
+Pass a native capture file or a directory of `.ndjson` files:
+
+```sh
+"$HOME/.venvs/sattle-gql/bin/python" -B "$repo/lab/gql/app.py" --input /path/to/native-capture
+```
+
+Or replay the scrubbed collector recordings without making an output file:
+
+```sh
+"$HOME/.venvs/sattle-gql/bin/python" -B "$repo/lab/gql/app.py" --collector-replay "$repo/lab/collector/recordings"
+```
+
+Run `timeline` to see the available times. Use `time 2026-01-01T00:00:00Z` or
+`time latest`, then `view health`. In the terminal, the selected time applies to
+health only; `view master` shows the full capture. Use `use master` or `use health`
+to select the graph before running a read-only query such as
+`gql MATCH (n) RETURN n`.
+
+The lab keeps the database in memory by default and does not write a copy of the
+capture. To persist a new database, use `--database`. It refuses to overwrite an
+existing database. Inside the checkout, the database must go under the ignored
+`lab/gql/.local/` directory. Git also ignores captures and derived `.ndjson`
+under `lab/gql/`. A large capture can use a lot of memory.
+
+### What the query does
+
+The lab runs [the Azure schema](gql/azure_ontology.gql) and the separate
+[health schema](gql/health_ontology.gql) in GQL. For native captures, it calls
+[the collector](collector/capture.py) to turn Azure, Kubernetes, Hubble and VNet
+envelopes into rows where mappings exist. Each raw envelope stays in a
+`RawCapture` node. Each normalized update or delete becomes an `Observation`
+that points to its source.
+
+[The projection](gql/projection.gql) selects the newest visible revision of
+each record. Then it picks the newest point in each series and joins it to the
+resource. A record is visible if its event time and arrival time are both at
+or before the selected time. Updates replace earlier revisions of the same
+key; deletes remain in history. Metric dimensions distinguish series, and a
+measured zero is not a gap. Python puts the GQL results into the health graph.
+[A second GQL query](gql/topology.gql) selects visible relationships one hop
+from an assessed resource.
+
+The example rule applies only to `node_cpu_usage_percentage` and
+`CpuPercentage` when the native Azure record confirms an `average` in percent.
+It returns `HEALTHY` below 80%, `DEGRADED` from 80% to below 95%, and `CRITICAL`
+from 95%. A reading more than 300 seconds old is `UNKNOWN_STALE`. Missing or
+nonnumeric readings are `UNKNOWN_MISSING`. A total or a reading with no unit
+also gives an unknown result. If the latest visible inventory record deletes
+the resource, the assessment is `UNKNOWN_DELETED`.
+
+### What the replay can prove
+
+The scrubbed recordings contain 11 request rows, 91 samples, 24 usage rows and
+80 Azure Monitor metric rows. The collector’s `MetricRow` does not carry a
+unit, and its Event Hubs path does not retain metric dimensions. The lab keeps
+these rows and their record keys, but it does not use them to assess CPU health.
+It also keeps Prometheus and Kubernetes readings without assigning a
+capacity policy.
+
+Application Insights request rows are not correlated spans. Hubble and VNet
+flows can show network traffic, not whether an application worked. The master
+view shows references to raw network records even when there is no normalized
+row. An explicit loss marker tells you that data was dropped. Its absence
+does not prove that the capture is complete. The lab does not infer application
+dependencies, evaluate SLOs, or prescribe thresholds for production.
+
+Run the integration tests against Grafeo:
+
+```sh
+"$HOME/.venvs/sattle-gql/bin/python" -B "$repo/lab/gql/test_gql.py"
+```

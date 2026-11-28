@@ -1,0 +1,9 @@
+{
+  "name": "sattle-gql-replay",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@grafeo-db/wasm": "0.6.3"
+  }
+}

@@ -5,24 +5,28 @@ on:
     paths:
       - 'brainstorm/**'
       - 'docs/learn/**'
+      - 'lab/gql/**'
+      - 'lab/collector/*.py'
       - 'scripts/package-learn.py'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 permissions:
   contents: read
-  pages: write
-  id-token: write
 concurrency:
   group: github-pages
   cancel-in-progress: false
 jobs:
-  publish:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v6
+      - name: Fetch the commit used by the recorded walkthrough
+        run: git fetch --no-tags --depth=1 origin fcf7725ff6f0292614b7e5928e9a5d3b4a1a9c2e
+      - name: Install GQL replay dependencies
+        run: |
+          python3 -m venv "$RUNNER_TEMP/sattle-gql"
+          "$RUNNER_TEMP/sattle-gql/bin/python" -m pip install -r lab/gql/requirements.txt
+          npm --prefix docs/learn/gql ci --ignore-scripts
       - name: Regenerate guide and design download
         working-directory: brainstorm
         run: |
@@ -31,14 +35,26 @@ jobs:
       - name: Check guide and source references
         working-directory: brainstorm
         run: node --test tests/atlas.test.cjs tests/content-projection.test.cjs ../docs/learn/tests/graph-journey.test.cjs
-      - name: Package the narrated walkthroughs
+      - name: Package the learning guides
         env:
           SOURCE_BASE: ${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/
-        run: python3 scripts/package-learn.py brainstorm/dist "$SOURCE_BASE"
-      - uses: actions/configure-pages@v5
+        run: '"$RUNNER_TEMP/sattle-gql/bin/python" -B scripts/package-learn.py brainstorm/dist "$SOURCE_BASE"'
+      - name: Check GQL in the packaged replay
+        run: node --test docs/learn/tests/gql-replay.test.mjs
       - uses: actions/upload-pages-artifact@v4
         with:
           path: brainstorm/dist
+  publish:
+    needs: build
+    permissions:
+      pages: write
+      id-token: write
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
       - name: Publish
         id: deployment
         uses: actions/deploy-pages@v4

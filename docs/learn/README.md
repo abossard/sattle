@@ -25,6 +25,30 @@ python3 -m http.server 8397 --bind 127.0.0.1
 
 While the server is running, open the [local walkthrough](http://127.0.0.1:8397/docs/learn/).
 
+## Try the GQL replay
+
+The [GQL learning page](https://abossard.github.io/sattle/docs/learn/gql/) runs
+one of the [lab’s queries](../../lab/README.md#experimental-gql-health-projection-191)
+in your browser. Step through its timeline to see why a late CPU reading does
+not affect health until it arrives. GitHub Pages builds the replay from the same
+query that the lab uses, with a synthetic capture.
+
+To serve the replay locally, first install the lab’s Python dependencies as shown
+in the lab README. Then run these commands from the repository root with Node.js
+and npm installed:
+
+```sh
+repo="$(git rev-parse --show-toplevel)"
+preview="$(mktemp -d)"
+npm --prefix "$repo/docs/learn/gql" ci --ignore-scripts
+cp -R "$repo/brainstorm/dist/." "$preview"
+"$HOME/.venvs/sattle-gql/bin/python" -B "$repo/scripts/package-learn.py" \
+  "$preview" https://github.com/abossard/sattle/blob/main/
+python3 -m http.server 8398 --bind 127.0.0.1 --directory "$preview"
+```
+
+Open [the local GQL replay](http://127.0.0.1:8398/docs/learn/gql/).
+
 ## The recorded pg-shop companion
 
 [Explore the replay](pg-shop.html) · [Read its transcript](transcript.md)
